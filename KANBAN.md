@@ -21,22 +21,6 @@ Card conventions (all RTL cards):
 
 ## Implementation (was "RTL"; depends on Phase 1 & 2)
 
-### C1 — `rtl/pio_instr_mem.sv`
-
-- **Scope**: 32×16 register file, 1 synchronous write port
-  (`wr_en/wr_addr/wr_data`), 4 combinational read ports
-  (`rd_addr[4:0]`→`rd_data[15:0]` ×4) — the ratified exception to the
-  sync-read convention (DESIGN.md; owner-ratified). Reset contents to
-  all-zero words.
-- **Grounding**: SPEC-1-2, SPEC-14.1-1, SPEC-7-10; CC-33.
-- **Deps**: none.
-- **Acceptance**: directed TB: write then read all 4 ports at independent
-  addresses; write retiring end-of-e visible on reads from e+1. Formal
-  (bmc + prove): `rd_data_i == mem[rd_addr_i]` is combinational identity;
-  write-retire visibility property per CC-33 (write@e ⇒ read@e+1 sees new
-  word, read@e sees old); no read-enable/architectural state beyond the
-  32 words.
-
 ### C2 — `rtl/pio_sm_shift.sv`
 
 - **Scope**: OSR/ISR 32-bit shifters, two saturating 6-bit counters,
