@@ -9,14 +9,6 @@ deletes it from this file. Loose ideas must NOT be added here — put them in
 - [ ] Verify `make sim` / `syn` / `formal` skeletons run inside the container
       (image itself is built; see `docs/toolchain.md`).
 
-## Phase 2 — Architecture draft
-
-- [ ] Draft module architecture in `DESIGN.md` from the verified spec:
-      instruction memory per PIO block (shared by its 4 state machines),
-      state machine pipeline (decoder/exec/shift/fifo/regs), IRQ flags,
-      GPIO mux, config register interface. Rough is fine — architecture can
-      be redeveloped later; the draft fixes vocabulary and interfaces.
-
 ## RTL (depends on Phase 1 & 2)
 
 - [ ] `rtl/pio_sm_shift.v`: OSR/ISR shifters, shift counters, autopush/pull

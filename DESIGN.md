@@ -53,7 +53,11 @@ Decided:
 - Formal-friendliness: every stateful element reset by `rst` (helps
   k-induction); no reliance on X-propagation; memories use synchronous
   read with registered output to keep yosys memory inference clean and
-  the symbolic-instruction-memory swap trivial.
+  the symbolic-instruction-memory swap trivial. Sole exception (owner-
+  ratified, see Architecture §instruction memory): `pio_instr_mem` uses
+  combinational read ports so a write is visible to the very next fetch
+  cycle per CC-33; at 32×16 flops this costs nothing in yosys or the
+  anyconst swap.
 
 Decided (confirmed by owner):
 
@@ -74,28 +78,354 @@ Decided (confirmed by owner):
 - No `generate` loops around the 4 SMs — instantiate 4 named instances
   (`u_sm0..u_sm3`) so waveforms and solver traces stay readable.
 
-## Planned module hierarchy *(draft — to be firmed up in the Phase 2
-architecture task from the verified spec; open to revision)*
+## Architecture (Phase 2 draft)
 
-Structure mirrors the hardware: the RP2350 has 3 PIO blocks, each with its
-own instruction memory shared by its 4 state machines (not one global
-memory).
+Structure mirrors the hardware: the RP2350 has 3 PIO blocks
+([SPEC-1-1]), each with its own 32×16 instruction memory shared by its 4
+state machines ([SPEC-1-2]) — not one global memory. All SM-architectural
+state advances only on `sm_tick`/force-tick (CC-1); all effects register
+at the end of the executing tick (CC-3).
 
+### Top-level block diagram
+
+```mermaid
+flowchart TB
+    subgraph TOP["pio_top"]
+        subgraph IRQNET["IRQ routing (CC-37/CC-38)"]
+            PREVNEXT["prev/next relay registers<br/>one extra stage between blocks"]
+        end
+        B0["u_pio0 : pio_block"]
+        B1["u_pio1 : pio_block"]
+        B2["u_pio2 : pio_block"]
+        B0 ---|"irq_prev_r / irq_next_r"| PREVNEXT
+        B1 ---|"irq_prev_r / irq_next_r"| PREVNEXT
+        B2 ---|"irq_prev_r / irq_next_r"| PREVNEXT
+        IRQOUT0["irq0 to CPU (stub, non-goal)"]
+        IRQOUT1["irq1 to CPU (stub, non-goal)"]
+        B0 --> IRQOUT0
+        B1 --> IRQOUT0
+        B2 --> IRQOUT0
+        B0 --> IRQOUT1
+        B1 --> IRQOUT1
+        B2 --> IRQOUT1
+    end
+    GPIOIN["gpio_in[47:0]"] --> B0
+    GPIOIN --> B1
+    GPIOIN --> B2
+    B0 --> GPIOOUT["gpio_out[47:0] pads model"]
+    B1 --> GPIOOUT
+    B2 --> GPIOOUT
 ```
-pio_top
-└── pio_block  (x3)
-    ├── pio_instr_mem     # 32 x 16-bit instruction memory (datasheet §11.2.8,
-    │                     # see docs/pio-spec.md §14.1), shared by 4 SMs,
-    │                     # symbolic-capable for program synthesis
-    ├── pio_irq_flags     # IRQ flag set/clear logic, force & interrupt routing
-    ├── pio_gpio_mux      # input sync, output muxing from SMs / side-set
-    └── pio_sm  (x4)
-        ├── pio_sm_decoder  # instruction decode
-        ├── pio_sm_exec     # execute stage, delay/side-set handling
-        ├── pio_sm_shift    # ISR/OSR shifters, autopush/pull, shift counters
-        ├── pio_sm_fifo     # RX/TX FIFOs (join modes), push/pull
-        └── pio_sm_regs     # clock divider, pin mapping, wrap, exec
+
+Notes: each block observes a 32-pin window of the 48-line pad model
+selected by its `GPIOBASE` ([SPEC-1-4], [SPEC-10-7]). IRQ relaying
+between blocks is a registered path at `pio_top` level (CC-38); the CPU
+interrupt outputs (`INTR`, INTE/INTF/INTS per [SPEC-7-12]) are exposed as
+flat stub ports — interrupt-controller integration is a non-goal.
+
+### pio_block block diagram
+
+```mermaid
+flowchart TB
+    subgraph BLK["pio_block"]
+        subgraph CFG["config register interface (generic reg bus)"]
+            REGS["block regs: CTRL, FSTAT, FDEBUG,<br/>IRQ, IRQ_FORCE, INPUT_SYNC_BYPASS,<br/>DBG_PADOUT/OE, INSTR_MEM, RXFx_PUTGET"]
+        end
+        IMEM["u_imem : pio_instr_mem<br/>32 x 16, 1W / 4R (async read)"]
+        subgraph SMS["state machines (4 named instances)"]
+            SM0["u_sm0 : pio_sm"]
+            SM1["u_sm1 : pio_sm"]
+            SM2["u_sm2 : pio_sm"]
+            SM3["u_sm3 : pio_sm"]
+        end
+        IRQ["u_irq : pio_irq_flags<br/>8 flags, PREV/NEXT/REL decode"]
+        GMUX["u_gpio : pio_gpio_mux<br/>2-FF sync + bypass, in-bus rotation,<br/>out level/OE priority resolve"]
+        IMEM -->|"instr[3:0]"| SM0
+        IMEM -->|"instr[3:0]"| SM1
+        IMEM -->|"instr[3:0]"| SM2
+        IMEM -->|"instr[3:0]"| SM3
+        SM0 -->|"irq_req/clear + idx"| IRQ
+        SM1 -->|"irq_req/clear + idx"| IRQ
+        SM2 -->|"irq_req/clear + idx"| IRQ
+        SM3 -->|"irq_req/clear + idx"| IRQ
+        IRQ -->|"flags"| SM0
+        IRQ -->|"flags"| SM1
+        IRQ -->|"flags"| SM2
+        IRQ -->|"flags"| SM3
+        SM0 -->|"pin writes (lvl/oe, ss/ set/out)"| GMUX
+        SM1 -->|"pin writes"| GMUX
+        SM2 -->|"pin writes"| GMUX
+        SM3 -->|"pin writes"| GMUX
+        GMUX -->|"in_bus[3:0], jmp_pin, wait pins"| SM0
+        GMUX -->|"in_bus[3:0]"| SM1
+        GMUX -->|"in_bus[3:0]"| SM2
+        GMUX -->|"in_bus[3:0]"| SM3
+        REGS -->|"imem write port"| IMEM
+        REGS -->|"irq W1C / force"| IRQ
+        REGS -->|"sync bypass mask"| GMUX
+        REGS -->|"per-SM reg decode<br/>(CLKDIV, PINCTRL, EXECCTRL,<br/>SHIFTCTRL, SMx_INSTR)"| SMS
+        SMS -->|"fstat, flevel, exec_stalled, pc"| REGS
+        SMS -->|"tx/rx system ports"| REGS
+    end
+    gpio_in_win["gpio_in[31:0] (window)"] --> GMUX
+    GMUX --> gpio_out_win["gpio_out / gpio_oe"]
+    irq_prev_in["irq_prev_r[7:0]"] --> IRQ
+    irq_next_in["irq_next_r[7:0]"] --> IRQ
+    IRQ --> irq_prev_out["irq flags to prev/next"]
 ```
+
+### Module descriptions
+
+#### `pio_top`
+
+- **Purpose.** Instantiates the 3 blocks (`u_pio0..u_pio2`), the pad-level
+  GPIO banks, and the cross-block IRQ relay.
+- **Interfaces.** `clk`/`rst`; `gpio_in` / `gpio_out` / `gpio_oe` pad
+  arrays; per-block generic reg-bus ports (see below); `irq0`/`irq1` stub
+  outputs to the CPU ([SPEC-7-12]).
+- **Spec facts.** 3 identical blocks [SPEC-1-1]; 32-pin windows via
+  `GPIOBASE` [SPEC-1-4], [SPEC-10-6]; PREV/NEXT flags visible next cycle
+  [SPEC-3-8-8], [SPEC-12-10].
+- **Cycle contract.** Owns the CC-38 relay register stage on inter-block
+  flag paths. Also the natural home for NEXTPREV_* CTRL fan-out
+  ([SPEC-7-5], CC-27/CC-28 lockstep support) — modelled as same-clk-cycle
+  application per CC-28's [MODEL] note.
+- **Reset/formal.** Relay registers reset to 0; assertions: relay output
+  equals the neighbour's flag register delayed by one clk (CC-38); equal
+  CLKDIV + simultaneous restart ⇒ identical `sm_tick` history (CC-27).
+
+#### `pio_block`
+
+- **Purpose.** One PIO block: instruction memory, 4 SMs, IRQ flags, GPIO
+  mux, and the config register interface (generic — the real bus is a
+  non-goal).
+- **Interfaces.** Reg-bus slave (flat: `reg_addr`, `reg_wdata`,
+  `reg_rdata`, `reg_write`, `reg_read`, one clk-cycle retire); windowed
+  `gpio_in`/`gpio_out`/`gpio_oe`; `irq_prev_r`/`irq_next_r` relay buses;
+  CPU IRQ stub outputs.
+- **Spec facts.** [SPEC-1-2], [SPEC-1-3], register map [SPEC-7-2..13].
+- **Cycle contract.** Owns CC-33's write-visibility boundary (reg write
+  retiring at end of e observed by fetches from e+1) by construction of
+  `pio_instr_mem`; owns CC-30's e/e+1 FIFO-write visibility boundary
+  (FIFO system-write port is the reg-bus write into `pio_sm_fifo`,
+  retiring at the clk edge).
+- **Reset/formal.** Register-file style config: every field reset to its
+  datasheet reset value ([SPEC-5-3], [SPEC-7-26] defaults). Assertion:
+  any reg write followed by an SM tick ≥ e+1 observes the new value
+  (CC-33, CC-30).
+
+#### `pio_instr_mem`
+
+- **Purpose.** 32 × 16-bit instruction register file, 1 write port
+  (reg bus, from `INSTR_MEM0..31` [SPEC-7-10]) / 4 read ports (one per SM).
+- **Interfaces.** `wr_addr`/`wr_data`/`wr_en` (clk-rate, from reg decode);
+  4 × (`rd_addr[4:0]` in, `rd_data[15:0]` out, combinational read).
+- **Spec facts.** 32×16 size [SPEC-1-2], [SPEC-14.1-1]; 1W/4R register
+  file serving all SMs "without stalling" [SPEC-1-2], [SPEC-1-5].
+- **Cycle contract.** CC-33: no prefetch, no invalidation; a fetch in tick
+  T reads the word at the PC against start-of-T state.
+- **Deviation from RTL conventions (owner-review item).** Read ports are
+  combinational (async-read register file), not synchronous-read. Reason:
+  CC-33 requires a write retiring at end of cycle e to be visible to a
+  fetch in cycle e+1 *with the SM presenting its PC during that same
+  cycle*; a registered read would show the old word one cycle longer and
+  would need a write-bypass. Since the array is only 32×16 flops, yosys
+  maps it to logic/FFs cleanly, and the symbolic swap (below) is *more*
+  trivial with plain flop arrays. Writes remain synchronous.
+- **Reset/formal.** Contents reset to a known pattern (e.g. all-zero words
+  — `jmp 0`-class encodings); for the synthesis harness the 32 words are
+  replaced by `(* anyconst *)` registers with reset disabled in that
+  harness only.
+
+#### `pio_sm` (instances `u_sm0..u_sm3`, no generate loop)
+
+- **Purpose.** One state machine: divider, PC, delay, X/Y, decode,
+  execute, shifters, FIFOs, EXEC/forced-instruction latch.
+- **Interfaces.** From block: `instr[15:0]` (async imem read at `pc_r`),
+  `in_bus[31:0]` (rotated+masked input bus), `jmp_pin`, `irq_flags`,
+  `irq_prev_r`/`irq_next_r`, per-SM reg-bus decode, `sm_restart`,
+  `clkdiv_restart`, force-instr write. To block: pin writes (level/OE,
+  side-set/SET/OUT bundles), `irq_req`/`irq_clr` with IdxMode-decoded
+  target, FIFO system ports, `pc`/`flevel`/`exec_stalled` readbacks.
+- **Spec facts.** [SPEC-1-3], [SPEC-1-5], [SPEC-3.x] semantics, [SPEC-8-x]
+  PC/wrap, [SPEC-9-x] stalling.
+- **Cycle contract.** Owns the bulk: CC-4 (read-before-write sampling),
+  CC-5/CC-6/CC-8 (side-set/pin-write landing), CC-9/CC-10 (shifter and
+  PC/delay landing), CC-11..CC-22 (all stall behaviour incl. divider
+  keep-running), CC-26..CC-28 (divider), CC-29/CC-31/CC-32 (FIFO timing),
+  CC-34..CC-36 (EXEC latch, forced instructions, force-tick collision).
+- **Reset/formal.** One `always_ff` per register group (conventions);
+  `SM_RESTART` clears only the [SPEC-7-3] subset (not OSR/X/Y/PC — the SDK
+  resets PC via a forced JMP, sdk N2); EXEC latch and forced-instr latch
+  share one register (CC-34/CC-35). Onehot FSM assertion target.
+
+##### `pio_sm_decoder`
+
+- **Purpose.** Pure combinational decode of the 16-bit word into fields
+  and onehot instruction strobes; includes the class-0x4 overload rule:
+  arg2[4]=1 ⇒ FIFO-aux MOV (PUT/GET), arg2≠0 otherwise reserved, else
+  PUSH/PULL ([SPEC-14.2-1], [SPEC-2-11..17], [SPEC-3.7-1/2]). Decodes
+  bitcount 0 ⇒ 32 [SPEC-2-18]; reserved encodings ([SPEC-13-1]) decoded
+  to explicit no-op/assert-illegal outputs.
+- **Reset/formal.** Stateless; formal: decode results are a function of
+  the word only (assertable as a truth-table check); reserved encodings
+  asserted unreachable in constrained programs.
+
+##### `pio_sm_exec`
+
+- **Purpose.** The tick-rate control path: FSM state (onehot
+  `ST_FETCH`/`ST_EXEC`/delay/stall), PC update + wrap ([SPEC-8-x], CC-10),
+  delay counter, side-set application and OUT/SET/EXEC/MOV execute
+  orchestration, X/Y updates, JMP condition evaluation
+  ([SPEC-3.1-x], [SPEC-14.5-1]), WAIT/IRQ-wait stall management
+  (CC-14..CC-16), EXEC/forced-instruction latch (CC-34..CC-36).
+- **Reset/formal.** Everything resets per CC-1/`SM_RESTART` subset;
+  onehot assertions; CC-14 stall invariants are the core induction
+  targets.
+
+##### `pio_sm_shift`
+
+- **Purpose.** ISR/OSR shift registers and the two saturating 6-bit
+  counters ([SPEC-5-1..7]); direction via a single `shift_left` boolean;
+  IN rotate/self-shift semantics ([SPEC-3.3-7/8], [SPEC-15-1]);
+  autopull/autopush *decision* logic (CC-11..CC-13, evaluated only on
+  IN/OUT ticks — [SPEC-3.6-14], [SPEC-5-8/9]).
+- **Reset/formal.** Reset: ISR counter ← 0, OSR counter ← 32
+  ([SPEC-5-3]); counter-bounds assertions (0..32, saturating).
+
+##### `pio_sm_fifo`
+
+- **Purpose.** Per-SM TX + RX 4-deep FIFOs with join and the RP2350 aux
+  modes: `FJOIN_TX`/`FJOIN_RX` 8-deep joins ([SPEC-6-2]) and
+  `FJOIN_RX_PUT`/`FJOIN_RX_GET` where RX storage becomes 4
+  random-access registers ([SPEC-6-3], [SPEC-3.7-3..7]). Also the
+  `FDEBUG` sticky flags ([SPEC-6-7]).
+- **Interfaces.** SM side: `push`/`pop`/`level`/`full`/`empty` per
+  direction (sampled at start-of-tick per CC-4), plus a *random-access*
+  port pair `aux_wr[idx,data]` (PUT) / `aux_rd[idx]` (GET) and a mode
+  input (txrx|tx|rx|txput|txget|putget) that redirects the RX storage
+  between queue mode and register mode. System side: TX write / RX read
+  ports (clk-rate) and `RXFx_PUTGET0..3` access ([SPEC-7-13]). FJOIN-bit
+  changes flush contents ([SPEC-6-2]).
+- **Why the aux port shape:** the aux modes change the RX storage's
+  *addressing* (queue head/tail vs 2-bit index), not its datapath — one
+  storage array, a mode-selected address source, is simpler and keeps
+  CC-21 (PUT/GET never stall, single tick) a pure routing fact.
+- **Reset/formal.** Levels/pointers reset to empty; bounds assertions
+  (level ≤ depth, mode-dependent depth 0/4/8, [SPEC-6-1..4]); sticky-flag
+  set-condition assertions against CC-19/CC-20/CC-32.
+
+##### `pio_sm_regs`
+
+- **Purpose.** Per-SM config register file — CLKDIV (INT/FRAC),
+  EXECCTRL, SHIFTCTRL, PINCTRL ([SPEC-7-14..26]) — plus the clock
+  divider (phase accumulator + counter producing `sm_tick`, CC-26) and
+  divider restart handling (CC-27).
+- **Reset/formal.** All fields reset to datasheet defaults; divider
+  reset to phase 0/count 0 with SM disabled until `SM_ENABLE`
+  ([SPEC-7-2]); assertion: consecutive `sm_tick` of one SM ≥ INT clk
+  cycles apart (CC-25, the divider min-gap contract). Keeping the
+  divider here (clk-rate logic) separates it cleanly from tick-rate
+  state, which helps induction see the divider as an independent
+  free-running counter (CC-28).
+
+#### `pio_irq_flags`
+
+- **Purpose.** The block's 8 IRQ flags: set/clear from 4 SMs, W1C from
+  reg bus (`IRQ`), set from `IRQ_FORCE` ([SPEC-7-6]); IdxMode decode
+  (this/PREV/REL/NEXT, [SPEC-3.8-4..7], [SPEC-14.3-1]) applied to the
+  requesting SM's index before routing.
+- **Interfaces.** Per-SM `irq_set/irq_clr` + `flag_idx[2:0]` +
+  `idx_mode[1:0]`; bus `irq_w1c`/`irq_force`; `flags[7:0]` readback to
+  SMs (for WAIT/JMP/STATUS) and to INTR generation.
+- **Cycle contract.** CC-37 (end-of-cycle set/clear, next-cycle
+  visibility, no same-cycle sibling relay), CC-39 (simultaneous set+clear
+  of one flag ⇒ clear wins, per-bit read-modify-write at one edge).
+- **Reset/formal.** Flags reset to 0; no combinational path from any SM's
+  request to any SM's flag *read* (assertible — this is the CC-37
+  structural guarantee).
+
+#### `pio_gpio_mux`
+
+- **Purpose.** Input path: per-pin 2-FF synchronizers with per-pin bypass
+  ([SPEC-10-5], [SPEC-7-7]); per-SM rotated+masked input bus (`in_bus`,
+  [SPEC-10-3]) and `jmp_pin` selection. Output path: 32-bit output-level
+  and output-enable registers resolving per-pin priority — side-set beats
+  OUT/SET within an SM (CC-6), highest-numbered SM wins across SMs (CC-7,
+  [SPEC-10-1/2]).
+- **Interfaces.** `gpio_in[31:0]` window; per-SM side-set/SET/OUT write
+  bundles (base+count+data+we, level and direction); per-SM `in_bus`,
+  `jmp_pin`; `sync_bypass` mask; `gpio_out`/`gpio_oe` and DBG_PADOUT/OE
+  readback ([SPEC-7-8]).
+- **Cycle contract.** CC-23 (2-FF latency / bypass = k+2 / k+1), CC-24
+  (sampling at start of tick), CC-5 (OUT_STICKY re-assert — sticky state
+  lives here or in exec; placed here so the pin registers have a single
+  owner), CC-6/CC-7/CC-8 (write landing and priority).
+- **Reset/formal.** Sync FFs and output registers reset to 0;
+  assertions: pad@k visible at k+2 (shift-register equivalence), priority
+  resolution matches a reference per-pin resolution function.
+
+### Interface decisions
+
+1. **Instruction memory sharing (CC-33).** Each SM drives its own
+   `rd_addr = pc_r` combinationally into `pio_instr_mem` and receives
+   `instr[15:0]` combinationally. Fetch = the decode of that word during
+   the tick cycle itself; no instruction register in the fetch path (the
+   only architectural latch is the EXEC/forced-instruction latch,
+   CC-34/CC-35). Because `pc_r` is stable between ticks, there is no
+   contention on the 4 read ports, and a reg write at end of e is visible
+   to a fetch in e+1 by construction.
+2. **FIFO aux modes.** `pio_sm_fifo` exposes the queue interface and the
+   `aux_wr/aux_rd[idx]` port pair simultaneously; the mode input (decoded
+   from `FJOIN_*` bits) selects which address source drives the RX
+   storage and gates the queue pointers. PUSH/PULL decode checks the mode
+   and treats PUSH under PUT/GET as undefined-by-spec ([SPEC-3.5-8]) —
+   RTL chooses the no-op + sticky-flag-free behaviour and asserts the
+   mode constraint in formal instead of implementing undefinedness.
+   Autopush is asserted-incompatible with aux modes ([SPEC-3.7-6]).
+3. **Config register file.** One flat reg bus per block: `reg_addr[7:0]`,
+   `reg_wdata[31:0]`, `reg_rdata[31:0]`, `reg_write`, `reg_read` strobes,
+   one-clk retire, no wait states. `pio_block` decodes block-level
+   registers locally and forwards per-SM addresses as a per-SM decoded
+   subordinate bus (SMx_* subranges). This mirrors the datasheet map
+   ([SPEC-7-x]) 1:1 so datasheet addresses stay meaningful, while the
+   actual bus protocol (APB/TL-UL) stays a non-goal.
+4. **IRQ routing.** Within a block: SMs see only the *registered* flags
+   (CC-37 structural rule). Between blocks: `pio_top` instantiates relay
+   registers — each block receives `irq_prev_r`/`irq_next_r` equal to the
+   neighbour's flags delayed one clk (CC-38). To the CPU: per-block
+   `INTR` composition into `irq0`/`irq1` stub outputs (INTE/INTF/INTS
+   are non-goaled stubs, [SPEC-7-12]).
+
+### Symbolic-friendliness
+
+- **Swap point.** The anyconst swap is confined to `pio_instr_mem`: the
+  synthesis harness replaces the 32 write-port registers (and their
+  reset) with `(* anyconst *)` 16-bit words, deleting the write port.
+  Because the read ports are already combinational flops (no read-enable
+  timing), the surrounding RTL — including all four SMs — is untouched by
+  the swap. Behavioural assertions then live only on the GPIO window and
+  FIFO ports of `pio_top`.
+- **Synthesizable-clean rules.** No combinational loops anywhere (the
+   flag path is structurally registered — CC-37; the imem read path is a
+   plain mux of flops); all state synchronous-reset; the only clk-rate
+   vs tick-rate mixing point is inside `pio_sm_regs` (divider) and the
+   force-tick OR of CC-36 — both single, well-identified edges.
+- **k-induction tractability.**
+  - Per-module formal boundaries: each module gets its own `formal/`
+    property file bound via `bind`-free instantiation wrappers (yosys
+    `assume`/`assert` inline or module-level `f_` bind), so induction
+    depth is set by the *module's* state, not the block's.
+  - The divider is proven independently (CC-25/CC-26 min-gap and phase
+    continuity) and then *assumed* as an interface property in SM proofs
+    (`sm_tick` min-gap assumption), decoupling divider induction depth
+    (up to 65536) from SM datapath proofs.
+  - Full-reset + onehot FSM encodings (conventions) keep the induction
+    state space canonical; the symbolic-imem harness is the one place
+    reset of the imem is disabled, and it runs as BMC/deep-safety (cover)
+    rather than k-induction.
+  - CC-3's single-edge effect landing means every architectural property
+    is a 2-cycle (pre/post tick) shape — short induction depths.
 
 ## Formal strategy
 
