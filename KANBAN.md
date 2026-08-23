@@ -13,23 +13,20 @@ deletes it from this file. Loose ideas must NOT be added here — put them in
       and record usage in `docs/toolchain.md`.
 - [ ] Verify `make sim` / `syn` / `formal` skeletons run inside the container.
 
-## Phase 1 — Specification acquisition & cross-check (FIRST substantive task)
+## Phase 1 — Specification acquisition & cross-check
 
-- [ ] Obtain the RP2350 datasheet PDF (raspberrypi.com,
-      `rp2350-datasheet.pdf`) and the `pioasm` assembler sources
-      (github.com/raspberrypi/pioasm); store version/commit identifiers in
-      `docs/spec-sources.md` for reproducibility.
-- [ ] Extract PIO facts from the datasheet §PIO into `docs/pio-spec.md`:
-      instruction encodings for all 8 classes, delay/side-set encoding,
-      FIFO depths and join modes, autopush/pull thresholds, IRQ semantics,
-      clock divider behaviour, exec/wrap, GPIO mapping, input synchronizers,
-      differences from RP2040 (3 PIO blocks, 36-instruction memory, etc.).
-- [ ] Cross-check the extracted spec against `pioasm` sources (instruction
-      encoding tables, assembler semantics) and note any discrepancies or
-      datasheet ambiguities in `docs/pio-spec.md`.
 - [ ] Decide verification semantics: cycle-boundary conventions for
       shift-out/shift-in, side-set vs delay ordering, stall behaviour per
-      instruction (document as a "cycle contract" in `docs/cycle-contract.md`).
+      instruction (document as a "cycle contract" in `docs/cycle-contract.md`;
+      open spec ambiguities are collected in `docs/pio-spec.md` §14).
+- [ ] Cross-reference the spec against additional sources beyond
+      datasheet+pioasm: pico-sdk C SDK (`hardware/pio` driver + RP2350
+      register headers), official pico-examples PIO programs, and the
+      RP2040 datasheet for delta-checking. Record findings in
+      `docs/pio-spec.md` (new §15) and `docs/spec-sources.md`.
+- [ ] Give every load-bearing fact in `docs/pio-spec.md` a stable fact ID
+      (e.g. `SPEC-11.5.1-a`) so formal assertions, RTL comments, and tests
+      can cite facts directly; add a convention note to AGENTS.md.
 
 ## Phase 2 — Architecture draft
 
@@ -67,6 +64,10 @@ deletes it from this file. Loose ideas must NOT be added here — put them in
 
 ## Formal (formal/)
 
+- [ ] Traceability convention: every formal assertion carries a comment
+      citing the `docs/pio-spec.md` fact ID it verifies, so spec ↔ proof
+      coverage can be audited (a fact with no assertion is unverified; an
+      assertion citing no fact is unsourced).
 - [ ] Per-module SymbiYosys setups (BMC then k-induction) for shift, fifo,
       decoder, exec.
 - [ ] Equivalence/performance contract: reference behavioural spec vs RTL

@@ -37,7 +37,8 @@ memory).
 ```
 pio_top
 └── pio_block  (x3)
-    ├── pio_instr_mem     # 36 x 32-bit instruction memory, shared by 4 SMs,
+    ├── pio_instr_mem     # 32 x 16-bit instruction memory (datasheet §11.2.8,
+    │                     # see docs/pio-spec.md §14.1), shared by 4 SMs,
     │                     # symbolic-capable for program synthesis
     ├── pio_irq_flags     # IRQ flag set/clear logic, force & interrupt routing
     ├── pio_gpio_mux      # input sync, output muxing from SMs / side-set
