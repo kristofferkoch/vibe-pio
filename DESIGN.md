@@ -27,6 +27,53 @@ decision still to be grilled before implementation.
   engine level with a generic config/bus interface, refined later.
 - FPGA-optimized timing closure; correctness first.
 
+## RTL conventions
+
+Decided:
+
+- Single edge-triggered clock named `clk`; single synchronous, active-high
+  reset named `rst` (asserted and released synchronous to `clk`).
+- Active-low signals carry the suffix `_n` (e.g. `fifo_empty_n` would be
+  avoided — prefer positive `fifo_empty`; `_n` is reserved for genuinely
+  active-low interfaces like an external `irq_n`).
+- Register module-internal signals carry the suffix `_r` (e.g. `osr_r`,
+  `pc_r`). Combinational signals and module ports carry no suffix;
+  combinational outputs of `always_comb` may use `_c` if disambiguation
+  helps, but default is no suffix.
+- SystemVerilog subset: files use `.sv` extension; `logic` everywhere (no
+  `reg`/`wire` declarations); `always_ff` for state, `always_comb` for
+  logic, no `always @*`/`always @(posedge ...)`.
+- Non-blocking assignments (`<=`) in `always_ff`, blocking (`=`) in
+  `always_comb`; never mix in one block.
+- Constants: `localparam`/`parameter` names in UPPER_SNAKE_CASE; widths
+  always explicit (e.g. `logic [4:0]`, sized from a localparam like
+  `PC_W`), never bare numbers in port/Signal declarations.
+- Module and instance naming: modules already prefixed `pio_`; instances
+  lowercase `u_`-prefixed (e.g. `u_decoder`).
+- Formal-friendliness: every stateful element reset by `rst` (helps
+  k-induction); no reliance on X-propagation; memories use synchronous
+  read with registered output to keep yosys memory inference clean and
+  the symbolic-instruction-memory swap trivial.
+
+Proposed (confirm or amend before RTL starts):
+
+- The SM clock divider is modeled as `clk`-rate logic producing a
+  one-cycle `sm_tick` strobe per SM; all SM state advances only on
+  `sm_tick` (side-set/delay counting included). Alternative: a gated
+  clock — rejected because gated clocks hurt formal verification.
+- FSM states encoded as `localparam` one-hot values with explicit names
+  (e.g. `ST_FETCH`, `ST_EXEC`), no inferred state encoding, so formal
+  onehotness assertions are meaningful.
+- Handshake/stall vocabulary: `stall` (SM stalled this cycle), `fifo_rd`,
+  `fifo_wr`, `push`/`pull` — matching datasheet vocabulary where possible
+  so assertions read like spec facts.
+- LSB/MSB shift directions expressed as a boolean `shift_left` derived
+  from config, not duplicated `if` trees.
+- One `always_ff` per logical register group (PC+regs, shifters, FIFO)
+  rather than one giant block, to keep induction proofs modular.
+- No `generate` loops around the 4 SMs — instantiate 4 named instances
+  (`u_sm0..u_sm3`) so waveforms and solver traces stay readable.
+
 ## Planned module hierarchy *(draft — to be firmed up in the Phase 2
 architecture task from the verified spec; open to revision)*
 
