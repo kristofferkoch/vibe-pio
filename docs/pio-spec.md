@@ -10,7 +10,19 @@ research inputs, both retained unchanged:
   provenance in `docs/spec-sources.md`). Cited below as **pioasm** with the
   source file/function.
 
-Facts on which the two sources agree are stated once with both citations.
+Additionally cross-checked against three further sources (reports retained
+unchanged under `docs/`, provenance in `docs/spec-sources.md`):
+
+- `docs/xcheck-picosdk.md` — pico-sdk register headers + `hardware_pio`
+  driver (cited as **sdk** with file). 35 confirmations, 4 corrections/
+  extensions, 8 new facts.
+- `docs/xcheck-rp2040.md` — RP2040 datasheet Chapter 3 (cited as **RDS
+  §x.y**). Confirms shared content; adds one §12 difference and resolves
+  several §14 open questions.
+- `docs/xcheck-picoexamples.md` — pico-examples catalogue (cited as
+  **examples**). 39 future conformance tests; observations summarised in §15.
+
+Facts on which the sources agree are stated once with the joint citations.
 Discrepancies and unresolved ambiguities are collected in §14 "Open
 questions". Where a conflict was resolved by consulting the datasheet text
 or the local pioasm clone, the resolution and method are stated there.
@@ -89,7 +101,9 @@ their index into the 5 bits (§4.5).
 ### 3.1 JMP — `000 | delay/ss | cond[7:5] | addr[4:0]`
 
 Set PC to addr if condition true, else fall through (delay applies either
-way). addr is absolute within the 32-word memory (DS §11.4.2).
+way). addr is absolute within the 32-word memory (DS §11.4.2); the SDK
+relocates JMP targets when loading a program at an offset
+(`pio.c:168`, sdk N1).
 
 | cond | syntax | meaning |
 |---|---|---|
@@ -117,7 +131,7 @@ Stall until condition met; delay cycles begin only after the wait completes
 
 | src | meaning | index |
 |---|---|---|
-| 00 | GPIO — absolute GPIO number, NOT affected by IN mapping | 0–31 (v0) / 0–47 (v1) |
+| 00 | GPIO — absolute w.r.t. the SM's 32-pin **GPIOBASE window** (window base + index), NOT affected by IN mapping (sdk E1: `pio.c:add_program_at_offset` rewrites the WAIT index when GPIOBASE=16 — the datasheet's "absolute" means window-absolute, not chip-absolute) | 0–31 |
 | 01 | PIN — (PINCTRL.IN_BASE + index) mod 32 | 0–31 |
 | 10 | IRQ — flag per index decode below; if pol=1 flag is cleared by the SM when the wait completes | 0–7 + mode bits |
 | 11 | JMPPIN (RP2350 new) — (EXECCTRL.JMP_PIN + index) mod 32 | 0–3 only; other encodings reserved (pioasm disassembler marks arg2[4:2] ≠ 0 reserved) |
@@ -152,6 +166,15 @@ Shift bitcount (1–32, 0⇒32) bits of src into ISR in the direction given by
 IN always uses the **LSBs** of the source data regardless of shift
 direction (e.g. IN PINS always takes IN_BASE, IN_BASE+1, …; only the
 end of ISR that data enters depends on IN_SHIFTDIR) (DS §11.4.4).
+
+**IN ISR / IN OSR self/other-shifter notes** (examples §3.1.1–3.1.2):
+shifting a register into itself **rotates** it — the bits shifted out one
+end re-enter at the other end (`in isr, n` with right shift = right
+rotation, per apa102_rgb555; direction follows IN_SHIFTDIR) and the ISR
+shift counter still advances. Reading OSR as an IN source (`in osr, n`)
+does **not** disturb the OSR shift counter — only the ISR counter advances
+(examples advance OSR separately via `out null, n`). These rotate semantics
+feed the cycle contract (§15).
 
 **Autopush interaction:** if autopush enabled and input shift counter ≥
 `PUSH_THRESH` (after adding bitcount), IN simultaneously pushes ISR to the
@@ -216,7 +239,8 @@ IfF/IfE=b6, direction=b7). pioasm defaults: Block=1, IfFull/IfEmpty=0.
 - IfEmpty=1: no-op unless output shift counter ≥ PULL_THRESH.
 - Block=1: **stall** while TX FIFO empty.
 - Block=0 with empty FIFO: behaves as `MOV OSR, X` (copies X to OSR; the
-  OSR counter clear follows from MOV-to-OSR semantics — §14.7).
+  OSR shift counter is cleared — confirmed by RDS §3.5.4.2 pseudocode
+  `if MOV or PULL: osr count = 0`, §14.7).
 - With autopull enabled, PULL is a no-op while the OSR is full (acts as a
   fence; `OUT NULL 32` explicitly discards OSR) (DS §11.4.7.2 NOTE).
 
@@ -245,11 +269,17 @@ reserved (both sources agree; pioasm disassembler marks op 3 reserved).
   2 = IRQ (indexed flag raised, RP2350); N = STATUS_N (bits 4:0);
   STATUS_N 0x08+n / 0x10+n select PREV/NEXT PIO flags (DS §11.7 Table 996;
   pioasm `.mov_status irq set N [prev/next]` encodes N_final = param*8 +
-  irq, `pio_assembler.cpp:182-191`).
+  irq, `pio_assembler.cpp:182-191`). For TXLEVEL/RXLEVEL, STATUS_N values
+  greater than the current FIFO depth are **reserved/undefined** (sdk
+  `regs/pio.h` STATUS_N field description — added to §13).
 - MOV into OSR/ISR while autopull/autopush enabled: MOV into OSR is never
   overwritten by autopull (MOV updates the counter); other MOV-from/to-OSR
   under autopull is partially undefined (DMA race) (DS §11.5.4).
-- MOV never stalls (no FIFO interaction in the general class).
+- **MOV into ISR never triggers autopush, and MOV into OSR never triggers
+  autopull** — the auto-shift logic is evaluated only on IN/OUT instructions
+  (examples §3.1.6: onewire `mov isr, pins` "avoids autopush";
+  quadrature_encoder `mov isr,y` + `push noblock` relies on it). MOV never
+  stalls (no FIFO interaction in the general class).
 
 ### 3.7 MOV put/get — RP2350 FIFO-aux encodings (class 0x4)
 
@@ -328,15 +358,20 @@ MSBs are side-set, remaining LSBs are delay (DS §11.4.1, §11.5.1).
 - Side-set LSB maps to `PINCTRL.SIDESET_BASE`, higher bits to higher pins
   (wrap after GPIO31).
 - **Side-set takes effect on the first cycle of the instruction even if it
-  stalls** (DS §11.5.1 NOTE, §11.2.5 NOTE). Delay cycles are inserted
+  stalls** (DS §11.5.1 NOTE, §11.2.5 NOTE) — including FIFO-induced stalls,
+  not only WAIT (examples §3.1.3: ws2812 "side-set still takes place when
+  instruction stalls", spi_cpha0 stalls with SCK low, uart_tx holds the stop
+  bit through a blocking PULL). Delay cycles are inserted
   **after** execution completes (for stalling instructions, after the stall
   clears) and before the next instruction.
 - If side-set overlaps an OUT/SET by the same SM in the same cycle,
   **side-set wins** on the overlapping pins.
 - pioasm: without `opt`, every instruction must specify `side`
   (`program::add_instruction`, `pio_assembler.cpp:46-50`).
-- SIDE_EN=1 with SIDESET_COUNT=0/1 interaction not fully pinned down by
-  either source — §14.8.
+- SIDESET_COUNT=0 ⇒ no side-set at all, regardless of SIDE_EN (RDS §3.5.1
+  "if [SIDESET_COUNT is] set to 0, no side-set will take place"; the SDK's
+  `sm_config_set_sideset` forbids `opt` with an inclusive count of 0 —
+  sdk §29). §14.8 (resolved).
 
 ## 5. Shifters, counters, autopush/autopull
 
@@ -375,7 +410,10 @@ MSBs are side-set, remaining LSBs are delay (DS §11.4.1, §11.5.1).
 - `FJOIN_RX_PUT` (bit 15) / `FJOIN_RX_GET` (bit 14) — RP2350 new: RX
   storage becomes 4 random-access registers (§3.7). Setting either clears
   FJOIN_TX and FJOIN_RX. pioasm `.fifo` configs: `txrx | tx | rx | txput |
-  txget | putget` (aux modes v1-only).
+  txget | putget` (aux modes v1-only). **In TXPUT/TXGET/PUTGET aux modes the
+  TX FIFO remains a normal, fully usable 4-deep TX FIFO** — unlike FJOIN_TX,
+  the aux modes repurpose only the RX storage (sdk `H/pio.h:99-107`
+  `pio_fifo_join` docs: "TX FIFO length=4 is used for transmit"; sdk N6).
 - System interface: writing TXFx pushes (write-on-full dropped, sticky
   `FDEBUG.TXOVER`); reading RXFx pops (read-on-empty returns undefined
   data, sticky `FDEBUG.RXUNDER`).
@@ -384,12 +422,14 @@ MSBs are side-set, remaining LSBs are delay (DS §11.4.1, §11.5.1).
   blocking PULL or autopull-OUT), `TXOVER`, `RXUNDER`, `RXSTALL` (stall on
   full RX during blocking PUSH / autopush-IN, or nonblocking PUSH to full).
 - DREQs: 1 word/clock DMA throughput; DREQ latency one cycle less than
-  RP2040 (DS §11.1.1).
+  RP2040 (DS §11.1.1). DREQ numbering (sdk `regs/dreq.h`): PIO0 TX0..3/RX0..3
+  = 0–7, PIO1 = 8–15, PIO2 = 16–23.
 
 ## 7. Registers (field-by-field)
 
-(DS §11.7.) PIO0 base 0x50200000, PIO1 0x50300000, PIO2 exists (datasheet
-table lists the first two).
+(DS §11.7.) PIO0 base 0x50200000, PIO1 0x50300000, PIO2 0x50400000
+(sdk `regs/addressmap.h`; sdk E3 closes the PIO2 offset the datasheet
+table omits).
 
 ### Block-level
 
@@ -397,7 +437,9 @@ table lists the first two).
   - 3:0 `SM_ENABLE`;
   - 7:4 `SM_RESTART` — clears shift counters, ISR contents, delay counter,
     WAIT-on-IRQ state, stalled forced instruction, sticky pin writes;
-    **not** OSR or X/Y;
+    **not** OSR, X/Y, the PC, or the enable state (sdk `H/pio.h`
+    `pio_sm_restart` doc; the SDK resets the PC with a forced JMP via
+    SMx_INSTR, `pio.c:423` — sdk N2);
   - 11:8 `CLKDIV_RESTART` — restart divider to phase 0 (free-running
     otherwise; simultaneous restarts with equal divisors ⇒ lockstep);
   - 19:16 `PREV_PIO_MASK`, 23:20 `NEXT_PIO_MASK`, 24
@@ -415,9 +457,11 @@ table lists the first two).
   32, SM_COUNT (11:8) = 4, FIFO_DEPTH (5:0) = 4.
 - `INSTR_MEM0..31` (0x048+): 16-bit write-only instruction slots.
 - `GPIOBASE` (0x168): bit 4 only, values 0 or 16.
-- Interrupts: `INTR` (SM IRQ flags bits 15:8 — RP2350 exposes all 8 — plus
-  SMx_TXNFULL/RXNEMPTY bits 7:0); `IRQ0/IRQ1 _INTE/_INTF/_INTS`
-  (enable/force/status; force does not affect internal state).
+- Interrupts: `INTR` — SM IRQ flags bits 15:8 (SM7=15 … SM0=8; RP2350
+  exposes all 8), TXNFULL bits 7:4 (SM3=7 … SM0=4), RXNEMPTY bits 3:0
+  (SM3=3 … SM0=0) (sdk `regs/pio.h` INTR fields, sdk E2); `IRQ0/IRQ1
+  _INTE/_INTF/_INTS` at 0x170–0x178 / 0x17c–0x184 (enable/force/status;
+  force does not affect internal state).
 - `RXFx_PUTGET0..3` (0x128+): random system access to RX FIFO storage in
   PUT/GET modes (§3.7).
 
@@ -447,6 +491,12 @@ table lists the first two).
   it); may stall and is latched (EXEC_STALLED); shares the instruction
   latch with OUT/MOV EXEC (can overwrite an in-progress executee). Read =
   instruction currently addressed by PC.
+  - A forced instruction executes with whatever PINCTRL/EXECCTRL is
+    currently programmed — register writes take effect immediately, even
+    while the SM is halted — and **OUT_STICKY applies to forced SET pin
+    writes too**, re-asserting the most recent pin write on later cycles
+    (sdk `pio_sm_set_pins*`/`pio_sm_set_pindirs*`, `pio.c:224-393`, which
+    clear OUT_STICKY around the forced SET — sdk N5).
 - `SMx_PINCTRL`: 31:29 SIDESET_COUNT (0–5, includes enable bit), 28:26
   SET_COUNT (0–5, reset 5), 25:20 OUT_COUNT (0–32), 19:15 IN_BASE, 14:10
   SIDESET_BASE, 9:5 SET_BASE, 4:0 OUT_BASE. All pin ranges wrap after
@@ -506,12 +556,20 @@ stall.
 - Input mapping: IN data bus = GPIO inputs right-rotated by IN_BASE (LSB =
   IN_BASE pin, wrap after 31). `SHIFTCTRL.IN_COUNT` masks pins above the
   count to zero on IN PINS / WAIT PIN / MOV x,PINS (0 = 32 / unmasked).
-  WAIT GPIO uses absolute numbers, not the rotated bus.
+  WAIT GPIO uses absolute numbers **within the SM's 32-pin GPIOBASE window**
+  (window base 0 or 16 + index), not the rotated IN bus and not
+  chip-absolute numbers (sdk E1: `pio.c:159-167` rewrites WAIT indices when
+  GPIOBASE=16).
 - 2-FF input synchronizer per GPIO (two cycles latency); per-GPIO bypass
   via `INPUT_SYNC_BYPASS` at the user's risk.
 - pioasm evidence for the RP2350 input bank structure: absolute-GPIO
   references in one program must all fall in a single 32-pin bank
   (0–31 or 16–47) (`used_gpio_ranges`, `pio_assembler.cpp:404-420`).
+  Sharpened by the SDK: the two legal windows are exactly 0–31 and 16–47 —
+  use of pins 0–15 is incompatible with GPIOBASE=16 and of pins 32–47 with
+  GPIOBASE=0 (`pio.c:is_gpio_compatible`, 107-113 — sdk N3); GPIOBASE may
+  only be changed while no programs are loaded, values 0 or 16 only
+  (`pio.c:pio_set_gpio_base_unsafe` — sdk N4).
 - Constant-0/1 GPIO output override is a pads/QOI-level feature outside
   Chapter 11; PIO-side observation via DBG_PADOUT/DBG_PADOE.
 
@@ -539,11 +597,19 @@ New instruction features:
 - WAIT source 11 (JMPPIN), offset 0–3, independent of IN mapping.
 - MOV destination PINDIRS (RP2040: not supported).
 - MOV source STATUS can select SM IRQ flags (STATUS_SEL=2, with
-  PREV/NEXT).
+  PREV/NEXT). **Field relocation:** on RP2040 `STATUS_SEL` is **1 bit at
+  EXECCTRL bit 4** (TXLEVEL/RXLEVEL only) and `STATUS_N` is **bits 3:0**;
+  RP2350 moves STATUS_SEL to bits 6:5 and widens STATUS_N to 4:0 (RDS §3.7
+  Table 382 vs DS §11.7; xcheck-rp2040 §3.1). Do not carry RP2040-derived
+  EXECCTRL bit constants over.
 - IRQ/WAIT/STATUS cross-PIO indexing (PREV/NEXT IdxModes); cross-PIO IRQs
-  visible next cycle, no penalty.
-- MOV put/get encodings in the class-0x4 space (RP2040 treats nonzero
-  arg2 there as undefined/reserved).
+  visible next cycle, no penalty. (RP2040 uses only bit 4 as a single
+  relative bit; RP2350 generalises bits 4:3 into the 2-bit IdxMode — RDS
+  §3.4.9.)
+- MOV put/get encodings in the class-0x4 space (RP2040 leaves bits 4:0
+  fixed at 0 for PUSH/PULL with no alternative meaning defined — nonzero
+  arg2 is **unassigned** there; "reserved" is a pioasm-side inference,
+  `pio_disassembler.cpp:89-118`; xcheck-rp2040 §3.2).
 
 Security: non-secure PIOs observe only non-secure GPIOs (secure GPIO reads
 0); cross-PIO links severed across security boundaries.
@@ -556,7 +622,13 @@ latency reduced by one cycle.
 Reserved/undefined encodings the RTL must treat explicitly: IN sources
 100/101; SET dsts 011/101/110/111; MOV op 11; MOV src 100; IRQ modifier 3;
 WAIT JMPPIN index > 3 (arg2[4:2] ≠ 0); PUSH/PULL arg2 ≠ 0 other than the
-FIFO-aux forms; FIFO-aux with IdxI=0 and Index ≠ 0.
+FIFO-aux forms; FIFO-aux with IdxI=0 and Index ≠ 0; STATUS_N > FIFO depth
+for STATUS_SEL TXLEVEL/RXLEVEL (sdk `regs/pio.h`, N7).
+
+Tool quirk (not a rule change): the SDK's `pio_encode_wait_jmppin`
+asserts `offset <= 4`, one more than the documented 0–3 (sdk E4,
+`H/pio_instr.h:332`). RTL keeps 0–3 valid / other encodings reserved per
+the datasheet and pioasm; the SDK bound appears to be an off-by-one.
 
 ## 14. Open questions (cross-check results)
 
@@ -592,17 +664,20 @@ Each item lists both sources' claims and its resolution status.
   mapped onto the datasheet bit positions; the datasheet's "b4=1, b3=IdxI,
   b2=0" matches pioasm's `0x10 | (idx ? 8 | idx&3 : 0)`.
 
-### 14.3 WAIT IRQ index field split — **RESOLVED (rule), wording ambiguity noted**
+### 14.3 WAIT IRQ index field split — **RESOLVED (rule), wording ambiguity noted; RDS-supported**
 
 - Datasheet §11.4.3.2 says the IRQ index is decoded "down from the two
   MSBs" of the 5-bit field; the WAIT encoding table shows Index as b4:0
   with Source at b6:5 — two slightly different presentations.
 - pioasm encodes `wait irq` as arg2 = irq_index | (irq_type << 3), i.e.
   b4:3 = mode, b2:0 = index — identical to the IRQ instruction.
+- RP2040 datasheet §3.4.3.2 states the shared-decode rule explicitly:
+  "The flag index is decoded in the same way as the IRQ index field" (one
+  MSB on RP2040, bits 4:3 as IdxMode on RP2350).
 - **Resolution:** effective rule = b4:3 IdxMode, b2:0 flag index (same as
-  IRQ instruction), confirmed by pioasm's encoder and disassembler. The
-  datasheet's "two MSBs of the 5-bit field" is the same rule in different
-  words; no behavioural discrepancy.
+  IRQ instruction), confirmed by pioasm's encoder/disassembler and by both
+  datasheet generations. The datasheet's "two MSBs of the 5-bit field" is
+  the same rule in different words; no behavioural discrepancy.
 
 ### 14.4 Autopull OUT-cycle stall boundary — **OPEN (for cycle contract)**
 
@@ -613,23 +688,36 @@ Each item lists both sources' claims and its resolution status.
   threshold was already reached **at the start of the cycle** (refill
   instead of shift; else shift, then refill if threshold now reached).
 - pioasm has no cycle-timing information.
+- RP2040 datasheet §3.5.4.2 contains the **identical pseudocode
+  verbatim**, including the "cannot fill an empty OSR and 'OUT' it on the
+  same cycle, due to the long logic path this would create" rationale, and
+  §3.2.4 the same ambiguous one-line summary — dual-generation
+  confirmation of the §11.5.4.2 reading (xcheck-rp2040 §4). pico-examples
+  additionally relies on the cycle-level ordering of `pull ifempty` +
+  `jmp !osre` (spi_*_cs "time-of-check race" comment — §15).
 - **Status:** adopt the §11.5.4.2 rule (stall only if threshold already
-  reached at cycle start and refill impossible); the precise
-  cycle-boundary contract is to be pinned in `docs/cycle-contract.md`
-  (Phase 1 KANBAN item).
+  reached at cycle start and refill impossible); no remaining textual
+  ambiguity, but the precise cycle-boundary contract is to be pinned in
+  `docs/cycle-contract.md` (Phase 1 KANBAN item). Still OPEN.
 
-### 14.5 JMP `x--`/`y--` decrement condition — **RESOLVED (datasheet rule)**
+### 14.5 JMP `x--`/`y--` decrement condition — **RESOLVED (datasheet rule; RDS-reconfirmed)**
 
 - Datasheet §11.4.2: "`X--`/`Y--` always decrement; branch decided on the
   pre-decrement value."
 - pioasm research doc phrased it as "decrement occurs when the condition
   is true" / "on taken-condition evaluation".
+- RP2040 datasheet §3.4.2.2 gives the clearest wording of any source:
+  "The decrement is not conditional on the current value of the scratch
+  register. The branch is conditioned on the initial value of the
+  register, i.e. before the decrement took place."
 - **Resolution:** the datasheet is primary and explicit: decrement always
   happens (taken or not); the branch tests the pre-decrement value. The
   two coincide whenever the instruction is executed; the difference only
   matters for a not-taken `x--` (X≠0 is the taken case; a not-taken `x--`
   means X==0, decrementing 0 wraps to 0xFFFFFFFF — datasheet says this
   happens). RTL: unconditional decrement, test pre-decrement value.
+  pico-examples exercise this heavily (addition, blink, hub75,
+  quadrature's "JMP Y-- to the next address is a pure decrement").
 
 ### 14.6 `in null` / `out null` shifting — **RESOLVED (datasheet), note kept**
 
@@ -638,15 +726,19 @@ special casing in pioasm; datasheet semantics mean the ISR/OSR and its
 counter still shift (`OUT NULL 32` is the documented way to discard the
 OSR). RTL must implement NULL as shift-but-discard.
 
-### 14.7 Non-blocking PULL on empty FIFO and the OSR counter — **RESOLVED by implication**
+### 14.7 Non-blocking PULL on empty FIFO and the OSR counter — **RESOLVED, now explicit (RDS §3.5.4.2)**
 
 - Datasheet: non-blocking PULL on empty FIFO behaves as `MOV OSR, X`, and
   separately MOV-to-OSR clears the OSR shift counter; the datasheet does
   not explicitly restate the counter clear for this case.
-- **Resolution:** the RTL should clear the OSR shift counter (MOV OSR
-  semantics apply). Flagged as an inference, not verbatim datasheet text.
+- RP2040 datasheet §3.5.4.2's non-OUT-cycle pseudocode opens with
+  `if MOV or PULL: osr count = 0` — *any* PULL (and any MOV writing OSR)
+  clears the OSR counter. Upgraded from inference to confirmed
+  (xcheck-rp2040 §4). The pwm example in pico-examples is built directly
+  on the `MOV OSR,X` fallback.
+- **Resolution:** the RTL clears the OSR shift counter. Confirmed.
 
-### 14.8 SIDE_EN with SIDESET_COUNT edge values — **OPEN**
+### 14.8 SIDE_EN with SIDESET_COUNT edge values — **RESOLVED (RDS + SDK)**
 
 - Datasheet does not specify the exact interaction of SIDE_EN=1 with
   SIDESET_COUNT=0 or 1, nor the bit-level layout beyond "MSBs of the
@@ -654,18 +746,72 @@ OSR). RTL must implement NULL as shift-but-discard.
 - pioasm confirms the layout (enable at bit 4 when `opt`; data shifted to
   the top; with enable=0 all 5 bits are delay) but cannot answer
   SIDESET_COUNT=0 with SIDE_EN=1 (nonsensical configuration).
-- **Status:** RTL should define SIDESET_COUNT=0 as "no side-set" and
-  ignore SIDE_EN; to be confirmed against silicon or the cycle contract.
+- RP2040 datasheet §3.5.1: "every instruction … will perform a side-set,
+  if SIDESET_COUNT is nonzero" and "if [set to] 0, no side-set will take
+  place" — SIDESET_COUNT=0 means no side-set regardless of SIDE_EN. The
+  SDK additionally forbids the combination outright
+  (`sm_config_set_sideset`: `!optional || bit_count >= 1`).
+- **Resolution:** RTL defines SIDESET_COUNT=0 as "no side-set" and ignores
+  SIDE_EN — now datasheet-backed, not just a convention.
 
-### 14.9 RP2040 carry-over text in DBG_PADOUT/DBG_PADOE — noted
+### 14.9 RP2040 carry-over text in DBG_PADOUT/DBG_PADOE — **noted, origin confirmed**
 
 Datasheet notes for DBG_PADOUT/PADOE reference RP2040's 30 GPIOs for the
-MSBs being 0; on RP2350 the window is 32 bits per GPIOBASE. Treat as
-carry-over text; RP2350 rule: 32-bit window, bits above the configured
-bank read 0.
+MSBs being 0; on RP2350 the window is 32 bits per GPIOBASE. The RP2040
+datasheet (RDS §3.7 Tables 377/378) contains the identical sentence —
+confirming the RP2350 note is carry-over text. The RP2350 SDK header
+reproduces it too (sdk §10 of xcheck-picosdk). RP2350 rule: 32-bit
+window, bits above the configured bank read 0.
 
 ### 14.10 STATUS_N encoding width — minor, resolved
 
 DS Table 996 gives STATUS_N encodings 0x08+n / 0x10+n for PREV/NEXT IRQ
 status; pioasm `.mov_status irq` encodes N_final = param*8 + irq
 (`pio_assembler.cpp:182-191`). Consistent; documented in §3.6.
+
+## 15. Conformance-test observations (pico-examples)
+
+From `docs/xcheck-picoexamples.md` — constructs the examples rely on that
+are under-specified in the datasheet/pioasm and therefore feed the future
+`docs/cycle-contract.md`. No contradictions with §§1–13 were found.
+
+- **IN ISR / IN OSR rotate semantics** (§3.3 note added): `in isr, n`
+  rotates ISR (direction per IN_SHIFTDIR) and the ISR counter still
+  advances; `in osr, n` leaves the OSR shift counter untouched.
+- **MOV into ISR/OSR never triggers autopush/autopull** (§3.6 note added):
+  onewire `mov isr, pins` "avoids autopush"; quadrature_encoder
+  `mov isr,y` + `push noblock`.
+- **Side-set during FIFO stalls** (§4 note added): ws2812, spi_cpha0,
+  uart_tx all stall (autopull-OUT / blocking PULL) while side-set holds
+  the line — confirms side-set-on-first-cycle for FIFO-induced stalls,
+  not only WAIT.
+- **`pull ifempty` + `jmp !osre` cycle race** (spi_*_cs): the examples use
+  IfEmpty as a time-of-check fence; whether a `pull ifempty` consumes a
+  word when the counter has reached threshold even though OSR was just
+  refilled by autopull is exactly the §14.4 boundary — pin in the cycle
+  contract.
+- **Non-blocking PUSH still clears ISR and resets the counter every
+  iteration** (quadrature_encoder "drain then read one more" protocol) —
+  validates §3.5 Block=0 semantics; data loss is expected/benign.
+- **Instruction-memory patch visibility** (hub75_data_rgb888 patches
+  INSTR_MEM while the SM runs; i2c injects instructions via OUT EXEC):
+  when is a patched word observed by a running SM (expected: next fetch,
+  no invalidation — 1-write/4-read register file)? Cheap to pin in the
+  cycle contract.
+- **Forced-instruction delay bits** (§7/§11): manchester_rx ORs delay bits
+  into a forced WAIT via SMx_INSTR even though forced instructions ignore
+  the delay field — cosmetic on silicon; worth a test to confirm the RTL
+  ignores them. Forced WAIT while SM_ENABLE=0 is the documented "arming"
+  idiom (logic_analyser), depending on the EXEC_STALLED latch.
+- **Input-synchroniser sampling skew** (clocked_input): data sampled one
+  sysclk after the edge, recommend input clk < sys/6; the only concrete
+  numbers for SM-clock-vs-sysclk skew — relevant to modelling
+  INPUT_SYNC_BYPASS (spi examples bypass on MISO).
+- **Narrow FIFO accesses** (i2c halfword, st7789 byte, uart_rx byte
+  reads): IO-fabric/DREQ behaviour outside Chapter 11 — out of scope for
+  the RTL except that FIFO read/write widths must not block on the full
+  32-bit word.
+- **RP2350 coverage caveat:** none of the examples exercise RP2350-only
+  instruction features (MOV put/get, WAIT JMPPIN, MOV PINDIRS dst,
+  IN_COUNT, PREV/NEXT IRQ); §12 conformance must come from pio-sdk tests
+  and datasheet pseudocode.

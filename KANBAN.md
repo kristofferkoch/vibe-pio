@@ -19,11 +19,6 @@ deletes it from this file. Loose ideas must NOT be added here — put them in
       shift-out/shift-in, side-set vs delay ordering, stall behaviour per
       instruction (document as a "cycle contract" in `docs/cycle-contract.md`;
       open spec ambiguities are collected in `docs/pio-spec.md` §14).
-- [ ] Cross-reference the spec against additional sources beyond
-      datasheet+pioasm: pico-sdk C SDK (`hardware/pio` driver + RP2350
-      register headers), official pico-examples PIO programs, and the
-      RP2040 datasheet for delta-checking. Record findings in
-      `docs/pio-spec.md` (new §15) and `docs/spec-sources.md`.
 - [ ] Give every load-bearing fact in `docs/pio-spec.md` a stable fact ID
       (e.g. `SPEC-11.5.1-a`) so formal assertions, RTL comments, and tests
       can cite facts directly; add a convention note to AGENTS.md.
@@ -58,6 +53,9 @@ deletes it from this file. Loose ideas must NOT be added here — put them in
 
 ## Testbenches (sim/)
 
+- [ ] Ingest official pico-examples PIO programs (ws2812, spi, uart, i2c,
+      etc.) into the test suite as conformance tests, with expected
+      waveforms derived from the example documentation.
 - [ ] Smoke testbench running a hand-written blink program end-to-end.
 - [ ] Per-instruction directed tests mirroring the RP2350 datasheet examples
       (e.g. ws2812, spi, uart snippets).

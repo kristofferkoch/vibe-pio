@@ -1,7 +1,8 @@
 # Specification sources
 
 Provenance record for the specifications used to build this project.
-(This file covers the datasheet and the pioasm assembler sources.)
+(Covers the datasheet, the pioasm assembler sources, and the three
+cross-check inputs merged into `docs/pio-spec.md`.)
 
 ## RP2350 datasheet
 
@@ -35,3 +36,42 @@ which is what was extracted here.
 PIO content extracted into `docs/pio-spec-pioasm.md` (source files:
 `pio_assembler.cpp`, `pio_types.h`, `pio_enums.h`, `pio_disassembler.cpp`,
 `parser.yy` under `tools/pioasm/`).
+
+## Cross-check inputs (merged into docs/pio-spec.md 2026-08-23)
+
+### pico-sdk (C SDK register headers + hardware_pio driver)
+
+| Field | Value |
+|-------|-------|
+| URL | https://github.com/raspberrypi/pico-sdk |
+| Commit (clone HEAD) | `98a542c1a62fb549ffb5d66a3e5892b06276b670` ("SDK 2.3.0 Release", 2026-07-03) |
+| Cloned | 2026-08-23, sparse (blobless, `--depth 1`), paths `src/rp2350/hardware_regs/...` and `src/rp2_common/hardware_pio/` |
+| Local checkout | `third_party/pico-sdk/` (git-ignored). Same commit as `third_party/pioasm-sdk/` — mutually consistent vintage |
+
+Report: `docs/xcheck-picosdk.md` (35 confirmations, 4 corrections/extensions
+E1–E4, 8 new facts N1–N8; cited in the spec as "sdk").
+
+### pico-examples
+
+| Field | Value |
+|-------|-------|
+| URL | https://github.com/raspberrypi/pico-examples |
+| Commit | `c81c855ffdedc825975a40ba357723a71358ddf0` (2026-07-03; cloned/verified 2026-08-23) |
+| Scope | all 26 `.pio` files (36 assembled programs) + PIO-using C examples |
+| Local checkout | `third_party/pico-examples/` (git-ignored, shallow clone) |
+
+Report: `docs/xcheck-picoexamples.md` (39-entry conformance-test
+catalogue; observations merged into spec §15; cited as "examples").
+
+### RP2040 datasheet
+
+| Field | Value |
+|-------|-------|
+| URL | https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf |
+| Downloaded | 2026-08-23 |
+| Size | 5,301,205 bytes |
+| SHA-256 | `be56fbb75ba0ae9e26558a73c93ac3e75c2ad4e6878d3b6703de2a76d886ea8c` |
+
+Report: `docs/xcheck-rp2040.md` (delta-check vs Chapter 3; cited in the
+spec as "RDS §x.y"). One §12 addition (STATUS_SEL field relocation) and
+several §14 resolutions merged.
