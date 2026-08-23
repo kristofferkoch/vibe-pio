@@ -77,6 +77,11 @@ Decided (confirmed by owner):
   rather than one giant block, to keep induction proofs modular.
 - No `generate` loops around the 4 SMs — instantiate 4 named instances
   (`u_sm0..u_sm3`) so waveforms and solver traces stay readable.
+- Assertions: immediate assertions only — yosys does not support SVA
+  `disable iff` in any version, and iverilog's SVA support is thin.
+  Reset-guarded checks: `if (!rst) assert(...);` inside `always_ff`;
+  combinational invariants in `always_comb`; initial-state exclusions
+  via `$initstate`/guarded `$past`.
 
 ## Architecture (Phase 2 draft)
 
