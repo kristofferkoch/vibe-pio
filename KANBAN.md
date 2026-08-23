@@ -11,10 +11,6 @@ deletes it from this file. Loose ideas must NOT be added here — put them in
 
 ## Phase 1 — Specification acquisition & cross-check
 
-- [ ] Decide verification semantics: cycle-boundary conventions for
-      shift-out/shift-in, side-set vs delay ordering, stall behaviour per
-      instruction (document as a "cycle contract" in `docs/cycle-contract.md`;
-      open spec ambiguities are collected in `docs/pio-spec.md` §14).
 - [ ] Give every load-bearing fact in `docs/pio-spec.md` a stable fact ID
       (e.g. `SPEC-11.5.1-a`) so formal assertions, RTL comments, and tests
       can cite facts directly; add a convention note to AGENTS.md.
