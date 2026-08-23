@@ -3,7 +3,17 @@
 SIM_SRC := $(wildcard rtl/*.v)
 SIM_TOP ?= pio_block
 
-.PHONY: sim syn formal clean
+.PHONY: sim syn formal toolcheck clean
+
+toolcheck:
+	@echo "=== toolchain versions ==="
+	@iverilog -V 2>&1 | head -1
+	@yosys -V
+	@sby --version
+	@z3 --version
+	@boolector --version | tail -1
+	@echo "btormc $$(btormc --version | tail -1)"
+	@python3 --version
 
 sim:
 	@echo "TODO: iverilog simulation (see KANBAN 'Toolchain bootstrap')"

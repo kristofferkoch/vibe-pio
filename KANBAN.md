@@ -6,12 +6,8 @@ deletes it from this file. Loose ideas must NOT be added here — put them in
 
 ## Phase 0 — Reproducible toolchain
 
-- [ ] Container (`container/Dockerfile`, podman/docker): lightweight image with
-      iverilog (≥12), yosys, SymbiYosys (sby), an SMT solver (z3 and/or
-      boolector), plus make and python3; pin versions, add a
-      `make toolcheck` target that prints tool versions inside the container,
-      and record usage in `docs/toolchain.md`.
-- [ ] Verify `make sim` / `syn` / `formal` skeletons run inside the container.
+- [ ] Verify `make sim` / `syn` / `formal` skeletons run inside the container
+      (image itself is built; see `docs/toolchain.md`).
 
 ## Phase 1 — Specification acquisition & cross-check
 
