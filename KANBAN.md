@@ -21,22 +21,6 @@ Card conventions (all RTL cards):
 
 ## Implementation (was "RTL"; depends on Phase 1 & 2)
 
-### C0 — Sim infrastructure (+ Phase 0 leftover)
-
-- **Scope**: `sim/tb_common.sv` (clk/rst generation tasks, `do_reset`,
-  tick-wait helpers, `check32`/`check1` scoreboard macros printing
-  PASS/FAIL with source line); Makefile `sim` target made real
-  (compile-and-run each `sim/tb_*.sv`, aggregate pass/fail, list of TBs
-  discovered by glob). Fold in Phase 0 leftover: verify `make sim` /
-  `syn` / `formal` skeletons actually run in the container
-  (`docs/toolchain.md`); fix Makefile bugs found.
-- **Grounding**: CC-1 (reset assertion/release modelled by tb tasks).
-- **Deps**: none.
-- **Acceptance**: a trivial canary TB (`sim/tb_smoke_canary.sv` may be
-  deleted with the card) passes via `make sim` inside the container;
-  `make syn` and `make formal` skeletons execute without Makefile errors
-  (empty results OK). No formal properties.
-
 ### C1 — `rtl/pio_instr_mem.sv`
 
 - **Scope**: 32×16 register file, 1 synchronous write port
