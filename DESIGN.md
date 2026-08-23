@@ -55,7 +55,7 @@ Decided:
   read with registered output to keep yosys memory inference clean and
   the symbolic-instruction-memory swap trivial.
 
-Proposed (confirm or amend before RTL starts):
+Decided (confirmed by owner):
 
 - The SM clock divider is modeled as `clk`-rate logic producing a
   one-cycle `sm_tick` strobe per SM; all SM state advances only on
