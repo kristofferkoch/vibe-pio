@@ -12,3 +12,16 @@ Conventions for AI agents (and subagents) working in this repo.
 - Code goes in the SystemVerilog subset common to iverilog (`-g2012`) and
   yosys (`read_verilog -sv`): `always_ff`/`always_comb`, no interfaces or
   classes. See `DESIGN.md` before structural changes.
+
+## Fact and clause citations
+
+- Spec facts in `docs/pio-spec.md` carry stable IDs `SPEC-<section>-<n>`
+  (e.g. `SPEC-3.2-4`); cycle-level timing clauses in
+  `docs/cycle-contract.md` are cited as `CC-<n>` (e.g. `CC-7`).
+- RTL comments, formal assertions, and tests should cite the fact or
+  clause they implement/verify, e.g.
+  `// SPEC-3.4-11: autopull stall at cycle start` or
+  `assert property (...) ##[...] $info("CC-7");`.
+- New facts always take the **next free ID in their (sub-)section** —
+  never reuse or renumber an existing ID, so citations stay stable across
+  insertions. The scheme is documented at the top of `docs/pio-spec.md`.

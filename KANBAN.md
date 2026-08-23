@@ -9,12 +9,6 @@ deletes it from this file. Loose ideas must NOT be added here — put them in
 - [ ] Verify `make sim` / `syn` / `formal` skeletons run inside the container
       (image itself is built; see `docs/toolchain.md`).
 
-## Phase 1 — Specification acquisition & cross-check
-
-- [ ] Give every load-bearing fact in `docs/pio-spec.md` a stable fact ID
-      (e.g. `SPEC-11.5.1-a`) so formal assertions, RTL comments, and tests
-      can cite facts directly; add a convention note to AGENTS.md.
-
 ## Phase 2 — Architecture draft
 
 - [ ] Draft module architecture in `DESIGN.md` from the verified spec:
