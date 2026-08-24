@@ -219,6 +219,24 @@ flowchart TB
   any reg write followed by an SM tick ≥ e+1 observes the new value
   (CC-33, CC-30).
 
+  Assembly notes (C10, as built):
+
+  - The INTR composition ([SPEC-7-12]) is exported on `intr[15:0]`
+    (flags 15:8, TXNFULL 7:4, RXNEMPTY 3:0); INTE/INTF/INTS stay
+    non-goaled stubs. CTRL's RP2350 NEXTPREV_* / PREV-NEXT mask bits
+    ([SPEC-7-5]) and GPIOBASE ([SPEC-7-11]) are undecoded here — they
+    are pio_top's fan-out/windowing; reads return 0.
+  - `pio_sm` grew pure-wiring exports for this card: the four FSTAT
+    status bits, the raw SMx_CLKDIV/EXECCTRL/SHIFTCTRL/PINCTRL words
+    (RW readback), the gpio-mux window config (IN_BASE/IN_COUNT/
+    JMP_PIN — u_regs stays the single owner), and `dbg_force_tick`
+    re-exported per SM. pio_block additionally exports `dbg_sm_en` /
+    `dbg_sm_pc` / `dbg_force` so the C10 formal invariants are
+    port-observable equations (C7/C9 rationale).
+  - SMx_EXECCTRL reads overlay EXEC_STALLED on bit 31 ([SPEC-7-15]);
+    the stored bit is not readable. FSTAT/FDEBUG/FLEVEL use the RP2350
+    nibble layouts ([SPEC-7-29]).
+
 #### `pio_instr_mem`
 
 - **Purpose.** 32 × 16-bit instruction register file, 1 write port
@@ -414,13 +432,16 @@ flowchart TB
    RTL chooses the no-op + sticky-flag-free behaviour and asserts the
    mode constraint in formal instead of implementing undefinedness.
    Autopush is asserted-incompatible with aux modes ([SPEC-3.7-6]).
-3. **Config register file.** One flat reg bus per block: `reg_addr[7:0]`,
+3. **Config register file.** One flat reg bus per block: `reg_addr[8:0]`,
    `reg_wdata[31:0]`, `reg_rdata[31:0]`, `reg_write`, `reg_read` strobes,
    one-clk retire, no wait states. `pio_block` decodes block-level
    registers locally and forwards per-SM addresses as a per-SM decoded
    subordinate bus (SMx_* subranges). This mirrors the datasheet map
    ([SPEC-7-x]) 1:1 so datasheet addresses stay meaningful, while the
-   actual bus protocol (APB/TL-UL) stays a non-goal.
+   actual bus protocol (APB/TL-UL) stays a non-goal. *(Width note, C10:
+   9 bits — the RP2350 map runs to 0x184; at 8 bits SM3 (0x110+), the
+   PUTGET window, GPIOBASE and the IRQ0/1 registers would alias onto
+   TXF/INSTR_MEM addresses.)*
 4. **IRQ routing.** Within a block: SMs see only the *registered* flags
    (CC-37 structural rule). Between blocks: `pio_top` instantiates relay
    registers — each block receives `irq_prev_r`/`irq_next_r` equal to the

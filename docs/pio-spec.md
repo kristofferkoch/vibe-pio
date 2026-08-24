@@ -485,6 +485,17 @@ table omits).
   force does not affect internal state).
 - [SPEC-7-13] `RXFx_PUTGET0..3` (0x128+): random system access to RX FIFO storage in
   PUT/GET modes (§3.7).
+- [SPEC-7-28] `TXF0..3` (0x010..0x01c, WO): system TX FIFO push ports (write-on-full
+  drops + sets TXOVER, §6). `RXF0..3` (0x020..0x02c, RO): system RX FIFO reads; a
+  read pops (read-on-empty returns undefined + sets RXUNDER) (sdk `regs/pio.h`;
+  DS §11.7).
+- [SPEC-7-29] Status-register layouts, bit i of each nibble = SM i (sdk `regs/pio.h`):
+  `FSTAT` (0x004, RO; reset 0x0f00_0f00): TXEMPTY 27:24, TXFULL 19:16, RXEMPTY 11:8,
+  RXFULL 3:0. `FDEBUG` (0x008, W1C): TXSTALL 27:24, TXOVER 19:16, RXUNDER 11:8,
+  RXSTALL 3:0. `FLEVEL` (0x00c, RO): TX0 3:0, RX0 7:4, TX1 11:8, RX1 15:12, TX2
+  19:16, RX2 23:20, TX3 27:24, RX3 31:28 (nibble = live level, depth per §6).
+- [SPEC-7-30] `RXFx_PUTGETy` address stride (sdk `regs/pio.h`): 0x128 + 0x10·x + 4·y
+  (x = SM 0..3, y = storage register 0..3), ending at 0x164 before GPIOBASE.
 
 ### Per-SM (stride 0x18 from 0x0c8)
 

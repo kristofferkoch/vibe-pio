@@ -117,6 +117,23 @@ module pio_sm #(
     output logic [3:0]  tx_level,        // FLEVEL TX nibble (SPEC-6-6)
     output logic [3:0]  rx_level,        // FLEVEL RX nibble
     output logic        exec_stalled,    // SPEC-7-15
+    // FSTAT status bits (SPEC-7-29) — re-exported from u_fifo so the
+    // block read mux needs no level/depth model of its own.
+    output logic        tx_full,         // FSTAT.TXFULL bit
+    output logic        tx_empty,        // FSTAT.TXEMPTY bit
+    output logic        rx_full,         // FSTAT.RXFULL bit
+    output logic        rx_empty,        // FSTAT.RXEMPTY bit
+    // Raw config readbacks (SMx_CLKDIV/EXECCTRL/SHIFTCTRL/PINCTRL are RW,
+    // SPEC-7-14..26) — re-exported from u_regs.
+    output logic [31:0] clkdiv_q,
+    output logic [31:0] execctrl_q,
+    output logic [31:0] shiftctrl_q,
+    output logic [31:0] pinctrl_q,
+    // GPIO-mux window config this SM owns (C7 consumer): IN_BASE/
+    // IN_COUNT come from PINCTRL/SHIFTCTRL, JMP_PIN from EXECCTRL.
+    output logic [4:0]  cfg_in_base,     // SPEC-10-3 rotate base
+    output logic [4:0]  cfg_in_count,    // SPEC-7-21 IN_COUNT, 0 = 32
+    output logic [4:0]  cfg_jmp_pin,     // SPEC-7-16 JMP_PIN index
 
     // Verification readbacks (formal + TB; pio_block leaves dangling).
     output logic        dbg_sm_tick,
@@ -210,7 +227,11 @@ module pio_sm #(
       .in_base         (in_base),
       .sideset_base    (sideset_base),
       .set_base        (set_base),
-      .out_base        (out_base)
+      .out_base        (out_base),
+      .clkdiv_q        (clkdiv_q),
+      .execctrl_q      (execctrl_q),
+      .shiftctrl_q     (shiftctrl_q),
+      .pinctrl_q       (pinctrl_q)
   );
 
   // -----------------------------------------------------------------------
@@ -369,7 +390,8 @@ module pio_sm #(
   logic [31:0] rx_push_data, aux_put_data, tx_head_data, aux_get_data;
   logic [1:0]  aux_put_idx, aux_get_idx;
   logic        tx_stall_req, rx_stall_req;
-  logic        rx_full, rx_empty, tx_full, tx_empty;
+  // rx_full/rx_empty/tx_full/tx_empty are the FSTAT readback ports
+  // (SPEC-7-29), driven by u_fifo below.
 
   pio_sm_fifo u_fifo (
       .clk           (clk),
@@ -555,6 +577,10 @@ module pio_sm #(
   // Config pass-through and verification readbacks.
   // -----------------------------------------------------------------------
   assign out_sticky = out_sticky_cfg;   // C7 re-assert enable (SPEC-7-18)
+
+  assign cfg_in_base  = in_base;        // C7 window config (SPEC-10-3)
+  assign cfg_in_count = in_mask_count;  // SPEC-7-21 raw, 0 = 32
+  assign cfg_jmp_pin  = jmp_pin_cfg;    // SPEC-7-16
 
   assign dbg_sm_tick        = sm_tick;
   assign dbg_force_tick     = force_tick;

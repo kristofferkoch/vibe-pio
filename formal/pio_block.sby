@@ -1,0 +1,76 @@
+# Formal properties for pio_block (KANBAN C10) — block-assembly
+# integration, per the card's acceptance:
+#   * reg write @e observed by SM tick >= e+1 — the CC-33 imem fence
+#     (bmc_static + prove_static on pio_block_fv_a / _ap) and the CC-30
+#     TXF-releases-stalled-PULL fence (bmc_pull + cover_pull on
+#     pio_block_fv_b, a live SM0 running `pull block; push block`);
+#   * INSTR_MEM write visible to the next fetch (a1/p1 read the fetch
+#     word itself, SMx_INSTR = imem[pc]);
+#   * flag path stays registered end-to-end (a2: IRQ readback equals a
+#     reference register updated only at edges, CC-37/CC-39).
+# prove scope (card: "prove optional — integration depth"): only the
+# static CC-33 equivalence runs as k-induction (prove_static — pinned
+# reads + no-back-to-back writes close the vacuity gap, see the fv_ap
+# header). fv_a's flag/ISB shadows and fv_b's live SM are BMC+cover:
+# their induction closure needs the per-module invariant sets C5/C6/C8
+# already proved; re-deriving them here would duplicate those proofs.
+# NB: files copied flat into src/ (distinct basenames).
+# Engines per the C9 note: btormc/boolector for bmc/prove (the real
+# FIFO memories make z3 case-split), smtbmc z3 for cover.
+
+[tasks]
+bmc_static
+cover_static
+prove_static
+bmc_pull
+cover_pull
+
+[options]
+bmc_static:   mode bmc
+bmc_static:   depth 18
+cover_static: mode cover
+cover_static: depth 18
+prove_static: mode prove
+prove_static: depth 8
+bmc_pull:     mode bmc
+bmc_pull:     depth 24
+cover_pull:   mode cover
+cover_pull:   depth 24
+
+[engines]
+bmc_static:   btor btormc
+cover_static: smtbmc z3
+prove_static: smtbmc boolector
+bmc_pull:     smtbmc boolector
+cover_pull:   smtbmc boolector
+
+[script]
+read -formal -sv pio_block.sv
+read -formal -sv pio_instr_mem.sv
+read -formal -sv pio_sm.sv
+read -formal -sv pio_sm_regs.sv
+read -formal -sv pio_sm_decoder.sv
+read -formal -sv pio_sm_exec.sv
+read -formal -sv pio_sm_shift.sv
+read -formal -sv pio_sm_fifo.sv
+read -formal -sv pio_irq_flags.sv
+read -formal -sv pio_gpio_mux.sv
+read -formal -sv pio_block_fv.sv
+bmc_static:   prep -top pio_block_fv_a
+cover_static: prep -top pio_block_fv_a
+prove_static: prep -top pio_block_fv_ap
+bmc_pull:     prep -top pio_block_fv_b
+cover_pull:   prep -top pio_block_fv_b
+
+[files]
+../rtl/pio_block.sv
+../rtl/pio_instr_mem.sv
+../rtl/pio_sm.sv
+../rtl/pio_sm_regs.sv
+../rtl/pio_sm_decoder.sv
+../rtl/pio_sm_exec.sv
+../rtl/pio_sm_shift.sv
+../rtl/pio_sm_fifo.sv
+../rtl/pio_irq_flags.sv
+../rtl/pio_gpio_mux.sv
+pio_block_fv.sv

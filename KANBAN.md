@@ -19,25 +19,6 @@ Card conventions (all RTL cards):
 - Full port lists live in DESIGN.md §Module descriptions — not duplicated
   here.
 
-## Implementation (was "RTL"; depends on Phase 1 & 2)
-
-### C10 — `rtl/pio_block.sv` (block assembly)
-
-- **Scope**: instantiate `u_imem` (C1), `u_sm0..u_sm3` (C9, no generate),
-  `u_irq` (C6), `u_gpio` (C7); flat reg-bus slave with local block-reg
-  decode (CTRL, FSTAT, FDEBUG, IRQ, IRQ_FORCE, INPUT_SYNC_BYPASS,
-  DBG_PADOUT/OE, INSTR_MEM, RXFx_PUTGET) + per-SM decoded forwarding;
-  datasheet reset defaults on every field.
-- **Grounding**: SPEC-1-2, SPEC-1-3, SPEC-7-1..13 (block-level subset);
-  CC-30, CC-33, CC-37 (block boundary ownership).
-- **Deps**: C1, C6, C7, C9.
-- **Acceptance**: directed TB: blink program end-to-end via reg bus
-  (program imem, configure SM, observe gpio_out); FLEVEL/FSTAT readback
-  after pushes/pulls; IRQ force + W1C over the bus. Formal (bmc, deep
-  enough for a few ticks; prove optional — integration depth): reg write
-  @e observed by SM tick ≥ e+1 (CC-33/CC-30); INSTR_MEM write visible to
-  next fetch; flag path stays registered end-to-end (CC-37).
-
 ## Later-level backlog (coarse by design — detail at launch)
 
 ### Testbenches (sim/)

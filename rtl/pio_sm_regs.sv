@@ -68,6 +68,14 @@ module pio_sm_regs (
     output logic [15:0] clkdiv_int,      // [31:16]
     output logic [7:0]  clkdiv_frac,     // [15:8]
 
+    // Raw register readbacks for the block reg bus (C10: SMx_CLKDIV/
+    // EXECCTRL/SHIFTCTRL/PINCTRL are RW — the datasheet map is
+    // byte-faithful). pio_sm re-exports them; single owner stays here.
+    output logic [31:0] clkdiv_q,
+    output logic [31:0] execctrl_q,
+    output logic [31:0] shiftctrl_q,
+    output logic [31:0] pinctrl_q,
+
     // Decoded EXECCTRL fields.
     output logic        side_en,         // [30]      SPEC-7-16
     output logic        side_pindir,     // [29]      SPEC-7-16
@@ -140,6 +148,10 @@ module pio_sm_regs (
   end
 
   // Field decode (SPEC-7-14..26 bit positions).
+  assign clkdiv_q       = clkdiv_r;
+  assign execctrl_q     = execctrl_r;
+  assign shiftctrl_q    = shiftctrl_r;
+  assign pinctrl_q      = pinctrl_r;
   assign clkdiv_int     = clkdiv_r[31:16];
   assign clkdiv_frac    = clkdiv_r[15:8];
 
