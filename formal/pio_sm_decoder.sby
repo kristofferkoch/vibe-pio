@@ -1,0 +1,31 @@
+# Formal properties for pio_sm_decoder (KANBAN C4).
+# Stateless DUT ⇒ BMC depth 1 + shallow k-induction prove (+cover) of the
+# SPEC-2/SPEC-4/SPEC-13 properties in formal/pio_sm_decoder_fv.sv
+# (module pio_sm_decoder_fv).
+# NB: files renamed on copy (distinct basenames) — sby copies [files]
+# flat into src/.
+
+[tasks]
+bmc
+prove
+cover
+
+[options]
+bmc:   mode bmc
+bmc:   depth 2
+prove: mode prove
+prove: depth 4
+cover: mode cover
+cover: depth 4
+
+[engines]
+smtbmc z3
+
+[script]
+read -formal -sv pio_sm_decoder.sv
+read -formal -sv pio_sm_decoder_fv.sv
+prep -top pio_sm_decoder_fv
+
+[files]
+../rtl/pio_sm_decoder.sv
+pio_sm_decoder_fv.sv

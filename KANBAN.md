@@ -21,26 +21,6 @@ Card conventions (all RTL cards):
 
 ## Implementation (was "RTL"; depends on Phase 1 & 2)
 
-### C4 — `rtl/pio_sm_decoder.sv`
-
-- **Scope**: pure combinational decode of the 16-bit word: field
-  extraction (delay/side-set split per SIDE_EN/SIDESET_COUNT), onehot
-  instruction-class strobes, JMP condition code, WAIT src/pol, IN/OUT
-  src/dst + bitcount-0⇒32, MOV src/dst/op, SET dst, PUSH/PULL
-  IfE/IfF/blk flags, IRQ Clr/Wait/idxmode/index; class-0x4 overload rule
-  (arg2[4] ⇒ PUT/GET, else PUSH/PULL, reserved ⇒ illegal output);
-  reserved encodings decoded to explicit no-op/illegal strobes.
-- **Grounding**: SPEC-2-1..18, SPEC-3.7-1/2, SPEC-14.2-1, SPEC-4-1..9
-  (delay/side-set field split), SPEC-13-1/2, SPEC-14.8-1.
-- **Deps**: none.
-- **Acceptance**: directed TB: decode of every master-encoding-table row
-  (SPEC §2 table) plus all 8 class opcodes; delay/ss field split at
-  SIDESET_COUNT 0..5 incl. SIDE_EN edge values. Formal: onehot of
-  class strobes over free (anyconst) 16-bit input; decode is a pure
-  function (assert against a reference truth table snippet in the
-  property file); illegal output iff reserved encoding per SPEC-13-1.
-  Stateless ⇒ BMC depth 1 + combinatorial `prove` suffices.
-
 ### C5 — `rtl/pio_sm_regs.sv`
 
 - **Scope**: per-SM config field bank (CLKDIV INT/FRAC, PINCTRL,
