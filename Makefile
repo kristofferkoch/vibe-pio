@@ -70,14 +70,12 @@ $(TB_LIST):
 	grep -E "^(PASS|FAIL|ERROR) |^TB (STATUS|RESULT)" $$out || true; \
 	exit 0
 
+# Composite modules (pio_sm and up) instantiate their submodules, so the
+# hierarchy check needs the whole rtl set in one yosys session.
 syn:
 	@if [ -z "$(RTL_SRC)" ]; then echo "syn: no rtl/*.sv sources yet"; else \
-		rc=0; \
-		for f in $(RTL_SRC); do \
-			echo "--- yosys hierarchy check: $$f"; \
-			yosys -q -p "read_verilog -sv $$f; hierarchy -check" || rc=1; \
-		done; \
-		exit $$rc; \
+		echo "--- yosys hierarchy check: all rtl/*.sv"; \
+		yosys -q -p "read_verilog -sv $(RTL_SRC); hierarchy -check; check" || exit 1; \
 	fi
 
 formal:

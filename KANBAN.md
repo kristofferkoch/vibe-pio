@@ -21,24 +21,6 @@ Card conventions (all RTL cards):
 
 ## Implementation (was "RTL"; depends on Phase 1 & 2)
 
-### C9 — `rtl/pio_sm.sv` (assembly)
-
-- **Scope**: instantiate `u_regs` (C5), `u_decoder` (C4), `u_exec` (C8),
-  `u_shift` (C2), `u_fifo` (C3); wire per DESIGN.md pio_sm diagram;
-  `SM_RESTART` clears only the SPEC-7-3 subset; per-SM reg decode inputs
-  from block; outputs to block (pin writes, irq req, FIFO system ports,
-  pc/flevel/exec_stalled readbacks).
-- **Grounding**: SPEC-1-3, SPEC-1-5, SPEC-7-3, SPEC-11-1; CC-1..CC-36
-  (integration of all module clauses).
-- **Deps**: C2, C3, C4, C5, C8.
-- **Acceptance**: directed TB per instruction class (datasheet snippets:
-  one JMP/WAIT/IN/OUT/PUSH/PULL/MOV/IRQ/SET program each, divisor 1,
-  cycle-by-cycle expected values); ws2812-side-set stall-persistence
-  micro-test (CC-5/CC-22). Formal (bmc + prove, divider assumed):
-  cross-module invariants — autopull refill never feeds a same-tick OUT
-  (CC-12 fence), autopush pushes post-shift ISR (CC-9), stall freeze of
-  shifter (CC-13 full-RX stall), onehot FSM inherited.
-
 ### C10 — `rtl/pio_block.sv` (block assembly)
 
 - **Scope**: instantiate `u_imem` (C1), `u_sm0..u_sm3` (C9, no generate),

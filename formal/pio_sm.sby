@@ -1,0 +1,53 @@
+# Formal properties for pio_sm (KANBAN C9) — assembly-level integration.
+# BMC + k-induction prove (+cover) of the cross-module invariants in
+# formal/pio_sm_fv.sv (module pio_sm_fv), instantiating the real pio_sm
+# (regs + decoder + exec + shift + fifo). The divider is assumed per the
+# card: CLKDIV writes are constrained idle so it runs at the reset
+# divisor 1 (CC-26), the schedule C5 proved independently. FIFO system
+# TX writes stay free (CC-12/CC-30 reachability); the rest of the sys
+# side is idle (C3/C10 own those boundaries).
+# NB: files copied flat into src/ (distinct basenames).
+# Engines: the real FIFO memories (2x8x32) make z3 case-split for tens
+# of minutes per bmc/prove step here (the C8 note, now with the real
+# pio_sm_fifo inside pio_sm); btormc/boolector treat them as arrays and
+# close steps in seconds. Cover keeps smtbmc z3 (btormc cover-trace
+# replay needs btorsim, not in the container image). Depth 12 for
+# bmc/prove — the properties are 0/1-step shapes and every cover fires
+# by step 7.
+
+[tasks]
+bmc
+prove
+cover
+
+[options]
+bmc:   mode bmc
+bmc:   depth 12
+prove: mode prove
+prove: depth 12
+cover: mode cover
+cover: depth 15
+
+[engines]
+bmc:   btor btormc
+cover: smtbmc z3
+prove: smtbmc boolector
+
+[script]
+read -formal -sv pio_sm.sv
+read -formal -sv pio_sm_regs.sv
+read -formal -sv pio_sm_decoder.sv
+read -formal -sv pio_sm_exec.sv
+read -formal -sv pio_sm_shift.sv
+read -formal -sv pio_sm_fifo.sv
+read -formal -sv pio_sm_fv.sv
+prep -top pio_sm_fv
+
+[files]
+../rtl/pio_sm.sv
+../rtl/pio_sm_regs.sv
+../rtl/pio_sm_decoder.sv
+../rtl/pio_sm_exec.sv
+../rtl/pio_sm_shift.sv
+../rtl/pio_sm_fifo.sv
+pio_sm_fv.sv

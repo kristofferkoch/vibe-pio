@@ -32,3 +32,11 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   code against (which OUT variants, which pins, interaction with
   SIDE_PINDIR/OUT_STICKY). C8 left both fields unimplemented and
   unconnected; decide before C10 wires the block reg bus.
+- Pin autopull semantics in FIFO aux modes: pioasm rejects autopush in
+  txput/txget/putget (SPEC-3.7-6) but permits *autopull* alongside any
+  aux config, and SPEC-6-4 says the TX FIFO stays "fully usable" there
+  — yet C8's u_exec scopes the autopull machinery to
+  {txrx,tx,txput,txget}, i.e. autopull is inert in putget. Surfaced by
+  the C9 integration FV (the CC-11 stall guard had to exclude
+  FM_PUTGET to match); unpinned by DS/docs either way, so kept as the
+  C8 contract. Decide before the C10 block proof pins FIFO behaviours.

@@ -264,6 +264,27 @@ flowchart TB
   resets PC via a forced JMP, sdk N2); EXEC latch and forced-instr latch
   share one register (CC-34/CC-35). Onehot FSM assertion target.
 
+  Assembly notes (C9, as built):
+
+  - The module is wiring plus two decode details: the FIFO-mode decode
+    (SPEC-6-2/6-3 — the aux bits clear/override the FJOIN joins) and
+    the tick strobe fanout.
+  - The shifter and FIFO datapaths are clock-enabled by
+    `sm_tick || force_tick` (CC-1: SM state advances on sm_tick *or*
+    the CC-35 force-tick), so a forced PULL/OUT/PUSH/IN moves the
+    datapath in its force clk. u_exec qualifies every op port by the
+    completing tick, so multi-clk forced stalls never double-shift.
+  - `gpio_seen[31:0]` is the required input bus (WAIT GPIO/JMPPIN and
+    JMP PIN index it by EXECCTRL.JMP_PIN inside u_exec); the
+    single-bit `jmp_pin` of the interface sketch above is subsumed by
+    it and pio_gpio_mux's per-SM `jmp_pin` output is a block-level
+    convenience.
+  - pio_sm exports a `dbg_*` readback bundle (tick strobes, FSM state,
+    exec/complete/class strobes, shifter state, autop decision/output
+    signals, FIFO mode + raw FJOIN bits). yosys cannot probe instance
+    internals from a formal wrapper, so the C9 integration properties
+    live on these ports; pio_block leaves them dangling.
+
 ##### `pio_sm_decoder`
 
 - **Purpose.** Pure combinational decode of the 16-bit word into fields
