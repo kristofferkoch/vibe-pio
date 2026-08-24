@@ -21,25 +21,6 @@ Card conventions (all RTL cards):
 
 ## Implementation (was "RTL"; depends on Phase 1 & 2)
 
-### C3 — `rtl/pio_sm_fifo.sv`
-
-- **Scope**: TX + RX 4-deep FIFOs with one shared RX storage array;
-  FJOIN_TX / FJOIN_RX joins (8-deep); FJOIN_RX_PUT/GET aux modes
-  (`aux_wr[idx,data]` / `aux_rd[idx]` port pair, mode input
-  txrx|tx|rx|txput|txget|putget redirecting RX addressing); FJOIN change
-  flushes; FDEBUG sticky flags (TXSTALL/RXSTALL/TXOVER/RXUNDER set-only
-  outputs). SM-side push/pop/level/full/empty; system-side TX write / RX
-  read at clk rate.
-- **Grounding**: SPEC-6-1..9, SPEC-3.7-3..7, SPEC-3.5-8, SPEC-7-13;
-  CC-19, CC-20, CC-21, CC-29, CC-30, CC-32.
-- **Deps**: none.
-- **Acceptance**: directed TB: fill/drain each mode, join depth checks,
-  PUT/GET random-access, flush-on-mode-change, sticky-flag set/clear.
-  Formal (bmc + prove): `level <= depth` per direction with mode-dependent
-  depth 0/4/8 (SPEC-6-1..4); no overflow/underflow pop/push; sticky flags
-  set-only until explicit clear; PUT/GET never assert stall (CC-21);
-  system-write@e visible to SM side from e+1 (CC-30).
-
 ### C4 — `rtl/pio_sm_decoder.sv`
 
 - **Scope**: pure combinational decode of the 16-bit word: field

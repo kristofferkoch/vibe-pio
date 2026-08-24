@@ -1,0 +1,40 @@
+# Formal properties for pio_sm_fifo (KANBAN C3).
+# BMC + k-induction prove (+cover) of the SPEC-6 / CC-21 / CC-30
+# properties in formal/pio_sm_fifo_fv.sv (module pio_sm_fifo_fv).
+# NB: files renamed on copy (distinct basenames) — sby copies [files]
+# flat into src/.
+
+[tasks]
+bmc
+prove
+cover
+
+[options]
+bmc:   mode bmc
+bmc:   depth 16
+prove: mode prove
+prove: depth 16
+cover: mode cover
+# Cover kept shallow on purpose: the two 8x32 storage arrays are ~512
+# state bits no cover reads, yet the solver carries them through every
+# unrolled step — depth 24 was still unsolved after 20+ min of z3.
+cover: depth 12
+
+[engines]
+smtbmc z3
+
+[script]
+read -formal -sv pio_sm_fifo.sv
+read -formal -sv pio_sm_fifo_fv.sv
+prep -top pio_sm_fifo_fv
+# The fv wrapper leaves the FIFO data outputs dangling (no property
+# reads them); these two steps actually drop the write-only $mem_v2
+# arrays that plain prep keeps — without them z3 carries ~512 dead
+# state bits and even depth-16 BMC is unsolved after 20+ minutes.
+memory_map
+opt -full
+opt_clean -purge
+
+[files]
+../rtl/pio_sm_fifo.sv
+pio_sm_fifo_fv.sv

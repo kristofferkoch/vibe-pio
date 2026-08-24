@@ -15,3 +15,10 @@ session. Append freely; prune ruthlessly when promoted or rejected.
 - Export witness programs as .pio assembler source for pioasm compatibility.
 - Property-based "differential" testing against the actual RP2350 silicon
   via a hardware-in-the-loop capture rig (long-term).
+- Formal result cache: skip (or fast-path) `make formal` tasks whose
+  inputs are unchanged — hash each task's [script]+[files] (RTL, fv,
+  .sby) plus toolchain version, and reuse the previous PASS/FAIL
+  verdict when the hash matches. Motivation: pio_sm_fifo's first
+  correct-properties run burned 20+ min of z3 before the dead-memory
+  prune made it a 2 s job; re-verifying untouched modules after every
+  edit wastes the same CPU again.
