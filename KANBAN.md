@@ -21,23 +21,6 @@ Card conventions (all RTL cards):
 
 ## Implementation (was "RTL"; depends on Phase 1 & 2)
 
-### C7 — `rtl/pio_gpio_mux.sv`
-
-- **Scope**: input path — per-pin 2-FF synchronizers + per-pin bypass
-  mask, per-SM rotated/masked `in_bus[31:0]` (IN shift base), `jmp_pin`
-  selection; output path — 32-bit level and OE registers resolving
-  per-SM write bundles (side-set vs OUT/SET within SM, highest-SM-wins
-  across SMs), OUT_STICKY re-assert registers, DBG_PADOUT/OE readback.
-- **Grounding**: SPEC-10-1..8, SPEC-7-7, SPEC-7-8; CC-5 (sticky),
-  CC-6, CC-7, CC-8, CC-23, CC-24.
-- **Deps**: none.
-- **Acceptance**: directed TB: pad toggle visible at k+2 (k+1 bypassed);
-  rotation for several IN bases; priority experiments with 2+ writers.
-  Formal (bmc + prove): sync-FF shift-register equivalence (pad@k ==
-  seen@k+2, bypass@k == seen@k+1 — CC-23); output resolution matches a
-  reference per-pin resolution function in the property file (CC-6/CC-7);
-  OUT_STICKY re-assert during stalls (CC-5); registers reset to 0.
-
 ### C8 — `rtl/pio_sm_exec.sv`
 
 - **Scope**: tick-rate control core: onehot FSM (`ST_FETCH`, `ST_EXEC`,

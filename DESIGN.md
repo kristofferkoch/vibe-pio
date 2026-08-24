@@ -361,7 +361,12 @@ flowchart TB
 - **Interfaces.** `gpio_in[31:0]` window; per-SM side-set/SET/OUT write
   bundles (base+count+data+we, level and direction); per-SM `in_bus`,
   `jmp_pin`; `sync_bypass` mask; `gpio_out`/`gpio_oe` and DBG_PADOUT/OE
-  readback ([SPEC-7-8]).
+  readback ([SPEC-7-8]); `gpio_seen` (the muxed synchroniser outputs) for
+  WAIT GPIO ([SPEC-10-4]); dbg_sticky_* readback of the OUT_STICKY
+  records — unlike the sync FFs (flushed by inputs within two cycles)
+  the sticky state holds unboundedly, so it is ported out like the DBG
+  pads to keep formal properties input/output equations that
+  k-induction can close; `pio_block` leaves these dangling.
 - **Cycle contract.** CC-23 (2-FF latency / bypass = k+2 / k+1), CC-24
   (sampling at start of tick), CC-5 (OUT_STICKY re-assert — sticky state
   lives here or in exec; placed here so the pin registers have a single
