@@ -44,6 +44,10 @@
 //   14.  SM_RESTART clears exactly the SPEC-7-3 subset ([MODEL]: the
 //       ISR/counter clear consumes the next sm_tick).
 //   15.  Illegal encodings are no-ops (SPEC-13-1).
+//   16.  T39: regressions for the bugs the formal proof found during
+//       C8 (AGENTS.md formal-to-sim rule) — restart/force coincidences
+//       with completions, delay ticks, and the EXEC latch, each
+//       annotated with the fv assertion that uncovered it.
 //
 // Timing: stimulus is driven on negedge clk; the tick task asserts
 // sm_tick for exactly one clk cycle and returns just after the retiring
@@ -514,6 +518,20 @@ module tb_pio_sm_exec;
       @(negedge clk);
       sm_restart = 1'b1;
       @(negedge clk);
+      sm_restart = 1'b0;
+    end
+  endtask
+
+  // One SM tick whose retiring posedge coincides with an SM_RESTART
+  // pulse — the G1/G3/G4 priority-pairing corner class.
+  task automatic tick_with_restart;
+    begin
+      @(negedge clk);
+      while (force_tick_w === 1'b1) @(negedge clk);
+      sm_tick    = 1'b1;
+      sm_restart = 1'b1;
+      @(negedge clk);
+      sm_tick    = 1'b0;
       sm_restart = 1'b0;
     end
   endtask
@@ -1416,6 +1434,121 @@ module tb_pio_sm_exec;
     tick;
     `check_eq(dbg_state_w, ST_FETCH)
     `check32(u_exec.x_r, 32'd5)               // x untouched
+
+    // ------------------------------------------------------------------
+    // T39: regressions for bugs the formal proof found (AGENTS.md
+    // formal-to-sim rule). Each was a real RTL defect uncovered by a
+    // pio_sm_exec_fv assertion during C8; these directed cases keep
+    // them visible to `make sim` alone.
+    // ------------------------------------------------------------------
+    sec("T39a: restart on a completing tick — delay still loads and counts (CC-10; fv a_p4_inv)");
+    imem[12] = E_SET(3'd1, 5'd7, 5'd3);     // set x,7 [3]
+    tick_with_restart;                       // completion + restart pulse
+    `check32(u_exec.x_r, 32'd7)
+    `check32(dbg_delay_w, 32'd3)             // G3 load beats the clear
+    `check_eq(dbg_state_w, ST_DELAY)
+    `check1(dbg_restart_pend_w, 1'b1)        // pulse queues the clear tick
+    imem[13] = E_SET(3'd2, 5'd14, 5'd0);     // marker
+    tick;                                    // consumed by the clear
+    `check32(dbg_delay_w, 32'd3)             // no decrement on a consumed tick
+    `check_eq(dbg_state_w, ST_DELAY)
+    tick; tick; tick;                        // delay 3->0, exits ST_DELAY
+    `check_eq(dbg_state_w, ST_FETCH)
+    `check32(u_exec.y_r, 32'd8)              // marker not yet (T37 value)
+    tick;                                    // marker: 4 ticks after completion
+    `check32(u_exec.y_r, 32'd14)
+    `check32(pc, 32'd14)
+
+    sec("T39b: forced JMP mid-delay drops the remainder (CC-35 [MODEL]; fv a_p4_inv)");
+    imem[14] = E_SET(3'd1, 5'd9, 5'd3);      // set x,9 [3]
+    tick;
+    `check_eq(dbg_state_w, ST_DELAY)
+    force_run(E_JMP(JC_ALWAYS, 5'd16, 5'd0));  // pc-writer mid-delay
+    `check32(dbg_delay_w, 32'd0)             // dropped, not frozen at 3
+    `check_eq(dbg_state_w, ST_FETCH)
+    `check32(pc, 32'd16)
+    imem[16] = E_SET(3'd2, 5'd15, 5'd0);     // marker at the target
+    tick;                                    // executes next tick — no phantom delay
+    `check32(u_exec.y_r, 32'd15)
+    `check32(pc, 32'd17)
+
+    sec("T39c: restart on an OUT-EXEC completion — executee survives (SPEC-7-3; fv a_p6_word)");
+    sys_tx_write({16'h0000, E_SET(3'd1, 5'd21, 5'd0)});  // executee: set x,21
+    imem[17] = E_PULL(1'b0, 1'b1, 5'd0);
+    tick;
+    imem[18] = E_OUT(3'd7, 5'd16, 5'd0);     // out exec,16
+    tick_with_restart;                       // restart lands on the completion
+    `check1(u_exec.latch_vld_r, 1'b1)        // executee not discarded
+    `check32(u_exec.latch_r, 32'h0000_E035)  // E_SET(1,21,0)
+    `check_eq(dbg_state_w, ST_EXEC)
+    tick;                                    // consumed by the clear
+    `check32(u_exec.x_r, 32'd9)              // executee not yet run
+    tick;                                    // executee runs
+    `check32(u_exec.x_r, 32'd21)
+    `check32(pc, 32'd19)                     // pc not advanced by it (CC-34)
+
+    sec("T39d: forced completion over a pending executee exits ST_EXEC (fv a_p6_inv3)");
+    imem[19] = E_SET(3'd2, 5'd3, 5'd0);      // y <- 3: executee would be jmp 3
+    tick;
+    imem[20] = E_MOV(3'd4, 2'd0, 3'd2, 5'd0);  // mov exec, y
+    tick;
+    `check_eq(dbg_state_w, ST_EXEC)
+    force_run(E_SET(3'd1, 5'd26, 5'd0));     // forced write wins, completes
+    `check32(u_exec.x_r, 32'd26)
+    `check_eq(dbg_state_w, ST_FETCH)         // not a hollow ST_EXEC
+    `check1(u_exec.latch_vld_r, 1'b0)
+    imem[21] = E_NOP;
+    tick;                                    // resumes by fetching imem@pc
+    `check32(pc, 32'd22)                     // the jmp-3 executee never ran
+
+    sec("T39e: restart drops a stalled forced word — flag cleared with it (fv a_p5_forced_live)");
+    gpio_seen[4] = 1'b0;
+    @(negedge clk);
+    force_we = 1'b1; force_instr = E_WAIT(1'b1, WSRC_GPIO, 5'd4, 5'd0);
+    @(negedge clk);
+    force_we = 1'b0;
+    @(negedge clk);                          // stalls: EXEC_STALLED
+    `check1(exec_stalled_w, 1'b1)
+    `check1(u_exec.latch_force_r, 1'b1)
+    restart_pulse;
+    `check1(exec_stalled_w, 1'b0)
+    `check1(force_tick_w, 1'b0)
+    `check1(u_exec.latch_force_r, 1'b0)      // no dangling forced flag
+    `check1(u_exec.latch_vld_r, 1'b0)
+    tick;                                    // consume the queued clear
+
+    sec("T39f: restart pulse during the clear-consume tick (fv a_p4_inv3a)");
+    imem[22] = E_SET(3'd1, 5'd5, 5'd3);      // set x,5 [3]
+    tick_with_restart;                       // loads delay 3, ST_DELAY, pend
+    imem[23] = E_SET(3'd2, 5'd16, 5'd0);     // marker
+    tick_with_restart;                       // consumed tick + second pulse
+    `check32(dbg_delay_w, 32'd0)             // cleared, and ST_DELAY exits
+    `check_eq(dbg_state_w, ST_FETCH)
+    tick;                                    // consumed again (second pulse)
+    tick;                                    // marker runs immediately
+    `check32(u_exec.y_r, 32'd16)
+    `check32(pc, 32'd24)
+
+    sec("T39g: restart during a plain delay tick (fv a_p4_inv3a)");
+    imem[24] = E_SET(3'd1, 5'd6, 5'd4);      // set x,6 [4]
+    tick;                                    // ST_DELAY, delay 4
+    tick_with_restart;                       // delay tick + restart
+    `check32(dbg_delay_w, 32'd0)
+    `check_eq(dbg_state_w, ST_FETCH)
+    imem[25] = E_SET(3'd2, 5'd17, 5'd0);     // marker
+    tick;                                    // consumed (the pulse queued)
+    tick;                                    // marker
+    `check32(u_exec.y_r, 32'd17)
+    `check32(pc, 32'd26)
+
+    sec("T39h: force write beats a simultaneous restart (SPEC-7-23; fv a_p5_force_next)");
+    @(negedge clk);
+    force_we = 1'b1; force_instr = E_SET(3'd1, 5'd27, 5'd0);
+    sm_restart = 1'b1;
+    @(negedge clk);
+    force_we = 1'b0; sm_restart = 1'b0;
+    @(negedge clk);                          // force-tick: it executes anyway
+    `check32(u_exec.x_r, 32'd27)
 
     `TB_FINISH
   end

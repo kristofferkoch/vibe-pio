@@ -9,6 +9,13 @@ Conventions for AI agents (and subagents) working in this repo.
 - Every commit you make must carry an `Agent:` trailer identifying the
   model and harness that performed the work, e.g.
   `Agent: ZCode (builtin:zai-coding-plan/GLM-5.3)`.
+- **Formal findings get sim regressions.** Every bug a formal property
+  uncovers (a BMC counterexample, or a k-induction "hole" that turns out
+  to be a real design defect rather than a missing invariant) is
+  reproduced as a directed check in the module's `sim/` testbench, in
+  the same commit that fixes it. The TB comment names the fv assertion
+  that found the bug. `make sim` is the fast gate — formal-only corners
+  must stay visible (and re-checked) there.
 - Code goes in the SystemVerilog subset common to iverilog (`-g2012`) and
   yosys (`read_verilog -sv`): `always_ff`/`always_comb`, no interfaces or
   classes. See `DESIGN.md` before structural changes.
