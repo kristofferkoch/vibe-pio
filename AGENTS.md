@@ -16,6 +16,13 @@ Conventions for AI agents (and subagents) working in this repo.
   the same commit that fixes it. The TB comment names the fv assertion
   that found the bug. `make sim` is the fast gate — formal-only corners
   must stay visible (and re-checked) there.
+- **Red/green TDD.** A regression check is not done until it has been
+  shown **red** against the defect (bug re-injected, or the fix
+  reverted) and **green** with the fix — a check that has only ever
+  passed may be vacuous. Run the demonstration before committing and
+  record it in the commit message (which check, which re-injected
+  defect, first failing section). Prefer this order for any fix: write
+  the failing check first, watch it fail, then fix the RTL.
 - Code goes in the SystemVerilog subset common to iverilog (`-g2012`) and
   yosys (`read_verilog -sv`): `always_ff`/`always_comb`, no interfaces or
   classes. See `DESIGN.md` before structural changes.
