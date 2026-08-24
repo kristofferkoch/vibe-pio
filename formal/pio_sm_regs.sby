@@ -1,0 +1,30 @@
+# Formal properties for pio_sm_regs (KANBAN C5).
+# BMC + k-induction prove (+cover) of the SPEC-7 / CC-25..27 properties
+# in formal/pio_sm_regs_fv.sv (module pio_sm_regs_fv).
+# NB: files renamed on copy (distinct basenames) — sby copies [files]
+# flat into src/.
+
+[tasks]
+bmc
+prove
+cover
+
+[options]
+bmc:   mode bmc
+bmc:   depth 12
+prove: mode prove
+prove: depth 12
+cover: mode cover
+cover: depth 16
+
+[engines]
+smtbmc z3
+
+[script]
+read -formal -sv pio_sm_regs.sv
+read -formal -sv pio_sm_regs_fv.sv
+prep -top pio_sm_regs_fv
+
+[files]
+../rtl/pio_sm_regs.sv
+pio_sm_regs_fv.sv

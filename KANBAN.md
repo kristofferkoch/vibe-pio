@@ -21,26 +21,6 @@ Card conventions (all RTL cards):
 
 ## Implementation (was "RTL"; depends on Phase 1 & 2)
 
-### C5 — `rtl/pio_sm_regs.sv`
-
-- **Scope**: per-SM config field bank (CLKDIV INT/FRAC, PINCTRL,
-  EXECCTRL, SHIFTCTRL — fields as register-level inputs, banked registers
-  with datasheet reset defaults) plus the clk-rate clock divider: 8-bit
-  phase accumulator + counter producing one-clk `sm_tick` strobe (tick
-  cycle T+1 after terminal count at T), `clkdiv_restart` handling,
-  INT=0 ⇒ 65536 (FRAC forced 0), SM enable gating.
-- **Grounding**: SPEC-7-2, SPEC-7-3, SPEC-7-14..26, SPEC-7-27; CC-26,
-  CC-27, CC-28, CC-25, CC-36 (phase not disturbed by force-tick input).
-- **Deps**: none.
-- **Acceptance**: directed TB: divisor 1 ⇒ tick every clk; INT/FRAC
-  pattern average period; INT=0; restart resets phase/count; disabled SM
-  produces no ticks. Formal (bmc + prove; divider proven standalone per
-  DESIGN.md "k-induction tractability" so SM proofs assume the interface
-  property): consecutive `sm_tick` ≥ INT clk cycles apart (CC-25/CC-26);
-  `sm_tick` at most 1 clk wide; restart ⇒ phase==0 && count==0 next
-  cycle (CC-27); phase/cnt bounds; two instances with equal config +
-  simultaneous restart have identical tick histories (CC-27 lockstep).
-
 ### C6 — `rtl/pio_irq_flags.sv`
 
 - **Scope**: 8-flag register; per-SM `irq_set`/`irq_clr` +
