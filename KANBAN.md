@@ -21,23 +21,6 @@ Card conventions (all RTL cards):
 
 ## Implementation (was "RTL"; depends on Phase 1 & 2)
 
-### C2 — `rtl/pio_sm_shift.sv`
-
-- **Scope**: OSR/ISR 32-bit shifters, two saturating 6-bit counters,
-  single `shift_left` boolean direction, IN rotate/self-shift path,
-  autopull/autopush *decision* outputs (threshold compare against
-  start-of-tick counter; thresholds with 0⇒32 decoding). Pure datapath —
-  control handshakes come from exec.
-- **Grounding**: SPEC-5-1..10, SPEC-3.3-7/8/9, SPEC-2-18, SPEC-15-1,
-  SPEC-3.6-14; CC-9, CC-11, CC-13, CC-17, CC-18, CC-4.
-- **Deps**: none.
-- **Acceptance**: directed TB: LSB/MSB shifts of each width 1..32
-  (bitcount 0 ⇒ 32), counter saturation, reset values (ISR cnt 0, OSR
-  cnt 32 — SPEC-5-3), rotate/self-shift of ISR. Formal (standalone, bmc +
-  prove): `isr_cnt <= 32 && osr_cnt <= 32`; counters saturate (never
-  wrap); shift-out amount ≤ bitcount per tick; threshold compare uses
-  registered (start-of-tick) counters — CC-4.
-
 ### C3 — `rtl/pio_sm_fifo.sv`
 
 - **Scope**: TX + RX 4-deep FIFOs with one shared RX storage array;

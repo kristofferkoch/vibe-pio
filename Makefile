@@ -61,7 +61,7 @@ $(TB_LIST):
 	@name=$$(basename $@ .sv); \
 	out="$(BUILD_DIR)/$$name.log"; \
 	echo "--- $$name: compiling+running"; \
-	$(IVERILOG) -s $$name -o $(BUILD_DIR)/$$name.vvp $@ $(SIM_DIR)/tb_common.sv \
+		$(IVERILOG) -s $$name -o $(BUILD_DIR)/$$name.vvp $@ $(SIM_DIR)/tb_common.sv $(RTL_SRC) \
 		&& $(VVP) $(BUILD_DIR)/$$name.vvp > $$out 2>&1; \
 	rc=$$?; \
 	if [ $$rc -ne 0 ] && [ ! -s $$out ]; then \
