@@ -1,0 +1,31 @@
+# Formal properties for pio_irq_flags (KANBAN C6).
+# BMC + k-induction prove (+cover) of the SPEC-3.8 / SPEC-7-6 / CC-37 /
+# CC-38 / CC-39 properties in formal/pio_irq_flags_fv.sv
+# (module pio_irq_flags_fv).
+# NB: files renamed on copy (distinct basenames) — sby copies [files]
+# flat into src/.
+
+[tasks]
+bmc
+prove
+cover
+
+[options]
+bmc:   mode bmc
+bmc:   depth 12
+prove: mode prove
+prove: depth 12
+cover: mode cover
+cover: depth 16
+
+[engines]
+smtbmc z3
+
+[script]
+read -formal -sv pio_irq_flags.sv
+read -formal -sv pio_irq_flags_fv.sv
+prep -top pio_irq_flags_fv
+
+[files]
+../rtl/pio_irq_flags.sv
+pio_irq_flags_fv.sv

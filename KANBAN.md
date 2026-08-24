@@ -21,23 +21,6 @@ Card conventions (all RTL cards):
 
 ## Implementation (was "RTL"; depends on Phase 1 & 2)
 
-### C6 — `rtl/pio_irq_flags.sv`
-
-- **Scope**: 8-flag register; per-SM `irq_set`/`irq_clr` +
-  `flag_idx`+`idx_mode` (this/PREV/REL/NEXT routing inputs fed from
-  outside; module takes pre-resolved per-source set/clear vectors plus
-  prev/next buses); bus `irq_w1c`, `irq_force`; `flags[7:0]` readback.
-  Registered flags only — no combinational path from request to read.
-- **Grounding**: SPEC-3.8-4..8, SPEC-14.3-1, SPEC-7-6; CC-37, CC-39
-  (clear-wins), CC-16 (flag set visible next cycle).
-- **Deps**: none.
-- **Acceptance**: directed TB: set/clear from each writer class, W1C,
-  force, simultaneous set+clear ⇒ clear wins. Formal (bmc + prove):
-  flags are registered (no comb path — assert `flags` unchanged unless
-  clk edge with a writer); set@cycle c readable from c+1 only (CC-37);
-  set+clear same cycle ⇒ clear wins (CC-39); prev/next outputs equal
-  flags (block-level relay handled by pio_top later).
-
 ### C7 — `rtl/pio_gpio_mux.sv`
 
 - **Scope**: input path — per-pin 2-FF synchronizers + per-pin bypass
