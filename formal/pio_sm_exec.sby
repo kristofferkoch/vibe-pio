@@ -1,0 +1,37 @@
+# Formal properties for pio_sm_exec (KANBAN C8).
+# BMC + k-induction prove (+cover) of the FSM/stall/EXEC/forced-tick
+# properties in formal/pio_sm_exec_fv.sv (module pio_sm_exec_fv), with
+# the divider abstracted as a min-gap-assumed tick model and the FIFO
+# replaced by a storage-free contract stub (C3 is proven independently;
+# keeping the real 2x8x32 memories made z3 case-split for ~25 min).
+# NB: files renamed on copy (distinct basenames) — sby copies [files]
+# flat into src/.
+
+[tasks]
+bmc
+prove
+cover
+
+[options]
+bmc:   mode bmc
+bmc:   depth 15
+prove: mode prove
+prove: depth 15
+cover: mode cover
+cover: depth 20
+
+[engines]
+smtbmc z3
+
+[script]
+read -formal -sv pio_sm_exec.sv
+read -formal -sv pio_sm_decoder.sv
+read -formal -sv pio_sm_shift.sv
+read -formal -sv pio_sm_exec_fv.sv
+prep -top pio_sm_exec_fv
+
+[files]
+../rtl/pio_sm_exec.sv
+../rtl/pio_sm_decoder.sv
+../rtl/pio_sm_shift.sv
+pio_sm_exec_fv.sv

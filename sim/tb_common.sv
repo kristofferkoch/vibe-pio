@@ -138,7 +138,7 @@ endtask
     if ((act_) !== (exp_)) begin                                         \
       tb_fail_count = tb_fail_count + 1;                                       \
       $display("FAIL %0s:%0d check_eq: got %h expected %h",                    \
-               `__FILE__, `__LINE__, (act_), (exp_)));                    \
+               `__FILE__, `__LINE__, (act_), (exp_)); \
     end else begin                                                             \
       tb_pass_count = tb_pass_count + 1;                                       \
       $display("PASS %0s:%0d check_eq: %h", `__FILE__, `__LINE__, (act_));   \

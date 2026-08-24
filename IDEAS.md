@@ -21,4 +21,14 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   verdict when the hash matches. Motivation: pio_sm_fifo's first
   correct-properties run burned 20+ min of z3 before the dead-memory
   prune made it a 2 s job; re-verifying untouched modules after every
-  edit wastes the same CPU again.
+  edit wastes the same CPU again. (C8 hit the same wall: the exec fv
+  instantiated the real C3 FIFOs until a storage-free contract stub —
+  sanctioned by the card's "instantiated or stubbed" wording — cut the
+  run from ~25 min of z3 to seconds.)
+- Pin the microsemantics of EXECCTRL.OUT_EN_SEL / INLINE_OUT_EN
+  (SPEC-7-17, "one bit of OUT data as an auxiliary per-pin write
+  enable") and implement them in pio_sm_exec/pio_gpio_mux: docs/ only
+  carries the one-line register description, which is not enough to
+  code against (which OUT variants, which pins, interaction with
+  SIDE_PINDIR/OUT_STICKY). C8 left both fields unimplemented and
+  unconnected; decide before C10 wires the block reg bus.

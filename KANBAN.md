@@ -21,34 +21,6 @@ Card conventions (all RTL cards):
 
 ## Implementation (was "RTL"; depends on Phase 1 & 2)
 
-### C8 — `rtl/pio_sm_exec.sv`
-
-- **Scope**: tick-rate control core: onehot FSM (`ST_FETCH`, `ST_EXEC`,
-  delay, stall states), PC update + wrap-top/wrap-bottom logic, delay
-  counter, side-set application, X/Y registers, JMP condition
-  evaluation, WAIT variants (gpio/pin/jmppin/irq with wait/clear),
-  MOV op (:op sources and op inversion), SET, OUT/IN dispatch to shifter,
-  PUSH/PULL dispatch (block/noblock/ifempty/iffull), EXEC latch
-  (shared forced-instruction register), force-tick OR and CC-36 deferral.
-  Developed against the port contracts of C2/C3 (instantiated or stubbed
-  per the property wrapper).
-- **Grounding**: SPEC-3.1-1..11, SPEC-3.2-1..9, SPEC-3.3-x, SPEC-3.4-x,
-  SPEC-3.5-1..13, SPEC-3.6-1..14, SPEC-3.8-1..10, SPEC-3.9-1..3,
-  SPEC-4-1..9, SPEC-8-1..4, SPEC-9-1..7, SPEC-11-1, SPEC-14.5-1,
-  SPEC-14.6-1, SPEC-14.7-1; CC-4..CC-22, CC-31, CC-34, CC-35, CC-36.
-- **Deps**: C4 (decoder bundle), C2+C3 (interface contracts; full-system
-  tests come in C9).
-- **Acceptance**: directed TB with shifter/FIFO instances: each JMP
-  condition, each WAIT variant incl. stall-release timing, MOV all
-  src/dst/op combos, SET, delay counting, wrap, `irq wait` two-phase,
-  `pull ifempty` guard-at-own-tick (CC-31 scenario). Formal (bmc +
-  prove, divider abstracted as `sm_tick` min-gap assumption from C5):
-  onehot FSM; stall invariants — while stalled: `pc` holds, delay holds,
-  first condition-true tick is the completion tick (CC-14/CC-15/CC-16);
-  delayed execution d+1 ticks after completion (CC-10); force-tick wins
-  over coinciding `sm_tick`, divider phase untouched (CC-36); EXEC
-  latch: executee runs on next tick, PC not advanced by it (CC-34).
-
 ### C9 — `rtl/pio_sm.sv` (assembly)
 
 - **Scope**: instantiate `u_regs` (C5), `u_decoder` (C4), `u_exec` (C8),
