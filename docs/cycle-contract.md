@@ -302,20 +302,31 @@ useless for cycle-level assertion.
 ## 6. Clock divider under the sm_tick-strobe model
 
 **CC-26 [MODEL+SOURCED] (strobe placement).** Per SM: an 8-bit phase
-accumulator `phase` and a counter `count`. On every clk cycle while the
-SM is enabled: `phase += FRAC`; `carry = overflow of phase`; `count +=
-1 + carry`; when `count` reaches `INT` (with `INT=0` interpreted as
-65536, requiring FRAC=0), the divider resets `count` to 0 and asserts
-`sm_tick` **for the following clk cycle** — i.e. terminal count reached
-at the end of cycle T ⇒ tick cycle T+1 ⇒ instruction effects at end of
-T+1. Divisor 1 (INT=1, FRAC=0): `sm_tick` every clk cycle. The
-INT/FRAC/65536/INT=0⇒FRAC=0 facts are [SOURCED] (DS §11.5.5, §11.7
-CLKDIV; sdk #14); the terminal-count-then-tick cycle placement and the
+accumulator `phase`, a one-bit stretch flag `stretch`, and a counter
+`count`. While the SM is enabled, `count += 1` every clk cycle; the
+current period's terminal compare is `INT + stretch` (with `INT=0`
+interpreted as 65536, requiring FRAC=0 — and `stretch` forced
+ineffective there, since FRAC=0 admits no fractional stretch). When
+`count` reaches `INT + stretch`, the divider resets `count` to 0,
+updates the delta-sigma state (`phase += FRAC`; `stretch ← carry of
+phase`), and asserts `sm_tick` **for the following clk cycle** — i.e.
+terminal count reached at the end of cycle T ⇒ tick cycle T+1 ⇒
+instruction effects at end of T+1. Divisor 1 (INT=1, FRAC=0):
+`sm_tick` every clk cycle. The INT/FRAC/65536/INT=0⇒FRAC=0 facts are
+[SOURCED] (DS §11.5.5, §11.7 CLKDIV; sdk #14); the terminal-count-
+then-tick cycle placement and the per-period (not per-clk)
 accumulator-update order are [MODEL] — the datasheet specifies only the
-resulting average frequency. *Rejected alternative:* asserting `sm_tick`
-in the terminal-count cycle itself; it saves no logic and makes CC-1's
-"state changes on tick cycles" phrasing awkward for divisor 1. Either is
-internally consistent; ours is binding on the RTL.
+resulting average frequency. *Rejected alternative:* asserting
+`sm_tick` in the terminal-count cycle itself; it saves no logic and
+makes CC-1's "state changes on tick cycles" phrasing awkward for
+divisor 1. *Rejected alternative (v1 of this clause):* a per-clk
+`phase += FRAC; count += 1 + carry` — it yields an average period of
+INT/(1+FRAC/256), i.e. FRAC *speeds the SM up* and periods below INT,
+contradicting both the sourced average SM clock = clk/(INT + FRAC/256)
+and CC-25's min-gap; the fractional error must accumulate once per
+*period* (periods ∈ {INT, INT+1}) for the delta-sigma to be exact.
+Either tick placement is internally consistent; ours is binding on the
+RTL.
 
 **CC-27 [SOURCED] (CLKDIV_RESTART).** Writing `CTRL.CLKDIV_RESTART` for
 SM s resets s's divider phase to 0 (`phase ← 0`, `count ← 0`); the SM's
@@ -529,7 +540,7 @@ protocols). Flags are not auto-cleared except by WAIT 1 IRQ.
 | CC-23 | 2-FF sync: pad@k visible to SM logic from k+2 (k+1 bypassed) | SOURCED |
 | CC-24 | IN/WAIT/MOV/JMP-PIN sample sync outputs at start of tick; clocked_input numbers reconciled | SOURCED |
 | CC-25 | Divider min-gap = INT clk cycles; INT ≥ 3 gives synced-input stability; bypass exists for INT ≤ 2 | SOURCED+INTERP |
-| CC-26 | Divider accumulates FRAC/INT each clk; sm_tick the cycle after terminal count; INT=0 ⇒ 65536 | MODEL+SOURCED |
+| CC-26 | Divider counts clks against INT(+stretch); phase += FRAC once per period (delta-sigma, periods INT or INT+1); sm_tick the cycle after terminal count; INT=0 ⇒ 65536 | MODEL+SOURCED |
 | CC-27 | CLKDIV_RESTART resets phase/count to 0; equal divisors + simultaneous restart ⇒ lockstep | SOURCED+MODEL |
 | CC-28 | Dividers independent across SMs absent restart; cross-PIO needs equal divisors | SOURCED+MODEL |
 | CC-29 | PUSH captures ISR / PULL presents TXF head in the executing tick; levels update end of T | SOURCED+MODEL |

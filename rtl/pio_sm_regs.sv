@@ -13,20 +13,19 @@
 //      `clkdiv_restart` (CC-27), SM enable gating, INT=0 ⇒ 65536 with
 //      FRAC forced 0 ([SPEC-7-14]), and force-tick deferral (CC-36).
 //
-// Divider model note (deviation flag, owner doc decision pending):
-// CC-26's literal per-clk reading ("phase += FRAC; count += 1 + carry;
-// terminal at count == INT") yields an average period of
-// INT/(1+FRAC/256) — i.e. FRAC *speeds the SM up* and admits periods
-// below INT, contradicting both the sourced average SM clock =
+// Divider model note: CC-26 (as amended) defines the exact first-order
+// delta-sigma — the fractional error accumulates once per *period*: at
+// each terminal count, phase += FRAC; carry ⇒ the next period is INT+1
+// instead of INT (stretch). CC-26's original v1 wording ("phase += FRAC;
+// count += 1 + carry" per clk) was rejected there: it yields an average
+// period of INT/(1+FRAC/256) — FRAC *speeds the SM up* and admits
+// periods below INT — contradicting both the sourced average SM clock =
 // clk/(INT + FRAC/256) ([SPEC-7-14]) and CC-25's min-gap guarantee
-// ("alternates periods of INT and INT+1"). The exact first-order
-// delta-sigma accumulates the fractional error once per *period*: at
-// each terminal count, phase += FRAC; carry ⇒ the next period is
-// INT+1 instead of INT. This satisfies CC-25 (periods ∈ {INT, INT+1},
-// so consecutive ticks are ≥ INT clk apart) and the sourced frequency
-// formula; everything else follows CC-26 (tick strobe the cycle after
-// terminal count, INT=0 ⇒ 65536/FRAC 0, restart clears phase+count,
-// free-running through stalls).
+// ("alternates periods of INT and INT+1"). This implementation satisfies
+// CC-25 (periods ∈ {INT, INT+1}, so consecutive ticks are ≥ INT clk
+// apart), the sourced frequency formula, and CC-26's placement (tick
+// strobe the cycle after terminal count, INT=0 ⇒ 65536/FRAC 0, restart
+// clears phase+count, free-running through stalls).
 
 module pio_sm_regs (
     input  logic        clk,
