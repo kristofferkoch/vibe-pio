@@ -40,3 +40,20 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   the C9 integration FV (the CC-11 stall guard had to exclude
   FM_PUTGET to match); unpinned by DS/docs either way, so kept as the
   C8 contract. Decide before the C10 block proof pins FIFO behaviours.
+- Manchester loopback (tb_conf_pioexamples CF12): the rx decodes the first
+  word exactly, then phase-walks at clkdiv 1 — the 2-clk input
+  synchroniser consumes 1/6 of the 12-clk bit period and the rx's 3/4-bit
+  eye loses margin at a word boundary (word 2 decodes as 0xffff_f000, a
+  real but phase-shifted sample). Silicon runs the same example at div 1,
+  so either the silicon eye is wider than our tick model, or some
+  re-sync detail differs. Worth re-checking with the realistic-clkdiv
+  UART-loopback harness, or with a formal timing bound on the rx's
+  wait-to-instant path.
+- Sim-level latency checks (CC-23/CC-24) are shift-invariant: injecting
+  "seen bus fed from sync-FF1" or "in_bus from the raw pad" into
+  pio_gpio_mux leaves CF8 green, because the WAIT's edge detection and
+  the IN's data capture shift together — the clocked_input protocol is
+  latency-tolerant by design (the example's own "input clock < sys/6"
+  margin note). Pinning the absolute sampling latency needs a formal
+  property (the FV suites already carry CC-23 shift-register
+  equivalence), not a directed sim.

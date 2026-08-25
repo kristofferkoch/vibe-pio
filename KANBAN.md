@@ -23,10 +23,6 @@ Card conventions (all RTL cards):
 
 ### Testbenches (sim/)
 
-- [ ] Ingest official pico-examples PIO programs (ws2812, spi, uart, i2c,
-      ...) as conformance tests with expected waveforms from the example
-      documentation (SPEC-15-1..10 are the observations to hit; CC-24
-      clocked_input, CC-31 spi tail are named targets). Depends: C10.
 - [ ] UART TX loopback conformance test at a realistic clkdiv, checking
       bit timing against the divider model (CC-26/CC-2). Depends: C10.
 
