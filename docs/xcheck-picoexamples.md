@@ -68,12 +68,17 @@ Legend: ss = side-set bits (incl. enable bit if `opt`); FIFO join as per
 | 38 | `uart_dma` (C only) | `pio/uart_dma/uart_dma.c` | reuses uart_rx/uart_tx programs | DMA + PIO IRQ at 921600 baud | Full-duplex DMA loopback conformance workload |
 | 39 | `i2c_bus_scan` (C only) | `pio/i2c/i2c_bus_scan.c` | reuses `i2c` program | as #12 | I2C bus scan via OUT EXEC instruction records |
 
-### Closed-loop conformance coverage (CF12/CF15/CF16)
+### Closed-loop conformance coverage (CF12/CF15/CF16/CF17)
 
 `manchester_tx`→`manchester_rx` (#17/18), `differential_manchester_tx`→
 `_rx` (#7/8) and `uart_tx`→`uart_rx` (#33/34) run as SM→pin→SM loopbacks
 in `sim/tb_conf_pioexamples.sv` at clkdiv 1, pinning CC-40 (closed-loop
-observation bound). Post-mortem of the former CF12 "rx tick divergence"
+observation bound). CF17 re-runs the uart loopback at the C init's own
+fractional clkdiv — `div = clk_sys/(8*baud)` = 125 MHz/921600 → CLKDIV
+INT=135 FRAC=162 (sdk truncates to 1/256) — comparing every clk sample
+of five 8n1 frames against a CC-26 delta-sigma reference model
+(CC-2/CC-3/CC-8), with the loopback decode and the idle-high stall as
+conformance checks. Post-mortem of the former CF12 "rx tick divergence"
 (word 2 decoded 0xffff_f000, divider-invariant): the TB had programmed
 the tx SM's EXECCTRL wrap bottom with the *entry label* (`start`, 4)
 instead of the program's `.wrap_target` (0). All-'0' words mask this —

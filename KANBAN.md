@@ -21,13 +21,6 @@ Card conventions (all RTL cards):
 
 ## Later-level backlog (coarse by design — detail at launch)
 
-### Testbenches (sim/)
-
-- [ ] UART TX loopback conformance test at a realistic clkdiv, checking
-      bit timing against the divider model (CC-26/CC-2). Depends: C10.
-      (CF16 in tb_conf_pioexamples covers the uart_rx loopback angle at
-      clkdiv 1 — this card remains for the divider-model timing check.)
-
 ### Formal (formal/)
 
 - [ ] Traceability audit script: cross-check assertion-cited SPEC-/CC-

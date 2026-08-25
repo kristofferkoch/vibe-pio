@@ -6,8 +6,9 @@
 // live in docs/xcheck-picoexamples.md).
 //
 // All programs run at CLKDIV 1.0 (SM tick = clk, CC-26) so every documented
-// "N cycles" figure is checked in clk cycles; the realistic-clkdiv UART
-// loopback is the follow-up KANBAN item.
+// "N cycles" figure is checked in clk cycles; CF17 is the exception — the
+// UART loopback at the C init's own fractional clkdiv, where the bit timing
+// is checked in clk cycles against the CC-26 divider reference model.
 //
 // The TB plays bus master + pads like tb_pio_block: reg-bus writes program
 // imem/config and drive the FIFOs; gpio_in models the pad wire — the
@@ -55,8 +56,15 @@
 //                      polarities, forced `pull block` line hold (CC-40)
 //   CF16 uart_rx       uart_tx->uart_rx loopback: start-bit edge WAIT lock,
 //                      bit-centre IN sampling, stop-bit JMP PIN + PUSH
-//                      (CC-40; realistic-clkdiv timing = the UART KANBAN
-//                      card)
+//                      (CC-40)
+//   CF17 uart @ clkdiv the CF16 loopback re-run at the C init's own div =
+//                      clk_sys/(8*baud) = 125 MHz/921600 -> CLKDIV INT=135
+//                      FRAC=162 (sdk truncates to 1/256): every clk sample
+//                      of five 8n1 frames equals the CC-26 delta-sigma
+//                      model's waveform (CC-2/CC-3/CC-8), the rx still
+//                      decodes through the 2-FF sync (CC-40 at clkdiv >> 1),
+//                      and the empty-FIFO `pull side 1` stall holds the
+//                      line idle-high (SPEC-15-3, CC-22)
 //   CF13 hub75_data    SPEC-15-6: imem patched while the SM runs — the
 //                      in-flight instruction is unaffected, the patch
 //                      applies at the next fetch (CC-33)
@@ -76,7 +84,12 @@
 // is enabled -> CF7's CSn never asserts); CF12 is the CC-40 closed-loop
 // regression (re-inject: SM0's EXECCTRL wrap bottom = entry label instead
 // of the program's .wrap_target -> CF12's word-2/word-3 checks fail, word 2
-// reads 0xffff_f000 — the former "rx tick divergence", a TB defect).
+// reads 0xffff_f000 — the former "rx tick divergence", a TB defect);
+// CF17 is the realistic-clkdiv CC-26 regression (re-inject: divider drops
+// the delta-sigma carry, stretch_r <- 0 in pio_sm_regs -> every period INT
+// -> CF17's waveform walk fails at the frame-1 start edge, 5 clks early;
+// the clkdiv-1 checks above cannot see it — FRAC is 0 there, so the whole
+// rest of the fleet stays green).
 // Demonstrations recorded in the finishing commit.
 
 `include "tb_common.sv"
@@ -431,6 +444,24 @@ module tb_conf_pioexamples;
   task automatic enable(input logic [3:0] mask);
     begin
       bus_wr(A_CTRL, {28'd0, mask});
+    end
+  endtask
+
+  // Enable `mask` and return m = the clk cycle (clk_count index) of the
+  // CTRL write's retiring posedge: sm_en reads 1 from cycle m, so the
+  // divider counts from the next posedge and the first sm_tick lands at
+  // cycle m+INT (CC-26) — the anchor CF17's model measures from.
+  task automatic enable_at(input logic [3:0] mask, output int m);
+    begin
+      @(negedge clk);
+      reg_addr  = A_CTRL;
+      reg_wdata = {28'd0, mask};
+      reg_write = 1'b1;
+      @(posedge clk);
+      #1;
+      m = clk_count;
+      @(negedge clk);
+      reg_write = 1'b0;
     end
   endtask
 
@@ -1342,6 +1373,182 @@ module tb_conf_pioexamples;
   endtask
 
   // =====================================================================
+  // CF17: uart_tx -> uart_rx loopback at the C init's own REALISTIC
+  // fractional clkdiv — the UART KANBAN card (CC-26/CC-2). uart_tx.pio's
+  // init computes div = clk_sys / (8*baud); with the example's clk_sys =
+  // 125 MHz and SERIAL_BAUD = 115200 that is 135.6337, quantized by the
+  // sdk's pio_calculate_clkdiv8_from_float (truncate to 1/256): INT=135
+  // FRAC=162 — average SM period 135 + 162/256 clk, 8n1 bit cell = 8
+  // ticks ~= 1085 clk, no integral clk length anywhere. Bit timing is
+  // checked cycle-exactly against a TB reference of the CC-26 divider:
+  // first tick at m+INT after the enable-retiring cycle m, then periods
+  // of INT/INT+1 per delta-sigma carry (phase += FRAC once per period),
+  // pin writes observable the clk cycle after the executing tick
+  // (CC-2/CC-3/CC-8). Every sampled clk cycle of five 8n1 frames — the
+  // C example's own "Hello" string — must equal the modeled waveform.
+  // The rx (SM1, same CLKDIV, enabled in the same CTRL word: CC-28
+  // lockstep-by-construction) must still decode all five bytes through
+  // the 2-FF sync (CC-40 at clkdiv >> 1), and the drained-FIFO
+  // `pull side 1` stall must hold the line idle-high (SPEC-15-3; CC-22
+  // divider keeps running through stalls).
+  // =====================================================================
+  localparam int CF17_INT  = 135;  // 125e6/(8*115200) = 135.6337 (uart_tx.pio)
+  localparam int CF17_FRAC = 162;  // sdk truncation to 1/256
+
+  // CC-26 reference model: clk cycle (clk_count index) of the n-th SM tick
+  // after enable_at returned m (divider state 0/0 after the conf reset, so
+  // the first period is INT with stretch 0).
+  function automatic int cf17_tick(input int m, input int n);
+    int t, ph, carry;
+    begin
+      t  = m + CF17_INT;
+      ph = 0;
+      for (int j = 2; j <= n; j++) begin
+        carry = (ph + CF17_FRAC >= 256) ? 1 : 0;
+        ph    = (ph + CF17_FRAC) & 255;        // += FRAC once per period
+        t     = t + CF17_INT + carry;          // next period INT(+carry)
+      end
+      cf17_tick = t;
+    end
+  endfunction
+
+  // uart_tx tick plan: tick 1 = the leading `pull side 1 [7]` (asserts the
+  // pre-start idle-high), then BACK-TO-BACK 80-tick frames (10 slots x 8:
+  // start set@b+8, out bit k (LSB first)@b+16+8k, stop pull@b+80 with
+  // b = 1 + 80*f — each frame's stop-slot pull is the next frame's lead).
+  logic [39:0] cf17_msg;                       // "Hello" (the C workload)
+
+  // Byte f of the message: a string literal packs MSB-first, so 'H' is
+  // bits [39:32] and byte f lives at base 8*(4-f).
+  function automatic logic [7:0] cf17_byte(input int f);
+    cf17_byte = cf17_msg[8*(4-f) +: 8];
+  endfunction
+
+  int          cf17_ev_cyc [0:63];             // observable sample cycles
+  logic        cf17_ev_val [0:63];             // pin value from that cycle
+
+  task automatic cf17_uart_clkdiv;
+    logic ok;
+    logic [31:0] v;
+    logic exp, exp1, got1;
+    int m, s, ev_n, ev_tot, mism, first_bad, n, k, f;
+    int t_stop5;
+    begin
+      $display("--- CF17: uart_tx -> uart_rx loopback at realistic clkdiv");
+      cf17_msg = "Hello";
+      load_uart_tx(0);
+      load_uart_rx(9);
+      // tx (SM0) / rx (SM1): CF16's config, plus the C init's clkdiv on
+      // BOTH SMs (uart_*_program_init compute the same div for each side)
+      bus_wr(A_SM(0, 5), MFY_PCTRL(2, 1, 1, 0, 0, 0, 0));
+      bus_wr(A_SM(0, 1), MFY_EXEC(UART_TX_WRAP, UART_TX_WRAP_TARGET,
+                                  0, 1'b1, 1'b0));
+      bus_wr(A_SM(0, 2), MFY_SHIFT(1'b0, 1'b1, 32, 32, 1'b1, 1'b1, 1'b0, 1'b0));
+      bus_wr(A_SM(1, 5), MFY_PCTRL(0, 0, 0, 0, 0, 0, 0));
+      bus_wr(A_SM(1, 1), MFY_EXEC(9 + UART_RX_WRAP, 9 + UART_RX_WRAP_TARGET,
+                                  0, 1'b0, 1'b0));
+      bus_wr(A_SM(1, 2), MFY_SHIFT(1'b1, 1'b0, 32, 32, 1'b1, 1'b1, 1'b0, 1'b0));
+      bus_wr(A_SM(0, 0), (32'(CF17_INT) << 16) | (32'(CF17_FRAC) << 8));
+      bus_wr(A_SM(1, 0), (32'(CF17_INT) << 16) | (32'(CF17_FRAC) << 8));
+      set_pc(1, 9);                          // rx pc = program start
+      lb_mask = 32'h1;
+      // tx pin init (drive idle-high BEFORE the first start bit) + queue
+      // the five bytes, all before the enable (the model assumes the
+      // frame-1 `pull` finds data and never stalls)
+      bus_wr(A_SM(0, 4), 32'(E_SET(SETD_PINDIRS, 5'd1, 5'd0)));
+      bus_wr(A_SM(0, 4), 32'(E_SET(SETD_PINS, 5'd1, 5'd0)));
+      for (f = 0; f < 5; f++)
+        bus_wr(A_TXF(0), 32'(cf17_byte(f)));
+      enable_at(4'b0011, m);                 // one CTRL word: lockstep grids
+      // Model self-check (SPEC-7-14 average, independent closed form): the
+      // 400 periods from tick 1 to the frame-5 stop (tick 401) take exactly
+      // floor(400*FRAC/256) = 253 long ones from phase 0.
+      t_stop5 = cf17_tick(m, 401);
+      if (t_stop5 - cf17_tick(m, 1) != 400*CF17_INT + (400*CF17_FRAC)/256)
+        begin
+          tb_fail_count = tb_fail_count + 1;
+          $display("FAIL CF17 model self-check: span %0d != closed form",
+                   t_stop5 - cf17_tick(m, 1));
+        end else begin
+        tb_pass_count = tb_pass_count + 1;
+        $display("PASS uart-clkdiv model self-check: 400 periods = %0d clk",
+                 t_stop5 - cf17_tick(m, 1));
+      end
+      // Expected pin writes (observable at sample T(tick)+1, CC-3/CC-8).
+      // Frame plan: the frames are BACK-TO-BACK 80-tick periods (start set
+      // + 8 data slots + stop pull); frame f's stop-slot `pull side 1` is
+      // frame f+1's leading pull — only frame 1 gets a leading slot of its
+      // own (tick 1's pull asserts the pre-start idle-high). b = 1 + 80*f.
+      ev_tot = 0;
+      cf17_ev_cyc[ev_tot] = cf17_tick(m, 1) + 1;
+      cf17_ev_val[ev_tot] = 1'b1;  ev_tot++;          // leading pull side 1
+      for (f = 0; f < 5; f++) begin
+        cf17_ev_cyc[ev_tot] = cf17_tick(m, 9 + 80*f) + 1;
+        cf17_ev_val[ev_tot] = 1'b0;  ev_tot++;          // start (set side 0)
+        for (k = 0; k < 8; k++) begin
+          cf17_ev_cyc[ev_tot] = cf17_tick(m, 17 + 8*k + 80*f) + 1;
+          cf17_ev_val[ev_tot] = cf17_byte(f) >> k;      // out bit k, LSB first
+          ev_tot++;
+        end
+        cf17_ev_cyc[ev_tot] = cf17_tick(m, 81 + 80*f) + 1;
+        cf17_ev_val[ev_tot] = 1'b1;  ev_tot++;          // stop (pull side 1)
+      end
+      // Walk every clk sample from the enable to 500 clk past the frame-5
+      // stop: the pin must equal the modeled value at EVERY cycle
+      ev_n = 0; exp = 1'b1; mism = 0; first_bad = 0; n = 0;
+      exp1 = 1'b0; got1 = 1'b0;
+      for (s = m + 1; s <= t_stop5 + 1 + 500; s++) begin
+        @(posedge clk);
+        #1;
+        while (ev_n < ev_tot && cf17_ev_cyc[ev_n] <= s) begin
+          exp = cf17_ev_val[ev_n];
+          ev_n = ev_n + 1;
+        end
+        if (gpio_out_w[0] !== exp) begin
+          if (mism == 0) begin
+            first_bad = s; got1 = gpio_out_w[0]; exp1 = exp;
+          end
+          mism = mism + 1;
+        end
+        n = n + 1;
+      end
+      if (mism != 0) begin
+        tb_fail_count = tb_fail_count + 1;
+        $display("FAIL uart-clkdiv waveform: %0d/%0d samples off the CC-26 model, first at cycle %0d (expected %b got %b)",
+                 mism, n, first_bad, exp1, got1);
+      end else begin
+        tb_pass_count = tb_pass_count + 1;
+        $display("PASS uart-clkdiv waveform: %0d clk samples match the CC-26 model (INT=%0d FRAC=%0d)",
+                 n, CF17_INT, CF17_FRAC);
+      end
+      // The frame-6 `pull` stalls ~8 ticks past the frame-5 stop; advance
+      // past it, then check the loopback decode and the stall behaviour
+      `WAIT_CLKS(700)
+      poll_eq(A_FLEVEL, 32'h5 << 12, 40, ok);
+      `check1(ok, 1'b1)
+      rx_pop(1, v);
+      `check32(v, 32'h4800_0000)
+      rx_pop(1, v);
+      `check32(v, 32'h6500_0000)
+      rx_pop(1, v);
+      `check32(v, 32'h6c00_0000)
+      rx_pop(1, v);
+      `check32(v, 32'h6c00_0000)
+      rx_pop(1, v);
+      `check32(v, 32'h6f00_0000)
+      // SPEC-15-3 at a fractional divider: the empty-FIFO `pull side 1`
+      // stall holds the line idle-high (side-set fired in its first tick,
+      // CC-5/CC-22) and latches the TXSTALL sticky at the stall tick
+      bus_rd(A_FDEBUG, v);
+      `check1(v[FD_TXSTALL + 0], 1'b1)
+      run_len(0, 1'b1, 16*CF17_INT, n);      // >= ~16 SM ticks, all high
+      `check32(n, 16*CF17_INT)
+      enable(4'b0000);
+      lb_mask = 32'h0;
+    end
+  endtask
+
+  // =====================================================================
   // CF13: hub75_data_rgb888 — SPEC-15-6 imem patch while running.
   // =====================================================================
   task automatic cf13_hub75;
@@ -1506,6 +1713,9 @@ module tb_conf_pioexamples;
 
     conf_reset();
     cf16_uart_rx();
+
+    conf_reset();
+    cf17_uart_clkdiv();
 
     conf_reset();
     cf13_hub75();
