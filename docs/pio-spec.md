@@ -848,3 +848,70 @@ are under-specified in the datasheet/pioasm and therefore feed the future
   instruction features (MOV put/get, WAIT JMPPIN, MOV PINDIRS dst,
   IN_COUNT, PREV/NEXT IRQ); §12 conformance must come from pio-sdk tests
   and datasheet pseudocode.
+
+## 16. Trace-equivalence contract (C11 miter + trace exchange)
+
+Provenance: vibe-pio methodology decisions ratified at the C11 promotion
+(grilling session 2026-08-25) — these are contract facts about *this
+model's* equivalence methodology, not datasheet facts. Consumers:
+`formal/pio_equiv_fv.sv` (the lockstep miter, C11), `tools/pio_model/`
+(C12 model trace emission / RTL trace-dump TBs) and `tools/hyperequiv.py`
+(C13 oracle + divergence reports).
+
+- [SPEC-16-1] **Per-clk observables.** Two configurations under comparison are
+  observably equivalent only if `gpio_out[31:0]`, `gpio_oe[31:0]` and
+  `intr[15:0]` (the SPEC-7-12 composition) agree in every clk cycle from
+  reset release onward. The miter asserts these three equalities
+  unconditionally — divergence at any clk is a failure, no windowing.
+- [SPEC-16-2] **CPU-visible read observables.** `reg_rdata` is a combinational
+  function of `reg_addr` and block state (the pio_block read mux), so
+  equivalence requires equal `reg_rdata` at every address in every clk.
+  Read strobes contribute only side effects (RXF pop SPEC-7-28, the
+  PUTGET window SPEC-7-13) and the harness issues identical reads on both
+  instances, so the pop streams — hence RX data order — are compared.
+  **Exclusions** (instruction-stream artifacts a rewrite may legitimately
+  rearrange): SMx_INSTR (= imem[pc], SPEC-7-24 — the program text itself
+  differs by hypothesis) and SMx_ADDR (= pc, SPEC-7-22); SMx_EXECCTRL is
+  compared with bit 31 masked (the EXEC_STALLED RO overlay, SPEC-7-15 —
+  SM-internal readiness timing, not an architectural effect).
+- [SPEC-16-3] **Bounded-by-default equivalence.** A pair is equivalent at
+  horizon N iff no observable divergence (SPEC-16-1/2) occurs within N
+  clk of the init protocol (SPEC-16-4) under the free-phase rules
+  (SPEC-16-5). N is a parameter of the check (sby BMC depth; default
+  40–64 clk = ticks at the reset CLKDIV of INT=1). k-induction over the
+  twin — unbounded equivalence — is explicitly out of scope for v1.
+- [SPEC-16-4] **Init protocol.** Both instances share clk/rst with the CC-1
+  reset protocol; program A/B are written word-serially into
+  INSTR_MEM0.. (SPEC-7-10) by a deterministic prologue sequencer; config
+  writes are broadcast identically; SM0 is enabled via CTRL (SPEC-7-2).
+  v1 scoping: SM1..3 stay disabled (single-SM equivalence — the card's
+  sanctioned scoping for solver tractability).
+- [SPEC-16-5] **Free-phase rules.** After the prologue the reg bus is free but
+  broadcast identically to both instances, confined to bus *traffic*:
+  TXF0 (SPEC-7-28), FDEBUG W1C (SPEC-7-29), IRQ/IRQ_FORCE (SPEC-7-6)
+  and INPUT_SYNC_BYPASS (SPEC-7-7). All config mutation is excluded —
+  the INSTR_MEM window per CC-33 (program text is fixed at load — the
+  equivalence claim quantifies over the loaded pair only), CTRL per
+  SPEC-16-4 (SM1..3 stay disabled), and the SMx config / SMx_INSTR
+  force / PUTGET windows per SPEC-16-6 (mid-run config rewrites are the
+  C14 config-overlay extension point; v1 claims instruction-stream
+  equivalence under fixed config). `gpio_in` and the IRQ neighbour
+  views / imported requests are free but identical across instances.
+- [SPEC-16-6] **v1 scope and extension points.** The two configurations are
+  identical except instruction-memory contents (instruction-stream
+  rewrites). Config overlays (rewrites that also touch config registers,
+  e.g. side-set fusion changing EXECCTRL/PINCTRL) and spec-conformance
+  predicates (timing-relaxed comparison) are the declared extension
+  points consumed by C14/C15.
+- [SPEC-16-7] **Trace exchange format v1.** Line-oriented ASCII; `#` starts a
+  comment; the first non-comment line is the header `pio-trace v1`.
+  Records are whitespace-separated with lowercase fixed-width hex
+  payloads: the per-clk observable line `<clk> G <gpio_out:8hex>
+  <gpio_oe:8hex> <intr:4hex>`, then for each reg read completing in that
+  clk a line `<clk> R <reg_addr:3hex> <reg_rdata:8hex>`. `<clk>` is
+  decimal, 0 = the first clk with rst de-asserted; exactly one G line
+  per clk, no gaps. Two configurations are trace-equivalent iff their
+  traces under identical stimulus are line-identical after dropping R
+  lines at SPEC-16-2-excluded addresses and masking bit 31 of
+  SMx_EXECCTRL reads. Emitted by the C12 model and by RTL trace-dump
+  TBs; consumed by the C13 differ.

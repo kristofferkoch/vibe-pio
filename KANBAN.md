@@ -30,30 +30,6 @@ order: C11 ∥ C12 → C13 → C14; C15 after C11; C16 after C12 + C15.
 Tooling cards (C12–C14) state their own done-when gates; the RTL-card
 template above applies to C11/C15/C16.
 
-- [ ] **C11 — Trace-equivalence miter + observable contract.** Lockstep
-      miter of two `pio_block` instances in `formal/pio_equiv_fv.sv` +
-      `formal/pio_equiv.sby` (bind-free wrapper, immediate assertions,
-      `$initstate` reset assumption — generalizes the `pio_sm_regs_fv`
-      twin). Prologue init-sequencer writes program A/B into each
-      instance's imem over the reg bus (`pio_block_fv_b` pattern); free
-      phase broadcasts identical reg writes (imem window excluded by
-      assumption, CC-33), free `gpio_in` to both. Observables, every
-      clk: `gpio_out`/`gpio_oe`/INTR equal; CPU-visible reads compared
-      via an anyconst reg-bus read address (the `pio_instr_mem_fv`
-      idiom) — covers RX data order, FSTAT/FLEVEL, stickies. v1 scope:
-      identical config except imem (instruction-stream refactors only);
-      config overlays (e.g. side-set rewrites) are the declared
-      extension point C14 consumes. The contract and the shared trace
-      exchange format (emitted by C12 and by RTL trace-dump TBs) become
-      facts `SPEC-16-n` in a new pio-spec.md §16: bounded-by-default
-      equivalence with parameterized horizon, stated explicitly —
-      k-induction over the twin is out of scope.
-      Done-when: equivalent pair PASS at depth N (default 40–64 ticks);
-      red/green recorded — inequivalent pair (e.g. flipped pin
-      polarity) BMC-flagged at the first divergent cycle; `make audit`/
-      `sim`/`formal` stay green. Engines btormc/boolector (doubled FIFO
-      memories case-split z3), single-SM-enabled scoping if needed.
-      Depends: none (C10 done).
 - [ ] **C12 — Python golden model + assembler/disassembler.**
       `tools/pio_model/`: clk-accurate single-SM simulator (divider
       CC-26; shift/autopull/autopush CC-11..13/19/20/30; MOV/JMP/WAIT/

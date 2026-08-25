@@ -1,0 +1,71 @@
+# Formal trace-equivalence miter for pio_block (KANBAN C11).
+#
+#   bmc    — the green case: equivalent program pair (A/B differ in one
+#            `nop`-class word, SPEC-16-1..5) must show NO observable
+#            divergence through depth 48 clk = 7 prologue + 41 free
+#            ticks at the reset CLKDIV (SPEC-16-3 horizon; card default
+#            40-64). PASS here is the card's done-when. Recorded
+#            (2026-08-25): PASS in 1:15 h (boolector); the depth-40+
+#            wall is the program actually running (FIFO round-trips),
+#            not stalled-quiet state — the cover task pins that.
+#   cover  — non-vacuity: the miter's comparisons run on live data
+#            (program executed end-to-end, RX FIFO filled and read back).
+#
+# Red case (NOT a task — `make formal` must stay green): prep
+# pio_equiv_miter_red per the recipe in pio_equiv_fv.sv's header; the
+# flipped-polarity pair must FAIL bmc at the first divergent clk
+# (recorded 2026-08-25: e_out at step 12).
+#
+# Engines per the card: btormc/boolector (the doubled FIFO memories
+# case-split z3). Measured: btormc decelerates hard past bound ~12 on
+# the doubled design (11+ min at bound 13); smtbmc boolector carries
+# the depth-48 bmc — both tasks use it. k-induction over the twin is
+# out of scope (SPEC-16-3) — no prove task.
+# NB: files copied flat into src/ (distinct basenames).
+
+[tasks]
+bmc
+cover
+
+[options]
+bmc:   mode bmc
+bmc:   depth 48
+cover: mode cover
+cover: depth 48
+
+[engines]
+bmc:   smtbmc boolector
+cover: smtbmc boolector
+
+[script]
+read -formal -sv pio_block.sv
+read -formal -sv pio_instr_mem.sv
+read -formal -sv pio_sm.sv
+read -formal -sv pio_sm_regs.sv
+read -formal -sv pio_sm_decoder.sv
+read -formal -sv pio_sm_exec.sv
+read -formal -sv pio_sm_shift.sv
+read -formal -sv pio_sm_fifo.sv
+read -formal -sv pio_irq_flags.sv
+read -formal -sv pio_gpio_mux.sv
+read -formal -sv pio_equiv_fv.sv
+bmc:   prep -top pio_equiv_miter
+cover: prep -top pio_equiv_miter
+# Flatten the FIFO/imem $mem cells to flops+muxes: kept as SMT arrays
+# they case-split the solvers (the card's doubled-FIFO-memories note);
+# at 2x(4 SMs x 2 FIFOs x 8x32b + 32x16b imem) mapping is small and
+# lets boolector close steps in seconds.
+memory_map
+
+[files]
+../rtl/pio_block.sv
+../rtl/pio_instr_mem.sv
+../rtl/pio_sm.sv
+../rtl/pio_sm_regs.sv
+../rtl/pio_sm_decoder.sv
+../rtl/pio_sm_exec.sv
+../rtl/pio_sm_shift.sv
+../rtl/pio_sm_fifo.sv
+../rtl/pio_irq_flags.sv
+../rtl/pio_gpio_mux.sv
+pio_equiv_fv.sv
