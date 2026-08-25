@@ -6,6 +6,10 @@
 #            parallel work never needs to edit this file.
 # `syn`    — yosys elaboration (hierarchy check) of every rtl/*.sv.
 # `formal` — run every formal/*.sby task.
+# `audit`  — SPEC-/CC- traceability audit (tools/trace_audit.py): runs the
+#            script's hermetic self-test (incl. mutation checks), then the
+#            repo audit; exits nonzero on dangling citations, duplicate
+#            fact IDs, or index/body mismatches.
 
 SIM_DIR     := sim
 RTL_DIR     := rtl
@@ -19,7 +23,7 @@ RTL_SRC := $(wildcard $(RTL_DIR)/*.sv)
 IVERILOG = iverilog -g2012 -I $(SIM_DIR)
 VVP      = vvp
 
-.PHONY: sim syn formal toolcheck clean $(TB_LIST)
+.PHONY: sim syn formal audit toolcheck clean $(TB_LIST)
 
 toolcheck:
 	@echo "=== toolchain versions ==="
@@ -89,6 +93,10 @@ formal:
 		done; \
 	fi; \
 	exit $$rc
+
+audit:
+	@python3 tools/trace_audit.py --self-test || exit 1
+	@python3 tools/trace_audit.py
 
 clean:
 	rm -rf build sim_out formal/out formal/*_bmc formal/*_prove formal/*_cover

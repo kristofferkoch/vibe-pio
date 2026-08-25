@@ -23,9 +23,6 @@ Card conventions (all RTL cards):
 
 ### Formal (formal/)
 
-- [ ] Traceability audit script: cross-check assertion-cited SPEC-/CC-
-      IDs in `rtl/`+`formal/` against the fact/clause indexes; report
-      unverified facts and unsourced assertions. Depends: C0 + any RTL.
 - [ ] Equivalence/performance contract: reference behavioural spec vs
       RTL for a fixed program (miter or co-simulation in formal/).
       Depends: C10.
