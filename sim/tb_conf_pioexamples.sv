@@ -1172,8 +1172,8 @@ module tb_conf_pioexamples;
       // INT=1/2/4 produce byte-identical results — so it is a
       // deterministic tick-domain divergence, not a synchroniser-margin
       // effect (the earlier sync-margin theory here and in IDEAS.md was
-      // falsified by that experiment). Root cause open; IDEAS.md has the
-      // analysis and the bisection recipe.
+      // falsified by that experiment). Root cause open; the KANBAN card
+      // "Manchester rx tick divergence" carries the bisection recipe.
       poll_eq(A_FLEVEL, 32'h1 << 12, 1500, ok);  // RX1 level 1 (TX1 dead)
       `check1(ok, 1'b1)
       rx_pop(1, v);
