@@ -68,6 +68,26 @@ Legend: ss = side-set bits (incl. enable bit if `opt`); FIFO join as per
 | 38 | `uart_dma` (C only) | `pio/uart_dma/uart_dma.c` | reuses uart_rx/uart_tx programs | DMA + PIO IRQ at 921600 baud | Full-duplex DMA loopback conformance workload |
 | 39 | `i2c_bus_scan` (C only) | `pio/i2c/i2c_bus_scan.c` | reuses `i2c` program | as #12 | I2C bus scan via OUT EXEC instruction records |
 
+### Closed-loop conformance coverage (CF12/CF15/CF16)
+
+`manchester_tx`→`manchester_rx` (#17/18), `differential_manchester_tx`→
+`_rx` (#7/8) and `uart_tx`→`uart_rx` (#33/34) run as SM→pin→SM loopbacks
+in `sim/tb_conf_pioexamples.sv` at clkdiv 1, pinning CC-40 (closed-loop
+observation bound). Post-mortem of the former CF12 "rx tick divergence"
+(word 2 decoded 0xffff_f000, divider-invariant): the TB had programmed
+the tx SM's EXECCTRL wrap bottom with the *entry label* (`start`, 4)
+instead of the program's `.wrap_target` (0). All-'0' words mask this —
+every '0' bit exits `get_bit` via the explicit `jmp !x do_0` — but the
+first '1' bit falls through at wrap_top into the bogus bottom,
+re-executing `out x,1` inside the same bit cell and never entering the
+do_1 encoder: the decode walks from the first '1' bit. The bisect
+stimulus 0x8000_0000 (only bit 31 set) received as 0x0000_0000 localised
+it to one bit cell; a tick trace showed PC 5→4 (no do_1 entry) instead
+of 5→wrap→0. RTL was correct at 12 ticks/bit throughout; fix = the wrap
+constant, red/green recorded against it. Lesson kept: pio_sm_init sets
+pc AND wrap from the program header — a conformance TB that mixes the
+entry label into the wrap config is testing a different program.
+
 ### Encodings spot-check
 
 Verified against the spec §2 encoding table (hand-decoded; consistent with

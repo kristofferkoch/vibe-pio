@@ -49,7 +49,7 @@ JSON_DIR = os.path.join(REPO, "build", "conf_json")
 OUT_SVH = os.path.join(REPO, "sim", "conf_pioexamples.svh")
 
 # (source .pio under third_party/pico-examples, program name to extract).
-# Exactly the programs sim/tb_conf_pioexamples.sv runs (CF1..CF13); the
+# Exactly the programs sim/tb_conf_pioexamples.sv runs (CF1..CF16); the
 # coverage map in that TB's header says which check uses which program.
 PROGRAMS = [
     ("pio/squarewave/squarewave.pio", "squarewave"),                     # CF1
@@ -67,6 +67,11 @@ PROGRAMS = [
     ("pio/i2c/i2c.pio", "set_scl_sda"),                                  # CF11
     ("pio/manchester_encoding/manchester_encoding.pio", "manchester_tx"),  # CF12
     ("pio/manchester_encoding/manchester_encoding.pio", "manchester_rx"),  # CF12
+    ("pio/differential_manchester/differential_manchester.pio",
+     "differential_manchester_tx"),                                        # CF15
+    ("pio/differential_manchester/differential_manchester.pio",
+     "differential_manchester_rx"),                                        # CF15
+    ("pio/uart_rx/uart_rx.pio", "uart_rx"),                                # CF16
     ("pio/hub75/hub75.pio", "hub75_data_rgb888"),                        # CF13
     ("pio/apa102/apa102.pio", "apa102_rgb555"),                          # CF14
 ]

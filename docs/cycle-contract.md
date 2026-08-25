@@ -511,7 +511,33 @@ protocols). Flags are not auto-cleared except by WAIT 1 IRQ.
 
 ---
 
-## 10. Clause index
+## 10. Closed-loop SM→pin→SM timing
+
+**CC-40 [SOURCED+MODEL] (closed-loop observation bound — spec §15
+conformance angle).** Composing CC-3/CC-8 with CC-23: a pin level written
+by SM A's instruction executing in tick cycle T (side-set, OUT/SET PINS)
+registers at the end of T, is present on the pad during clk cycle T+1,
+and is therefore first observable to *another* SM's input logic (WAIT
+gpio/pin/jmppin completion, JMP PIN, IN PINS capture) on that SM's first
+tick in a clk cycle ≥ T+3 — T+2 for a bypassed pin (CC-23). Each leg is
+[SOURCED]; the composed bound is [MODEL] only in that we name it as one
+clause. This is the contract the closed-loop conformance checks exercise
+end-to-end (SM→pad→SM at clkdiv 1): the manchester_encoding loopback
+(CF12) decodes the example's own three words exactly at 12 ticks per bit
+with the receiver re-locking on every mid-bit transition through 29
+wrap fall-throughs; differential_manchester (CF15) at 16 ticks per bit
+locks on start-of-bit edges and samples the 3/4-bit eye; uart_rx (CF16)
+locks on the start-bit edge and samples each bit centre. All three stay
+green only if the output registration (CC-3/CC-8), the 2-FF sync
+(CC-23), and the free wrap (CC-10 / SPEC-8-2) hold *together* — the
+former "manchester rx tick divergence" was a testbench wrap-constant
+defect, not an RTL one (see the CF12 body in
+`sim/tb_conf_pioexamples.sv`), and is the red/green regression for this
+clause.
+
+---
+
+## 11. Clause index
 
 | Clause | One-line statement | Status |
 |---|---|---|
@@ -554,8 +580,9 @@ protocols). Flags are not auto-cleared except by WAIT 1 IRQ.
 | CC-37 | IRQ flags set/clear at end of executing cycle; visible next cycle; no same-cycle sibling relay | INTERPRETATION |
 | CC-38 | Cross-PIO flags: same next-cycle rule, one extra register stage | SOURCED |
 | CC-39 | Flag writers; simultaneous set+clear of one flag ⇒ clear wins | SOURCED+INTERP |
+| CC-40 | Closed loop: SM A's tick-T pin write first observable to SM B's input logic on ticks ≥ T+3 (T+2 bypassed); CF12/CF15/CF16 loopbacks are the directed checks | SOURCED+MODEL |
 
-Count: **39 clauses** — 24 SOURCED (or SOURCED-dominant), 3 INTERPRETATION
+Count: **40 clauses** — 25 SOURCED (or SOURCED-dominant), 3 INTERPRETATION
 outright (CC-33, CC-37, and the CC-31 guard-evaluation pinning), 8 MODEL
 or MODEL-dominant (CC-1, CC-2, CC-3, CC-26, CC-36; plus model components
-of CC-8/CC-29/CC-30/CC-34/CC-35), and hybrid clauses as marked.
+of CC-8/CC-29/CC-30/CC-34/CC-35/CC-40), and hybrid clauses as marked.

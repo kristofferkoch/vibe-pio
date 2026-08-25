@@ -298,6 +298,70 @@ task automatic load_manchester_rx(input int base);
 endtask
 
 // --------------------------------------------------------------------------
+// differential_manchester_tx — pio/differential_manchester/differential_manchester.pio (10 instructions)
+// wrap_target=0 wrap=9 origin=-1 sideset(size=2, opt=1, pindirs=0)
+localparam int DIFFERENTIAL_MANCHESTER_TX_N          = 10;
+localparam int DIFFERENTIAL_MANCHESTER_TX_ORIGIN     = -1;
+localparam int DIFFERENTIAL_MANCHESTER_TX_WRAP_TARGET= 0;  // .wrap_target (relative)
+localparam int DIFFERENTIAL_MANCHESTER_TX_WRAP       = 9;  // .wrap (relative)
+localparam int DIFFERENTIAL_MANCHESTER_TX_SS_SIZE     = 2;  // .side_set bit count (incl. opt bit)
+localparam int DIFFERENTIAL_MANCHESTER_TX_SS_OPT      = 1;
+localparam int DIFFERENTIAL_MANCHESTER_TX_SS_PINDIRS  = 0;
+localparam int DIFFERENTIAL_MANCHESTER_TX_LBL_START = 0;  // public start
+task automatic load_differential_manchester_tx(input int base);
+  bus_wr(A_IMEM(base+0), 32'h6021);  // out    x, 1
+  bus_wr(A_IMEM(base+1), (32'h1e24 & 32'hffff_e0) | ((5'(base) + 5'd4) & 5'h1f));  // jmp    !x, 4           side 1 [6] (jmp +base)
+  bus_wr(A_IMEM(base+2), 32'hA042);  // nop
+  bus_wr(A_IMEM(base+3), (32'h1600 & 32'hffff_e0) | ((5'(base) + 5'd0) & 5'h1f));  // jmp    0               side 0 [6] (jmp +base)
+  bus_wr(A_IMEM(base+4), (32'h0705 & 32'hffff_e0) | ((5'(base) + 5'd5) & 5'h1f));  // jmp    5                      [7] (jmp +base)
+  bus_wr(A_IMEM(base+5), 32'h6021);  // out    x, 1
+  bus_wr(A_IMEM(base+6), (32'h1629 & 32'hffff_e0) | ((5'(base) + 5'd9) & 5'h1f));  // jmp    !x, 9           side 0 [6] (jmp +base)
+  bus_wr(A_IMEM(base+7), 32'hA042);  // nop
+  bus_wr(A_IMEM(base+8), (32'h1e05 & 32'hffff_e0) | ((5'(base) + 5'd5) & 5'h1f));  // jmp    5               side 1 [6] (jmp +base)
+  bus_wr(A_IMEM(base+9), (32'h0700 & 32'hffff_e0) | ((5'(base) + 5'd0) & 5'h1f));  // jmp    0                      [7] (jmp +base)
+endtask
+
+// --------------------------------------------------------------------------
+// differential_manchester_rx — pio/differential_manchester/differential_manchester.pio (10 instructions)
+// wrap_target=5 wrap=9 origin=-1
+localparam int DIFFERENTIAL_MANCHESTER_RX_N          = 10;
+localparam int DIFFERENTIAL_MANCHESTER_RX_ORIGIN     = -1;
+localparam int DIFFERENTIAL_MANCHESTER_RX_WRAP_TARGET= 5;  // .wrap_target (relative)
+localparam int DIFFERENTIAL_MANCHESTER_RX_WRAP       = 9;  // .wrap (relative)
+localparam int DIFFERENTIAL_MANCHESTER_RX_LBL_START = 0;  // public start
+task automatic load_differential_manchester_rx(input int base);
+  bus_wr(A_IMEM(base+0), 32'h2BA0);  // wait   1 pin, 0               [11]
+  bus_wr(A_IMEM(base+1), (32'h00c4 & 32'hffff_e0) | ((5'(base) + 5'd4) & 5'h1f));  // jmp    pin, 4 (jmp +base)
+  bus_wr(A_IMEM(base+2), 32'h4021);  // in     x, 1
+  bus_wr(A_IMEM(base+3), (32'h0000 & 32'hffff_e0) | ((5'(base) + 5'd0) & 5'h1f));  // jmp    0 (jmp +base)
+  bus_wr(A_IMEM(base+4), 32'h4141);  // in     y, 1                   [1]
+  bus_wr(A_IMEM(base+5), 32'h2B20);  // wait   0 pin, 0               [11]
+  bus_wr(A_IMEM(base+6), (32'h00c9 & 32'hffff_e0) | ((5'(base) + 5'd9) & 5'h1f));  // jmp    pin, 9 (jmp +base)
+  bus_wr(A_IMEM(base+7), 32'h4041);  // in     y, 1
+  bus_wr(A_IMEM(base+8), (32'h0000 & 32'hffff_e0) | ((5'(base) + 5'd0) & 5'h1f));  // jmp    0 (jmp +base)
+  bus_wr(A_IMEM(base+9), 32'h4121);  // in     x, 1                   [1]
+endtask
+
+// --------------------------------------------------------------------------
+// uart_rx — pio/uart_rx/uart_rx.pio (9 instructions)
+// wrap_target=0 wrap=8 origin=-1
+localparam int UART_RX_N          = 9;
+localparam int UART_RX_ORIGIN     = -1;
+localparam int UART_RX_WRAP_TARGET= 0;  // .wrap_target (relative)
+localparam int UART_RX_WRAP       = 8;  // .wrap (relative)
+task automatic load_uart_rx(input int base);
+  bus_wr(A_IMEM(base+0), 32'h2020);  // wait   0 pin, 0
+  bus_wr(A_IMEM(base+1), 32'hEA27);  // set    x, 7                   [10]
+  bus_wr(A_IMEM(base+2), 32'h4001);  // in     pins, 1
+  bus_wr(A_IMEM(base+3), (32'h0642 & 32'hffff_e0) | ((5'(base) + 5'd2) & 5'h1f));  // jmp    x--, 2                 [6] (jmp +base)
+  bus_wr(A_IMEM(base+4), (32'h00c8 & 32'hffff_e0) | ((5'(base) + 5'd8) & 5'h1f));  // jmp    pin, 8 (jmp +base)
+  bus_wr(A_IMEM(base+5), 32'hC014);  // irq    nowait 4 rel
+  bus_wr(A_IMEM(base+6), 32'h20A0);  // wait   1 pin, 0
+  bus_wr(A_IMEM(base+7), (32'h0000 & 32'hffff_e0) | ((5'(base) + 5'd0) & 5'h1f));  // jmp    0 (jmp +base)
+  bus_wr(A_IMEM(base+8), 32'h8020);  // push   block
+endtask
+
+// --------------------------------------------------------------------------
 // hub75_data_rgb888 — pio/hub75/hub75.pio (16 instructions)
 // wrap_target=0 wrap=15 origin=-1 sideset(size=1, opt=0, pindirs=0)
 localparam int HUB75_DATA_RGB888_N          = 16;

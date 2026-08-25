@@ -46,7 +46,17 @@
 //                      (SPEC-3.8-2)
 //   CF12 manchester    SPEC-15-7: forced WAIT armed while SM disabled with
 //                      delay bits set (must be ignored); tx->rx loopback,
-//                      first word decoded exactly (see the margin note)
+//                      all three example words decoded exactly through the
+//                      closed loop (CC-40; wrap fall-through SPEC-8-2 — see
+//                      the CF12 body for the former "rx tick divergence"
+//                      root cause: a TB wrap-constant defect, not RTL)
+//   CF15 diff_manch    same closed-loop angle at 16 ticks/bit: start-edge
+//                      WAIT lock, 3/4-bit eye JMP-PIN sample, both line
+//                      polarities, forced `pull block` line hold (CC-40)
+//   CF16 uart_rx       uart_tx->uart_rx loopback: start-bit edge WAIT lock,
+//                      bit-centre IN sampling, stop-bit JMP PIN + PUSH
+//                      (CC-40; realistic-clkdiv timing = the UART KANBAN
+//                      card)
 //   CF13 hub75_data    SPEC-15-6: imem patched while the SM runs — the
 //                      in-flight instruction is unaffected, the patch
 //                      applies at the next fetch (CC-33)
@@ -63,8 +73,11 @@
 // Red/green (AGENTS.md): CF8 is the CC-24 regression (re-inject: in_bus fed
 // from sync-FF1 instead of FF2 in pio_gpio_mux -> CF8 fails); CF7/CF13 are
 // the CC-31 regression (re-inject: PULL treated as a no-op whenever autopull
-// is enabled -> CF7's CSn never asserts). Demonstrations recorded in the
-// finishing commit.
+// is enabled -> CF7's CSn never asserts); CF12 is the CC-40 closed-loop
+// regression (re-inject: SM0's EXECCTRL wrap bottom = entry label instead
+// of the program's .wrap_target -> CF12's word-2/word-3 checks fail, word 2
+// reads 0xffff_f000 — the former "rx tick divergence", a TB defect).
+// Demonstrations recorded in the finishing commit.
 
 `include "tb_common.sv"
 
@@ -1122,6 +1135,19 @@ module tb_conf_pioexamples;
   // =====================================================================
   // CF12: manchester loopback — SPEC-15-7 forced-WAIT arming with delay
   // bits (ignored), tx->rx round trip of the example's own words.
+  //
+  // Root cause of the former "rx tick divergence" (KANBAN card, closed):
+  // this TB programmed SM0's EXECCTRL wrap with WRAP_BOTTOM = the entry
+  // label 'start' (4) instead of the program's .wrap_target (0). Word 0
+  // (all-zero) never noticed — every '0' bit exits get_bit via the
+  // explicit `jmp !x do_0` — but the first '1' bit falls through at
+  // wrap_top 5 into the bogus bottom 4, re-running `out x,1` inside the
+  // same bit cell and never entering the do_1 encoding: the decode walks
+  // from the first '1' (bisect stimulus 0x8000_0000 received as
+  // 0x0000_0000). The RTL was correct all along: with the wrap pinned to
+  // the .wrap_target the decode is exactly 12 ticks/bit through the
+  // closed loop (CC-40). Red/green: re-inject LBL_START as the wrap
+  // bottom -> the word-2 check below fails (word 2 reads 0xffff_f000).
   // =====================================================================
   task automatic cf12_manchester;
     logic ok;
@@ -1131,9 +1157,10 @@ module tb_conf_pioexamples;
       load_manchester_tx(0);
       load_manchester_rx(8);
       // tx (SM0): sideset 1 opt on pin0, out right autopull @32, JOIN_TX,
-      // entry at 'start' (manchester_tx_program_init)
+      // entry at 'start' with the program's own wrap 5->0 (pio_sm_init
+      // sets BOTH the pc and the wrap from the program header)
       bus_wr(A_SM(0, 5), MFY_PCTRL(2, 1, 0, 0, 0, 0, 0));
-      bus_wr(A_SM(0, 1), MFY_EXEC(MANCHESTER_TX_WRAP, MANCHESTER_TX_LBL_START,
+      bus_wr(A_SM(0, 1), MFY_EXEC(MANCHESTER_TX_WRAP, MANCHESTER_TX_WRAP_TARGET,
                                   0, 1'b1, 1'b0));
       bus_wr(A_SM(0, 2), MFY_SHIFT(1'b0, 1'b1, 32, 32, 1'b1, 1'b1, 1'b1, 1'b0));
       // rx (SM1): in base = JMP_PIN = pin0, in right autopush @32, JOIN_RX
@@ -1162,22 +1189,153 @@ module tb_conf_pioexamples;
       bus_wr(A_TXF(0), 32'h1234_5678);
       set_pc(0, MANCHESTER_TX_LBL_START);
       enable(4'b0011);
-      dbg_win(950);
       // rx pushes the same words: tx emits LSB-first (out right) and rx
       // enters each decoded bit at the MSB end (in right), so bit k of
       // the received word is the k-th transmitted bit (SPEC-3.3-1) — the
-      // example's own loopback workload. The first word round-trips
-      // exactly; past the first word boundary the decode walks (word 2
-      // reads 0xffff_f000). NOTE: this is divider-INVARIANT — CLKDIV
-      // INT=1/2/4 produce byte-identical results — so it is a
-      // deterministic tick-domain divergence, not a synchroniser-margin
-      // effect (the earlier sync-margin theory here and in IDEAS.md was
-      // falsified by that experiment). Root cause open; the KANBAN card
-      // "Manchester rx tick divergence" carries the bisection recipe.
+      // example's own loopback workload, all three words exact at clkdiv
+      // 1 (CC-40 closed-loop bound; 12 ticks/bit, re-lock every mid-bit
+      // transition, 29 wrap fall-throughs on the '1' bits — SPEC-8-2).
       poll_eq(A_FLEVEL, 32'h1 << 12, 1500, ok);  // RX1 level 1 (TX1 dead)
       `check1(ok, 1'b1)
       rx_pop(1, v);
       `check32(v, 32'd0)
+      poll_eq(A_FLEVEL, 32'h1 << 12, 1500, ok);
+      `check1(ok, 1'b1)
+      rx_pop(1, v);
+      `check32(v, 32'h0ff0_a55a)
+      poll_eq(A_FLEVEL, 32'h1 << 12, 1500, ok);
+      `check1(ok, 1'b1)
+      rx_pop(1, v);
+      `check32(v, 32'h1234_5678)
+      enable(4'b0000);
+      lb_mask = 32'h0;
+    end
+  endtask
+
+  // =====================================================================
+  // CF15: differential_manchester loopback — the same closed-loop
+  // SM->pin->SM angle as CF12 (CC-40) at 16 ticks/bit: start-edge WAIT
+  // lock + 3/4-bit eye JMP-PIN sample, both half-period polarities, and
+  // the forced `pull block` line-hold idiom of the tx init.
+  // =====================================================================
+  task automatic cf15_diff_manchester;
+    logic ok;
+    logic [31:0] v;
+    begin
+      $display("--- CF15: differential_manchester tx -> rx loopback");
+      load_differential_manchester_tx(0);
+      load_differential_manchester_rx(10);
+      // tx (SM0): sideset 1 opt pin0, out right autopull @32, JOIN_TX,
+      // entry 'start' = initial_high, program wrap 9->0; SET_COUNT 1 so
+      // the pin-init forces below actually write (SPEC-7-26: 0 = none)
+      bus_wr(A_SM(0, 5), MFY_PCTRL(2, 1, 0, 0, 0, 0, 0));
+      bus_wr(A_SM(0, 1), MFY_EXEC(DIFFERENTIAL_MANCHESTER_TX_WRAP,
+                                  DIFFERENTIAL_MANCHESTER_TX_WRAP_TARGET,
+                                  0, 1'b1, 1'b0));
+      bus_wr(A_SM(0, 2), MFY_SHIFT(1'b0, 1'b1, 32, 32, 1'b1, 1'b1, 1'b1, 1'b0));
+      // rx (SM1): in base = JMP_PIN = pin0, in right autopush @32, JOIN_RX,
+      // program wrap 9->5 (pio_sm_init(offset): pc = program start)
+      bus_wr(A_SM(1, 5), MFY_PCTRL(0, 0, 0, 0, 0, 0, 0));
+      bus_wr(A_SM(1, 1), MFY_EXEC(10 + DIFFERENTIAL_MANCHESTER_RX_WRAP,
+                                  10 + DIFFERENTIAL_MANCHESTER_RX_WRAP_TARGET,
+                                  0, 1'b0, 1'b0));
+      bus_wr(A_SM(1, 2), MFY_SHIFT(1'b1, 1'b0, 32, 32, 1'b1, 1'b1, 1'b0, 1'b1));
+      set_pc(1, 10);
+      // rx x/y constants per differential_manchester_rx_program_init
+      bus_wr(A_SM(1, 4), 32'(E_SET(SETD_X, 5'd1, 5'd0)));
+      bus_wr(A_SM(1, 4), 32'(E_SET(SETD_Y, 5'd0, 5'd0)));
+      lb_mask = 32'h1;
+      // tx pin init (line idle low) + the init's forced `pull block`
+      // (line state held until data is available, CC-35 stalled force)
+      bus_wr(A_SM(0, 4), 32'(E_SET(SETD_PINDIRS, 5'd1, 5'd0)));
+      bus_wr(A_SM(0, 4), 32'(E_SET(SETD_PINS, 5'd0, 5'd0)));
+      bus_wr(A_SM(0, 4), 32'h80a0);          // pull block (pio_encode_pull)
+      bus_rd(A_SM(0, 1), v);
+      `check1(v[31], 1'b1)                  // EXEC_STALLED on the PULL
+      bus_wr(A_TXF(0), 32'd0);              // the example's own three words
+      bus_wr(A_TXF(0), 32'h0ff0_a55a);
+      bus_wr(A_TXF(0), 32'h1234_5678);
+      set_pc(0, DIFFERENTIAL_MANCHESTER_TX_LBL_START);
+      enable(4'b0011);
+      // Same round-trip contract as CF12 (SPEC-3.3-1): 16 ticks/bit, the
+      // wait re-locks on every start transition and the jmp pin samples
+      // the eye of the second half-period (CC-40).
+      poll_eq(A_FLEVEL, 32'h1 << 12, 2000, ok);
+      `check1(ok, 1'b1)
+      rx_pop(1, v);
+      `check32(v, 32'd0)
+      poll_eq(A_FLEVEL, 32'h1 << 12, 2000, ok);
+      `check1(ok, 1'b1)
+      rx_pop(1, v);
+      `check32(v, 32'h0ff0_a55a)
+      poll_eq(A_FLEVEL, 32'h1 << 12, 2000, ok);
+      `check1(ok, 1'b1)
+      rx_pop(1, v);
+      `check32(v, 32'h1234_5678)
+      enable(4'b0000);
+      lb_mask = 32'h0;
+    end
+  endtask
+
+  // =====================================================================
+  // CF16: uart_rx <- uart_tx loopback — the third edge-locked receiver
+  // angle (CC-40): start-bit edge WAIT lock, bit-centre IN sampling (the
+  // in lands exactly at each bit's centre, pad@(centre)), stop-bit JMP
+  // PIN check and the good-stop PUSH. Framing-error path not driven (the
+  // loopback tx never breaks framing). Realistic-clkdiv bit timing vs the
+  // divider model is the separate UART KANBAN card; this runs at div 1.
+  // =====================================================================
+  task automatic cf16_uart_rx;
+    logic ok;
+    logic [31:0] v;
+    begin
+      $display("--- CF16: uart_tx -> uart_rx loopback");
+      load_uart_tx(0);
+      load_uart_rx(9);
+      // tx (SM0): sideset 1 opt + out on pin0, out right NO autopull
+      // (explicit `pull block`), JOIN_TX, program wrap 3->0 (CF4 config);
+      // SET_COUNT 1 for the pin-init forces (SPEC-7-26: 0 = none)
+      bus_wr(A_SM(0, 5), MFY_PCTRL(2, 1, 1, 0, 0, 0, 0));
+      bus_wr(A_SM(0, 1), MFY_EXEC(UART_TX_WRAP, UART_TX_WRAP_TARGET,
+                                  0, 1'b1, 1'b0));
+      bus_wr(A_SM(0, 2), MFY_SHIFT(1'b0, 1'b1, 32, 32, 1'b1, 1'b1, 1'b0, 1'b0));
+      // rx (SM1): in base = JMP_PIN = pin0, in right, autopush OFF (the
+      // program's own `push` at good_stop), JOIN_RX
+      bus_wr(A_SM(1, 5), MFY_PCTRL(0, 0, 0, 0, 0, 0, 0));
+      bus_wr(A_SM(1, 1), MFY_EXEC(9 + UART_RX_WRAP, 9 + UART_RX_WRAP_TARGET,
+                                  0, 1'b0, 1'b0));
+      bus_wr(A_SM(1, 2), MFY_SHIFT(1'b1, 1'b0, 32, 32, 1'b1, 1'b1, 1'b0, 1'b0));
+      set_pc(1, 9);                          // rx pc = program start (the
+      // C init's pio_sm_init(offset); uart_rx exports no public label)
+      lb_mask = 32'h1;
+      // tx pin init: drive output-high BEFORE the first start bit
+      // (pio_sm_set_pins_with_mask + pindirs; the external pad pull-up of
+      // the C init is unnecessary once the tx owns the pin) so the rx's
+      // `wait 0` sees idle-high until the real start bit
+      bus_wr(A_SM(0, 4), 32'(E_SET(SETD_PINDIRS, 5'd1, 5'd0)));
+      bus_wr(A_SM(0, 4), 32'(E_SET(SETD_PINS, 5'd1, 5'd0)));
+      bus_wr(A_TXF(0), 32'h48);              // "Hello" — the C example's
+      bus_wr(A_TXF(0), 32'h65);              // own loopback string
+      bus_wr(A_TXF(0), 32'h6c);
+      bus_wr(A_TXF(0), 32'h6c);
+      bus_wr(A_TXF(0), 32'h6f);
+      enable(4'b0011);
+      // 8n1 frames at 8 ticks/bit: each received word is the byte
+      // left-justified (in right + push after 8 ins — the C reads the
+      // FIFO's top byte, io_rw_8 + 3). All five frames land within ~420
+      // clks; wait for the full level once, then pop and check each.
+      poll_eq(A_FLEVEL, 32'h5 << 12, 400, ok);
+      `check1(ok, 1'b1)
+      rx_pop(1, v);
+      `check32(v, 32'h4800_0000)
+      rx_pop(1, v);
+      `check32(v, 32'h6500_0000)
+      rx_pop(1, v);
+      `check32(v, 32'h6c00_0000)
+      rx_pop(1, v);
+      `check32(v, 32'h6c00_0000)
+      rx_pop(1, v);
+      `check32(v, 32'h6f00_0000)
       enable(4'b0000);
       lb_mask = 32'h0;
     end
@@ -1342,6 +1500,12 @@ module tb_conf_pioexamples;
 
     conf_reset();
     cf12_manchester();
+
+    conf_reset();
+    cf15_diff_manchester();
+
+    conf_reset();
+    cf16_uart_rx();
 
     conf_reset();
     cf13_hub75();
