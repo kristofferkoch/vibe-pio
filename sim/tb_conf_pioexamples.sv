@@ -1167,14 +1167,13 @@ module tb_conf_pioexamples;
       // enters each decoded bit at the MSB end (in right), so bit k of
       // the received word is the k-th transmitted bit (SPEC-3.3-1) — the
       // example's own loopback workload. The first word round-trips
-      // exactly; past the first word boundary the receiver's 3/4-bit eye
-      // (in [8]) walks out of phase in this model at clkdiv=1 — the 2-clk
-      // input synchroniser eats 1/6 of the bit period and the decode
-      // drifts (word 2 decodes as 0xffff_f000, a real but phase-shifted
-      // sample; the example itself recommends input periods well below
-      // sysclk for sampling alignment). Multi-word loopback at a
-      // realistic divider is the follow-up UART loopback KANBAN item's
-      // methodology; the observation is recorded in IDEAS.md.
+      // exactly; past the first word boundary the decode walks (word 2
+      // reads 0xffff_f000). NOTE: this is divider-INVARIANT — CLKDIV
+      // INT=1/2/4 produce byte-identical results — so it is a
+      // deterministic tick-domain divergence, not a synchroniser-margin
+      // effect (the earlier sync-margin theory here and in IDEAS.md was
+      // falsified by that experiment). Root cause open; IDEAS.md has the
+      // analysis and the bisection recipe.
       poll_eq(A_FLEVEL, 32'h1 << 12, 1500, ok);  // RX1 level 1 (TX1 dead)
       `check1(ok, 1'b1)
       rx_pop(1, v);
