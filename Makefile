@@ -15,6 +15,11 @@
 #            trace matrix, a fuzz batch and the mutation demo (model vs
 #            RTL through sim/tb_trace_dump.sv; needs iverilog or the
 #            vibe-pio container image).
+# `py`     — Python quality gate (host-side, needs uv; see
+#            docs/python-tooling.md): ruff format --check + ruff check +
+#            ty type check + pytest (unit tests + doctests). The
+#            RTL-facing scripts stay stdlib-only so make model/audit
+#            also run inside the vibe-pio container (which has no uv).
 
 SIM_DIR     := sim
 RTL_DIR     := rtl
@@ -28,7 +33,7 @@ RTL_SRC := $(wildcard $(RTL_DIR)/*.sv)
 IVERILOG = iverilog -g2012 -I $(SIM_DIR)
 VVP      = vvp
 
-.PHONY: sim syn formal audit model toolcheck clean $(TB_LIST)
+.PHONY: sim syn formal audit model py toolcheck clean $(TB_LIST)
 
 toolcheck:
 	@echo "=== toolchain versions ==="
@@ -39,6 +44,12 @@ toolcheck:
 	@boolector --version | tail -1
 	@echo "btormc $$(btormc --version | tail -1)"
 	@python3 --version
+	@if command -v uv >/dev/null; then \
+		echo "uv $$(uv --version | cut -d' ' -f2) (host-side Python tooling)"; \
+		uv run --quiet ruff --version; \
+		uv run --quiet ty --version; \
+		uv run --quiet pytest --version | head -1; \
+	else echo "uv: not found (make py unavailable; see docs/python-tooling.md)"; fi
 
 sim: $(TB_LIST)
 	@if [ -z "$(TB_LIST)" ]; then \
@@ -105,6 +116,12 @@ audit:
 
 model:
 	@python3 tools/pio_model/difftest.py --self-test
+
+py:
+	uv run ruff format --check .
+	uv run ruff check .
+	uv run ty check
+	uv run pytest
 
 clean:
 	rm -rf build sim_out formal/out formal/*_bmc formal/*_prove formal/*_cover

@@ -22,6 +22,7 @@ sim/       Classic (non-UVM) testbenches and simulation helpers
 formal/    SymbiYosys properties and proof scripts
 tools/     Python golden model + assembler/disassembler (C12) and the
            SPEC-/CC- traceability audit
+tests/     pytest suite + doctests for the Python side (`make py`)
 docs/      Reference material, notes extracted from the datasheet
 container/ Toolchain image definition (podman/docker)
 ```
@@ -37,6 +38,8 @@ the project is reproducible; see `container/` and `docs/toolchain.md`.
 - `iverilog` / `vvp` — simulation
 - `yosys` — elaboration / synthesis sanity checks
 - `sby` (SymbiYosys) with `z3`, `boolector`, or `yices` — formal proofs
+- `uv` + `ruff` + `ty` + `pytest` — the Python quality gate (`make py`,
+  host-side; see `docs/python-tooling.md`)
 
 Specification sources: the RP2350 datasheet PDF and the `pioasm` assembler
 sources, cross-checked against each other; identifiers pinned in

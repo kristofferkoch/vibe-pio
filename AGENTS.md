@@ -26,6 +26,13 @@ Conventions for AI agents (and subagents) working in this repo.
 - Code goes in the SystemVerilog subset common to iverilog (`-g2012`) and
   yosys (`read_verilog -sv`): `always_ff`/`always_comb`, no interfaces or
   classes. See `DESIGN.md` before structural changes.
+- **Python follows the same discipline** (see `docs/python-tooling.md`):
+  uv + ruff + ty + pytest, gated by `make py` (host-side; the runtime
+  scripts stay stdlib-only so `make model`/`make audit` also run in the
+  container). Python fixes are red/green TDD like RTL: the regression
+  check must be shown red against the re-injected defect, with the
+  demonstration recorded in the commit. Doctests are part of the suite
+  — every `pio_model` module carries them.
 
 ## Fact and clause citations
 

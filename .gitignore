@@ -7,6 +7,8 @@ formal/*/
 # these — see sim/gen_conf_pioexamples.py for the regeneration recipe)
 third_party/
 
-# Python bytecode
+# Python bytecode / dev env (tools themselves are stdlib-only)
 __pycache__/
 *.pyc
+.venv/
+.pytest_cache/

@@ -1,0 +1,120 @@
+[project]
+name = "vibe-pio-tools"
+version = "0.1.0"
+description = "Python tooling for the vibe-pio RTL: golden model, assembler, trace differential, audits"
+# The tools are scripts run in place (tools/, sim/); no build/publish.
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff==0.16.3",
+    "ty==0.0.72",
+    "pytest==9.1.1",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+# Python lives in tools/ (golden model + audits) and sim/ (generators);
+# tests/ holds the pytest suite. third_party/ is upstream code — never ours.
+include = ["tools/**/*.py", "sim/**/*.py", "tests/**/*.py"]
+extend-exclude = ["build", "formal", "third_party", ".zcode", ".venv"]
+
+[tool.ruff.lint]
+# Strict but curated: everything reasonable for a fresh codebase, minus
+# rules that fight the repo's established comment/doc conventions
+# (documented in docs/python-tooling.md). Missing rules are deliberate:
+# add them back by deleting the ignore entry, never by weakening code.
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "A",    # flake8-builtins
+    "C4",   # flake8-comprehensions
+    "EXE",  # flake8-executable
+    "ISC",  # flake8-implicit-str-concat
+    "ICN",  # flake8-import-conventions
+    "PIE",  # flake8-pie
+    "PT",   # flake8-pytest-style
+    "Q",    # flake8-quotes
+    "RET",  # flake8-return
+    "RSE",  # flake8-raise
+    "RUF",  # ruff-specific
+    "SIM",  # flake8-simplify
+    "TID",  # flake8-tidy-imports
+    "PTH",  # flake8-use-pathlib
+    "PGH",  # pygrep-hooks
+    "PL",   # pylint (C, E, R, W families)
+    "PERF", # perflint
+    "FURB", # refurb
+    "TRY",  # tryceratops
+    "ARG",  # flake8-unused-arguments
+    "SLF",  # flake8-self
+]
+ignore = [
+    # Lines over 120 are the formatter's business (it never splits
+    # strings); SPEC-/CC- citation comments and hex literals stay long.
+    "E501",
+    # Rich inline exception messages (AsmError f"{file}:{line}: ...") are
+    # this codebase's UX — the assign-to-variable ceremony EM/TRY003
+    # demand is noise here.
+    "TRY003",
+    # Magic numbers are the domain: bit masks and field positions
+    # (M32, 0x1F, << 12) carry SPEC-/CC- citations beside them.
+    "PLR2004",
+    # `from . import encoding as E` is the established package-wide alias.
+    "N812",
+    # ReservedEncoding/TraceMismatch/AsmError are pinned names cited
+    # across docs/tests; no Error suffix renaming.
+    "N818",
+    # builtin open() is used uniformly with str|Path; Path.open adds nothing.
+    "PTH123",
+    # The config-word builders (pctrl/execctrl/shiftctrl) take their bit
+    # fields positionally to mirror the tb_conf_pioexamples MFY_* helpers.
+    "PLR0917",
+    # The model/audit CLIs are step scripts with deliberate fallthrough;
+    # exit codes land at main() and the transcription functions are large
+    # by design (1:1 from the RTL).
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# difftest/stim trace-assert scripts: `s` is the established Schedule var
+# in the conformance lambdas; tests may poke privates deliberately.
+"tools/pio_model/stim.py" = ["E741"]
+# model.py is a 1:1 transcription of the RTL: its if-trees mirror the
+# always_ff priority structure (SIM collapsing would blur that), and
+# step()'s lb_mask is a protocol parameter (pio-stim word order) folded
+# by the caller, not the model.
+"tools/pio_model/model.py" = ["SIM102", "SIM114", "ARG002"]
+# trace_audit's source patterns may be absolute (hermetic self-test
+# fixtures in a tmpdir); glob.glob handles those, Path.glob does not.
+"tools/trace_audit.py" = ["PTH207"]
+"tests/**" = ["SLF001"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Doctests are part of the suite via tests/test_doctests.py (a
+# unittest.load_tests hook over the pio_model modules — the package uses
+# relative imports, so pytest's --doctest-modules file walk cannot load
+# it; see docs/python-tooling.md).
+
+[tool.ty.src]
+include = ["tools", "sim", "tests"]
+respect-ignore-files = true
+
+[tool.ty.environment]
+python-version = "3.12"
+# pio_model is imported in place via a sys.path shim (it runs stdlib-only
+# inside the container too, never installed); give ty the same view.
+extra-paths = ["tools"]
+
+[tool.ty.rules]
+# Strict: everything at error (the ty default set), plus the optional
+# strictness knobs that matter for this codebase.
+missing-type-argument = "error"

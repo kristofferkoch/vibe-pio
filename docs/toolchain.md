@@ -20,6 +20,11 @@ Base: `debian:trixie-slim` (Debian 13).
 | python3 | 3.13.5 | Debian package (plus `python3-click` for sby) |
 | git / curl / wget | 2.47.3 / distro | Debian packages |
 
+The container deliberately has **no uv/venv**: every Python script under
+`tools/` and `sim/` is stdlib-only and runs on its `python3`. The dev
+tooling (ruff, ty, pytest via uv) lives on the host and is gated by
+`make py` — see `docs/python-tooling.md`.
+
 Image size (docker): ~511 MB disk usage (~132 MB compressed content).
 
 Every git-pinned component is verified at build time: the Dockerfile
