@@ -10,14 +10,17 @@ strict tooling gates, and **red/green TDD** for every behavior change.
 |---|---|
 | `tools/pio_model/` | the golden-model package (encoding, asm, disasm, model, tracefmt, stim, difftest CLI) |
 | `tools/trace_audit.py` | SPEC-/CC- traceability audit (`make audit`) |
+| `tools/hyperequiv.py` | C13 equivalence oracle: program pair + horizon -> pre-filter, generated C11 miter instance, sby verdict, decoded divergence reports (`make equiv`) |
 | `sim/gen_conf_pioexamples.py` | regenerates `sim/conf_pioexamples.svh` from pioasm |
 | `tests/` | pytest suite: unit tests + the doctest gate (`tests/test_doctests.py`) |
 
-**Runtime code is stdlib-only.** `pio_model` and the audit scripts must
-import with a bare `python3` — they run inside the vibe-pio container
-(`make model`, `make audit`), which has no uv, no venv, and no network.
-Dependencies (ruff, ty, pytest) are *dev-only* and live in the uv
-environment.
+**Runtime code is stdlib-only.** `pio_model` and the audit/oracle
+scripts must import with a bare `python3` — they run inside the vibe-pio
+container (`make model`, `make audit`, `make equiv`), which has no uv,
+no venv, and no network. The oracle shells out to `sby` (native or
+through the same container image as difftest) but never pip-installs
+anything. Dependencies (ruff, ty, pytest) are *dev-only* and live in the
+uv environment.
 
 ## uv
 
@@ -43,11 +46,12 @@ newest published before the cutoff).
 | formatting | `ruff format --check .` | line length **120** |
 | lint | `ruff check .` | strict curated rule set (below) |
 | types | `ty check` | every function annotated; strictness knobs in `[tool.ty.rules]` |
-| tests | `pytest` | `tests/` unit suite **+ doctests** of all `pio_model` modules |
+| tests | `pytest` | `tests/` unit suite **+ doctests** of all `pio_model` modules and the C13 oracle |
 
 Python changes are not done until `make py` is green. The heavier
 RTL-facing gates stay separate: `make model` (differential vs RTL, needs
-iverilog or the vibe-pio container image) and `make audit`.
+iverilog or the vibe-pio container image), `make equiv` (C13 oracle
+self-test, needs sby or the container image) and `make audit`.
 
 ## ruff configuration rationale
 

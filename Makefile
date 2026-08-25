@@ -15,6 +15,16 @@
 #            trace matrix, a fuzz batch and the mutation demo (model vs
 #            RTL through sim/tb_trace_dump.sv; needs iverilog or the
 #            vibe-pio container image).
+# `equiv`  — C13 equivalence-oracle self-test (tools/hyperequiv.py):
+#            hermetic fixture checks (packing, VCD decode red/green,
+#            SPEC-16-2 exclusions, model pre-filter red/green) plus the
+#            end-to-end cases — equivalent program pair PASS (sby bmc),
+#            inequivalent pair FAIL via the pre-filter, inequivalent
+#            pair FAIL via sby with the decoded counterexample report
+#            (first differing observable, cycle, pin, disassembled PCs,
+#            replayed in the golden model), and the timeout path.
+#            Needs sby on PATH or the vibe-pio container image; budget
+#            ~3 min (the sby runs dominate).
 # `py`     — Python quality gate (host-side, needs uv; see
 #            docs/python-tooling.md): ruff format --check + ruff check +
 #            ty type check + pytest (unit tests + doctests). The
@@ -33,7 +43,7 @@ RTL_SRC := $(wildcard $(RTL_DIR)/*.sv)
 IVERILOG = iverilog -g2012 -I $(SIM_DIR)
 VVP      = vvp
 
-.PHONY: sim syn formal audit model py toolcheck clean $(TB_LIST)
+.PHONY: sim syn formal audit model equiv py toolcheck clean $(TB_LIST)
 
 toolcheck:
 	@echo "=== toolchain versions ==="
@@ -116,6 +126,9 @@ audit:
 
 model:
 	@python3 tools/pio_model/difftest.py --self-test
+
+equiv:
+	@python3 tools/hyperequiv.py --self-test
 
 py:
 	uv run ruff format --check .

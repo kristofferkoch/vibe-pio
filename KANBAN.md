@@ -27,21 +27,12 @@ spec-conformance monitors; Python golden model drives the search, sby
 certifies the winners; Pareto (size, speed) objective; synthesis runs
 on `pio_block` (pio_top stays a separate later card). Dependency
 order: C11 ∥ C12 → C13 → C14; C15 after C11; C16 after C12 + C15.
-C11 (trace-equivalence miter + observable contract) and C12 (Python
-golden model + assembler/disassembler, `make model`) are done.
-Tooling cards (C13–C14) state their own done-when gates; the RTL-card
+C11 (trace-equivalence miter + observable contract), C12 (Python
+golden model + assembler/disassembler, `make model`) and C13
+(equivalence oracle CLI, `make equiv`) are done.
+Tooling cards (C14) state their own done-when gates; the RTL-card
 template above applies to C15/C16.
 
-- [ ] **C13 — Equivalence oracle CLI.** `tools/hyperequiv.py`: program
-      pair + horizon → Python-model pre-filter on random stimulus →
-      generated C11 miter instance → sby verdict; on FAIL decode the
-      counterexample into a divergence report (first differing
-      observable, cycle, pin, disassembled PCs — via C12). A `make
-      equiv` target runs its self-test suite (patterned on
-      `tools/trace_audit.py --self-test`).
-      Done-when: green case PASS, red case FAIL with decoded report;
-      self-test suite committed (equivalent pair, inequivalent pair,
-      timeout path); `make audit` green. Depends: C11, C12.
 - [ ] **C14 — Hyperoptimizer: rewrite catalog + Pareto search.**
       `tools/hyperopt.py`: catalog of semantics-preserving rewrites,
       each tagged trace-eq or spec-conformance-only and cited to the
