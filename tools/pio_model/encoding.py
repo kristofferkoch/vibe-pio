@@ -1,0 +1,246 @@
+"""Instruction-word field split, encode and decode (C12).
+
+Mirrors rtl/pio_sm_decoder.sv's pure-combinational contract:
+  - field split SPEC-2-1..5 (class 15:13, delay/side-set 12:8, arg1 7:5,
+    arg2 4:0),
+  - the class-0x4 overload rule SPEC-14.2-1 (arg2[4]=1 => FIFO-aux MOV
+    PUT/GET, else PUSH/PULL, nonzero arg2 => reserved),
+  - bitcount 0 => 32 (SPEC-2-18),
+  - the delay/side-set split under EXECCTRL.SIDE_EN +
+    PINCTRL.SIDESET_COUNT (SPEC-4-1..3, SPEC-4-9, SPEC-14.8-1),
+  - the SPEC-13-1 reserved list.
+
+One shared decode feeds the disassembler and the model (the model must see
+exactly the fields the RTL decoder extracts).
+"""
+
+M32 = 0xFFFFFFFF
+
+# Instruction classes (SPEC-2-2: bits 15:13).
+C_JMP, C_WAIT, C_IN, C_OUT, C_PP, C_MOV, C_IRQ, C_SET = range(8)
+
+# JMP conditions (SPEC-3.1-2..9).
+JC_ALWAYS, JC_NOTX, JC_XDEC, JC_NOTY, JC_YDEC, JC_XNEY, JC_PIN, JC_NOTOSRE = range(8)
+JMP_CONDS = {
+    None: JC_ALWAYS, "always": JC_ALWAYS,
+    "!x": JC_NOTX, "x--": JC_XDEC, "!y": JC_NOTY, "y--": JC_YDEC,
+    "x != y": JC_XNEY, "pin": JC_PIN, "!osre": JC_NOTOSRE,
+}
+
+# WAIT sources (SPEC-3.2-2..5).
+WSRC_GPIO, WSRC_PIN, WSRC_IRQ, WSRC_JMPPIN = range(4)
+
+# IN sources (SPEC-3.3-2..6).
+INS_PINS, INS_X, INS_Y, INS_NULL, INS_ISR, INS_OSR = 0, 1, 2, 3, 6, 7
+IN_SRCS = {"pins": INS_PINS, "x": INS_X, "y": INS_Y, "null": INS_NULL,
+           "isr": INS_ISR, "osr": INS_OSR}
+
+# OUT destinations (SPEC-3.4-2..8).
+OUTD_PINS, OUTD_X, OUTD_Y, OUTD_NULL, OUTD_PINDIRS, OUTD_PC, OUTD_ISR, OUTD_EXEC = range(8)
+OUT_DSTS = {"pins": OUTD_PINS, "x": OUTD_X, "y": OUTD_Y, "null": OUTD_NULL,
+            "pindirs": OUTD_PINDIRS, "pc": OUTD_PC, "isr": OUTD_ISR,
+            "exec": OUTD_EXEC}
+
+# MOV destinations / sources (SPEC-3.6-1..8); 4 EXEC, 5 PC / 5 STATUS.
+MOVD_PINS, MOVD_X, MOVD_Y, MOVD_PINDIRS, MOVD_EXEC, MOVD_PC, MOVD_ISR, MOVD_OSR = range(8)
+MOVS_PINS, MOVS_X, MOVS_Y, MOVS_NULL, MOVS_STATUS, MOVS_ISR, MOVS_OSR = 0, 1, 2, 3, 5, 6, 7
+MOVD_DSTS = {"pins": MOVD_PINS, "x": MOVD_X, "y": MOVD_Y,
+             "pindirs": MOVD_PINDIRS, "exec": MOVD_EXEC, "pc": MOVD_PC,
+             "isr": MOVD_ISR, "osr": MOVD_OSR, "rxfifo": None}
+MOVS_SRCS = {"pins": MOVS_PINS, "x": MOVS_X, "y": MOVS_Y, "null": MOVS_NULL,
+             "status": MOVS_STATUS, "isr": MOVS_ISR, "osr": MOVS_OSR,
+             "rxfifo": None}
+MOP_NONE, MOP_INV, MOP_REV = 0, 1, 2  # SPEC-3.6-9 (3 reserved)
+
+# SET destinations (SPEC-3.9-1/2).
+SETD_PINS, SETD_X, SETD_Y, SETD_PINDIRS = 0, 1, 2, 4
+SET_DSTS = {"pins": SETD_PINS, "x": SETD_X, "y": SETD_Y, "pindirs": SETD_PINDIRS}
+
+# IRQ / WAIT-IRQ IdxModes (SPEC-3.8-4..7, SPEC-14.3-1).
+IDX_THIS, IDX_PREV, IDX_REL, IDX_NEXT = 0, 1, 2, 3
+IDX_MODES = {None: IDX_THIS, "": IDX_THIS, "prev": IDX_PREV, "rel": IDX_REL,
+             "next": IDX_NEXT}
+
+
+class ReservedEncoding(Exception):
+    """A SPEC-13-1 reserved/undefined encoding (reason text attached)."""
+
+
+def split(word):
+    """SPEC-2-1..5 field split."""
+    return ((word >> 13) & 7, (word >> 8) & 0x1F, (word >> 5) & 7, word & 0x1F)
+
+
+def split_sideset(ds_field, side_en, sideset_count):
+    """Delay/side-set split (SPEC-4-1..3, SPEC-4-9, SPEC-14.8-1).
+
+    Returns (delay, ss_valid, ss_val, ss_bits) exactly as
+    rtl/pio_sm_decoder.sv computes them. sideset_count is the raw
+    PINCTRL field (0..5, inclusive of the enable bit when side_en).
+    """
+    total = sideset_count & 7
+    if total > 5:
+        raise ReservedEncoding("sideset_count > 5")
+    vbits = (total - 1) if side_en else total
+    ss_field = ds_field >> (5 - total) if total else 0
+    delay_mask = 0x1F >> total
+    en_bit = (ss_field >> (total - 1)) & 1 if total else 0
+    ss_valid = total != 0 and (not side_en or en_bit)
+    ss_val = (ss_field & (0x1F >> (5 - vbits))) if (ss_valid and vbits) else 0
+    return ds_field & delay_mask, ss_valid, ss_val, (vbits if ss_valid else 0)
+
+
+def decode(word, side_en=False, sideset_count=0):
+    """Full decode of one instruction word.
+
+    Returns a dict with the onehot class strobes, per-class operands and
+    `illegal` (SPEC-13-1) — the exact bundle rtl/pio_sm_decoder.sv hands
+    to pio_sm_exec. Raises nothing: reserved encodings decode with
+    illegal=True (the RTL executes them as pure no-ops).
+    """
+    cls, ds, arg1, arg2 = split(word)
+    delay, ss_valid, ss_val, ss_bits = split_sideset(ds, side_en, sideset_count)
+    d = {
+        "word": word & 0xFFFF, "cls": cls, "delay": delay,
+        "ss_valid": ss_valid, "ss_val": ss_val, "ss_bits": ss_bits,
+        "illegal": False,
+        "is_jmp": False, "is_wait": False, "is_in": False, "is_out": False,
+        "is_push": False, "is_pull": False, "is_put": False, "is_get": False,
+        "is_mov": False, "is_irq": False, "is_set": False,
+    }
+    if cls == C_JMP:                                            # SPEC-2-7
+        d["is_jmp"] = True
+        d["jmp_cond"] = arg1
+        d["jmp_addr"] = arg2
+    elif cls == C_WAIT:                                         # SPEC-2-8
+        d["is_wait"] = True
+        d["wait_pol"] = (arg1 >> 2) & 1                         # SPEC-3.2-1
+        d["wait_src"] = arg1 & 3                                # SPEC-3.2-2..5
+        d["wait_index"] = arg2
+        if d["wait_src"] == WSRC_JMPPIN and (arg2 & 0x1C) != 0:  # SPEC-13-1
+            d["illegal"] = True
+    elif cls == C_IN:                                           # SPEC-2-9
+        d["is_in"] = True
+        d["in_src"] = arg1
+        if arg1 in (4, 5):                                      # SPEC-3.3-5
+            d["illegal"] = True
+        d["in_count"] = 32 if arg2 == 0 else arg2               # SPEC-2-18
+    elif cls == C_OUT:                                          # SPEC-2-10
+        d["is_out"] = True
+        d["out_dst"] = arg1
+        d["out_count"] = 32 if arg2 == 0 else arg2              # SPEC-2-18
+    elif cls == C_PP:                                           # SPEC-14.2-1
+        if arg2 & 0x10:
+            d["is_get" if word & 0x80 else "is_put"] = True     # b7: GET/PUT
+            d["aux_idxi"] = (arg2 >> 3) & 1                     # SPEC-3.7-4
+            d["aux_index"] = arg2 & 3
+            if (arg2 & 4) != 0 or (d["aux_idxi"] == 0 and (arg2 & 3) != 0):
+                d["illegal"] = True                             # SPEC-13-1
+        else:
+            d["is_pull" if word & 0x80 else "is_push"] = True   # SPEC-2-11/13
+            if arg2 != 0:
+                d["illegal"] = True                             # SPEC-13-1
+            # SPEC-3.5-3 pioasm arg1 packing: b7 direction, b6 IfF/IfE, b5 Blk
+            d["push_iff"] = (word >> 6) & 1
+            d["push_blk"] = (word >> 5) & 1
+            d["pull_ife"] = (word >> 6) & 1
+            d["pull_blk"] = (word >> 5) & 1
+    elif cls == C_MOV:                                          # SPEC-2-15
+        d["is_mov"] = True
+        d["mov_dst"] = arg1
+        d["mov_src"] = word & 7
+        d["mov_op"] = (arg2 >> 3) & 3
+        if d["mov_op"] == 3 or d["mov_src"] == 4:               # SPEC-13-1
+            d["illegal"] = True
+    elif cls == C_IRQ:                                          # SPEC-2-16
+        d["is_irq"] = True
+        d["irq_clr"] = (word >> 6) & 1                          # SPEC-3.8-1
+        d["irq_wait"] = (word >> 5) & 1                         # SPEC-3.8-2
+        d["irq_idxmode"] = (arg2 >> 3) & 3
+        d["irq_index"] = arg2 & 7
+        if d["irq_clr"] and d["irq_wait"]:                      # SPEC-3.8-3
+            d["illegal"] = True
+    else:                                                       # SPEC-2-17
+        d["is_set"] = True
+        d["set_dst"] = arg1
+        d["set_data"] = arg2
+        if arg1 in (3, 5, 6, 7):                                # SPEC-3.9-2
+            d["illegal"] = True
+    return d
+
+
+def pack_ds(delay, side_val, side_en, sideset_count, side_present):
+    """Pack the delay/side-set field, bit-equal to pioasm
+    (pio_assembler.cpp instruction::encode): delay is always masked to
+    5 - sideset_count bits (SPEC-4-3); a present `side` shifts its value
+    into the top bits and, with SIDE_EN, forces the enable bit 0x10
+    (SPEC-4-2 — an absent side contributes nothing, enable=0).
+    """
+    total = sideset_count & 7
+    if total == 0:
+        if side_present and side_val:
+            raise ReservedEncoding("side value with SIDESET_COUNT=0 (SPEC-4-9)")
+        return delay & 0x1F
+    mask = (1 << (5 - total)) - 1
+    field = delay & mask
+    if side_present:
+        field |= (side_val << (5 - total)) & 0x1F
+        if side_en:
+            field |= 0x10
+    return field
+
+
+def encode(clz, arg1, arg2, ds):
+    return ((clz << 13) | ((ds & 0x1F) << 8) | ((arg1 & 7) << 5)
+            | (arg2 & 0x1F)) & 0xFFFF
+
+
+def encode_jmp(cond, addr, ds):
+    return encode(C_JMP, JMP_CONDS[cond], addr, ds)             # SPEC-2-7
+
+
+def encode_wait(pol, src, index, ds):
+    return encode(C_WAIT, ((1 if pol else 0) << 2) | src, index, ds)  # SPEC-2-8
+
+
+def encode_in(src, count, ds):
+    return encode(C_IN, IN_SRCS[src], count & 0x1F, ds)         # SPEC-2-9
+
+
+def encode_out(dst, count, ds):
+    return encode(C_OUT, OUT_DSTS[dst], count & 0x1F, ds)       # SPEC-2-10
+
+
+def encode_push(iffull, block, ds):
+    return encode(C_PP, (1 if block else 0) | ((1 if iffull else 0) << 1),
+                  0, ds)                                        # SPEC-2-11
+
+
+def encode_pull(ifempty, block, ds):
+    return encode(C_PP, 4 | (1 if block else 0) | ((1 if ifempty else 0) << 1),
+                  0, ds)                                        # SPEC-2-13
+
+
+def encode_put(index, ds):
+    # SPEC-2-12: arg2 = 0x10 | (idx if literal else 0); idx literal packs
+    # IdxI=1 (0x08) + Index&3 (pioasm get_push_get_index).
+    arg2 = 0x10 | ((8 | (index & 3)) if index is not None else 0)
+    return encode(C_PP, 0, arg2, ds)
+
+
+def encode_get(index, ds):
+    arg2 = 0x10 | ((8 | (index & 3)) if index is not None else 0)
+    return encode(C_PP, 4, arg2, ds)                            # SPEC-2-14
+
+
+def encode_mov(dst, src, op, ds):
+    return encode(C_MOV, MOVD_DSTS[dst], ((op & 3) << 3) | MOVS_SRCS[src], ds)
+
+
+def encode_irq(clr, wait, mode, index, ds):
+    return encode(C_IRQ, ((1 if clr else 0) << 1) | (1 if wait else 0),
+                  ((mode & 3) << 3) | (index & 7), ds)          # SPEC-2-16
+
+
+def encode_set(dst, data, ds):
+    return encode(C_SET, SET_DSTS[dst], data, ds)               # SPEC-2-17

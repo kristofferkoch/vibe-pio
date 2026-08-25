@@ -6,3 +6,7 @@ formal/*/
 # words are committed as sim/conf_pioexamples.svh so make sim never needs
 # these — see sim/gen_conf_pioexamples.py for the regeneration recipe)
 third_party/
+
+# Python bytecode
+__pycache__/
+*.pyc

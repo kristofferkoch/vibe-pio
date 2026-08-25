@@ -498,6 +498,33 @@ flowchart TB
 | iverilog + vvp | directed/random testbenches (`sim/`) |
 | yosys | elaboration & synthesis sanity (`syn` target) |
 | sby + SMT solver | BMC, induction, equivalence, synthesis harness (`formal/`) |
+| `tools/pio_model` | C12: clk-accurate single-SM golden model of `pio_block` (SM0 live per SPEC-16-4), native .pio assembler + disassembler, and the model-vs-RTL trace differential (`make model`): the model consumes the same pio-stim schedules as `sim/tb_trace_dump.sv` and both emit SPEC-16-7 traces that the differ compares under the SPEC-16-2 exclusions. Gates: assembler bit-equality with pioasm on every `conf_pioexamples.svh` program, the 20-program conformance matrix, randomized fuzzing, and a mutation demo (injected model bugs must be caught red, green unmutated). |
+
+### Golden model (C12, as built)
+
+- The model (`tools/pio_model/model.py`) is a cycle-by-cycle
+  transcription of the RTL — every section cites the rtl/ file and the
+  SPEC-/CC- facts the RTL cites — with combinational-then-edge update
+  discipline (CC-3/CC-4). Its contract is trace equality with the RTL
+  on the SPEC-16-7 observables, not independent re-derivation: where
+  the RTL made a modelling choice ([MODEL] clauses), the model inherits
+  it.
+- Differential runs drive both sides from one pio-stim v1 memory image
+  ($readmemh; `tools/pio_model/stim.py` generates, `sim/tb_trace_dump.sv`
+  replays). The TB drives inputs at the negedge (mid-cycle) so nothing
+  races the DUT's posedge evaluation — the tb_conf bus_wr idiom, made
+  mandatory here after the posedge-drive variant silently dropped bus
+  writes.
+- Two transcription bugs the differ caught during bring-up (both now
+  model-fixed and regression-covered by the committed schedules):
+  the FIFO mode sampler must register the *pre-edge* mode (a FJOIN
+  write flushes the cycle after it retires, dropping any TXF write
+  coincident with the flush edge, SPEC-6-2), and the bus-decoded
+  PUTGET index is a separate signal from the executing instruction's
+  aux index (SPEC-7-13 vs SPEC-3.7-4).
+- Multi-SM runs, TXF1..3 writes and SM1..3 window accesses are out of
+  the v1 scope and rejected by the model (the harness never issues
+  them; single-SM equivalence is the SPEC-16-4 scoping).
 
 ## Key reference
 

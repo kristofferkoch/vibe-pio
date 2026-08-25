@@ -27,24 +27,11 @@ spec-conformance monitors; Python golden model drives the search, sby
 certifies the winners; Pareto (size, speed) objective; synthesis runs
 on `pio_block` (pio_top stays a separate later card). Dependency
 order: C11 ∥ C12 → C13 → C14; C15 after C11; C16 after C12 + C15.
-Tooling cards (C12–C14) state their own done-when gates; the RTL-card
-template above applies to C11/C15/C16.
+C11 (trace-equivalence miter + observable contract) and C12 (Python
+golden model + assembler/disassembler, `make model`) are done.
+Tooling cards (C13–C14) state their own done-when gates; the RTL-card
+template above applies to C15/C16.
 
-- [ ] **C12 — Python golden model + assembler/disassembler.**
-      `tools/pio_model/`: clk-accurate single-SM simulator (divider
-      CC-26; shift/autopull/autopush CC-11..13/19/20/30; MOV/JMP/WAIT/
-      IRQ/SET/OUT per SPEC-3.x; delay/side-set SPEC-4 + CC-5/22; wrap
-      CC-10/SPEC-8-2; input sampling CC-23/25; EXEC/force optional;
-      multi-SM out of scope v1) plus native assembler and disassembler,
-      emitting/consuming the SPEC-16 trace format.
-      Done-when: (1) assembler bit-equal to pioasm on every
-      `conf_pioexamples.svh` program (existing docker recipe); (2) model
-      trace == RTL trace for every conformance program (auto-generated
-      trace-dump TB on `pio_block`); (3) randomized differential
-      fuzzing — random programs × stimulus, model vs RTL; (4) mutation
-      demo — injected model bug caught by the differ (red), removed
-      (green). Depends: C11 only for the trace format (otherwise
-      parallel).
 - [ ] **C13 — Equivalence oracle CLI.** `tools/hyperequiv.py`: program
       pair + horizon → Python-model pre-filter on random stimulus →
       generated C11 miter instance → sby verdict; on FAIL decode the

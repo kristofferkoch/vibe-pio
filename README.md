@@ -20,6 +20,8 @@ extraction by construction.
 rtl/       RTL source (SystemVerilog subset supported by iverilog/yosys)
 sim/       Classic (non-UVM) testbenches and simulation helpers
 formal/    SymbiYosys properties and proof scripts
+tools/     Python golden model + assembler/disassembler (C12) and the
+           SPEC-/CC- traceability audit
 docs/      Reference material, notes extracted from the datasheet
 container/ Toolchain image definition (podman/docker)
 ```
