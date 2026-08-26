@@ -12,6 +12,7 @@ strict tooling gates, and **red/green TDD** for every behavior change.
 | `tools/trace_audit.py` | SPEC-/CC- traceability audit (`make audit`) |
 | `tools/hyperequiv.py` | C13 equivalence oracle: program pair + horizon -> pre-filter, generated C11 miter instance, sby verdict, decoded divergence reports (`make equiv`) |
 | `tools/hyperopt.py` | C14 hyperoptimizer: rewrite catalog + Pareto search over conformance seeds, model/prefilter screening, C13-oracle certification (`make hyperopt`) |
+| `tools/hypersynth.py` | C16 witness pipeline: free-word cover synthesis (SYM=1) -> trace extraction -> canonicalization + `.pio` disassembly -> three re-verify legs (model replay, generated TB, bounded formal conformance) (`make synth`) |
 | `sim/gen_conf_pioexamples.py` | regenerates `sim/conf_pioexamples.svh` from pioasm |
 | `tests/` | pytest suite: unit tests + the doctest gate (`tests/test_doctests.py`) |
 
@@ -52,7 +53,8 @@ newest published before the cutoff).
 Python changes are not done until `make py` is green. The heavier
 RTL-facing gates stay separate: `make model` (differential vs RTL, needs
 iverilog or the vibe-pio container image), `make equiv` (C13 oracle
-self-test, needs sby or the container image) and `make audit`.
+self-test, needs sby or the container image), `make synth` (C16 witness
+pipeline self-test, same toolchain needs) and `make audit`.
 
 ## ruff configuration rationale
 

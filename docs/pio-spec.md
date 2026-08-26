@@ -995,3 +995,76 @@ spec-eq twin).
   is not compared in spec-eq: readback timing is free to change. C16
   consumes the same monitors as cover goals and as the sim re-check of
   synthesized witnesses.
+- [SPEC-16-11] **Symbolic-program synthesis harness (landed C16).** `pio_instr_mem`
+  carries a default-off `SYM` parameter (the launch-ratified primary
+  mechanism): when set — only by the synthesis harness's sby script, via
+  `chparam -set SYM 1 pio_instr_mem`, never by a sim or elaboration
+  flow — the 32 words become one flat `(* anyconst *)` vector with no
+  reset and no write port, and the surrounding RTL (all four SMs) is
+  untouched; the real-mode array's flops become dead and are eliminated
+  at `prep`. This is the one owner-ratified exception to the all-state-
+  reset convention (the swap point of DESIGN.md §Symbolic-friendliness).
+  The harness (`formal/pio_synth_fv.sv` + `formal/pio_synth.sby`) fixes
+  the SM0 config via a deterministic prologue (SPEC-16-4's discipline
+  minus the word-serial imem writes the free words replace: PINCTRL,
+  EXECCTRL wrap 31->0, CTRL SM0-enable; CLKDIV stays at reset INT=1
+  FRAC=0 — the CC-26 exact window) and states the target behaviour as a
+  C15 monitor cover goal (SPEC-16-9) on `gpio_out[0]` with the pad
+  driven (`gpio_oe[0]`): the square-wave smoke target covers the
+  [2,2]-window monitor counting >= 8 edges; the UART-TX-byte real
+  target covers one accepted frame (start + 8 data + even parity +
+  stop, BIT window [2,2]) decoding the nontrivial payload 0x55. Cover
+  goals are guarded `!$initstate && !rst && free_c` — the free
+  pre-reset initial state satisfies any counter/cover condition
+  vacuously (the pio_equiv_miter cover-guard idiom). Runs are BMC/cover
+  only, never k-induction: with free words the state space is the
+  program space, so induction has no canonical state (SPEC-16-3's
+  bounded claim is the whole claim). SM1..3 stay disabled (SPEC-16-4
+  scoping); the free phase carries no bus traffic, and the environment
+  pins are assumed idle (`gpio_in` and the IRQ-neighbour views 0) so a
+  witness is a program of the machine, not of the free inputs — and so
+  the SPEC-16-12 replay (whose word-serial load prologue is 32 clks
+  longer) reproduces the run exactly; an input-steered witness could
+  otherwise ride the input synchronizers' 2-clk ghost (CC-23) of a
+  prologue-phase environment the replay cannot reconstruct.
+  Non-vacuity: a deliberately contradictory spec — the same pin feeding
+  [2,2] and [3,3] square monitors, cover both >= 8 edges — is UNSAT at
+  every depth (the red case `pio_synth_red_fv`).
+- [SPEC-16-12] **Witness pipeline (landed C16).** A cover trace is a witness
+  PIO program and must itself be re-verified before it is reported:
+  `tools/hypersynth.py` (`make synth`) truncates the trace at the cover
+  step (the sby log's "Reached cover statement" — sections past it are
+  solver don't-cares nothing constrains), extracts the 32 words from
+  `u_dut.u_imem.g_sym.sym_words` together with the per-clk environment
+  and the SM0 PC stream; canonicalizes words whose PC was never fetched
+  (the final section's PC is latched-but-unfetched) to `nop` (0xA042),
+  and *executed* reserved words (SPEC-13-1 — the solver uses them as
+  cheap big-delay parks) to a delay-preserving `nop [d]`: reserved
+  encodings execute as pure no-ops with their delay field honored (the
+  decoder and model agree; `delay_load` is not illegal-gated), so the
+  substitution is behaviour-equivalent and the leg-(a) diff re-checks
+  every substitution anyway; disassembles the canonical words to `.pio`
+  text (C12, round-trip checked); then re-verifies the canonical program
+  three ways: (a) Python-model replay — the C12 model loads the
+  canonical words word-serially (SPEC-7-10), applies the same prologue
+  and replays the VCD environment (pinned idle per SPEC-16-11's A2, so
+  the 32-clk-longer load prologue cannot diverge), and its SPEC-16-1
+  observables must match the VCD's cycle-for-cycle through the horizon
+  while a run-length window checker (the SPEC-16-9 timing semantics in
+  Python) passes on the replayed `gpio_out[0]` — judged on all bits but
+  the last, the monitor's registered sampling lagging the sampled
+  stream by one clk; (b) an auto-generated iverilog testbench runs the
+  canonical words through `pio_block` under the same C15 monitor
+  instance and latches the cover predicate itself (edges/accepted frame
+  with the decoded payload, pad driven, monitor error-free) at the clk
+  it fires during the replay — checking at a fixed time instead would
+  be a clk-phase calibration against the synthesis trace, and the
+  replay's phase legitimately differs by the load prologue; (c) bounded
+  formal conformance — the same harness tops re-instantiated with
+  `FREE=0, PROG=<canonical words>` (words via the prologue, `SYM` off)
+  under a phase-ROM replay of the environment, asserting
+  `goal_hit || !err` (a sticky goal-moment flag: error-free through the
+  goal, the cover's claim on the concrete program — an error past the
+  goal moment is legal for any finite horizon, SPEC-16-3) by BMC at the
+  replay depth; the goal-must-fire half is leg (b)'s check. A witness
+  is reported only if all three pass.

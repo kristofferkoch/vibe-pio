@@ -29,27 +29,9 @@ on `pio_block` (pio_top stays a separate later card). Dependency
 order: C11 ∥ C12 → C13 → C14; C15 after C11; C16 after C12 + C15.
 C11 (trace-equivalence miter + observable contract), C12 (Python
 golden model + assembler/disassembler, `make model`), C13 (equivalence
-oracle CLI, `make equiv`), C14 (hyperoptimizer, `make hyperopt`) and
-C15 (spec-conformance monitors + spec-eq predicate) are done.
-Tooling cards (C14) state their own done-when gates; the RTL-card
-template above applies to C16.
-
-- [ ] **C16 — Symbolic-program synthesis harness (stretch).**
-      `formal/pio_synth.sby` + harness with the imem words free per
-      DESIGN.md §Symbolic-friendliness. Mechanism ratified at launch:
-      primary = default-off `SYM` parameter on `pio_instr_mem` gating
-      anyconst words/reset/write-port; fallback per DESIGN.md text =
-      harness-local module copies; simplest = prologue init-sequencer
-      writing 32 anyconst words (no RTL change at all). Behaviours =
-      C15 monitors as cover goals on free stimulus; run as BMC/cover,
-      not k-induction; SM0-only scoping assumptions. Witness pipeline:
-      extract the 32 words from the cover trace → disassemble to .pio
-      (C12) → re-verify (Python-model replay against the spec +
-      auto-generated sim TB running the witness under the C15 monitors,
-      optional bounded formal conformance) — synthesis output is itself
-      verified. Growth path past these targets: cover-mining of
-      protocol masters (I2C/SPI).
-      Done-when: nontrivial witness for square wave (smoke) and
-      UART-TX-byte (real); witness passes re-verification; red case —
-      deliberately contradictory spec yields UNSAT cover (non-vacuity
-      demo). Depends: C12, C15.
+oracle CLI, `make equiv`), C14 (hyperoptimizer, `make hyperopt`),
+C15 (spec-conformance monitors + spec-eq predicate) and C16
+(symbolic-program synthesis harness + witness pipeline, `make synth`)
+are done.
+Tooling cards (C14/C16) state their own done-when gates; the RTL-card
+template above applies to the RTL they touch.

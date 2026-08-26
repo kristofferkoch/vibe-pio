@@ -14,10 +14,19 @@
 // the array gives formal (k-induction) a canonical post-reset state — no
 // unreachable-state induction counterexamples from arbitrary initial
 // memory contents, and no X-propagation at time 0. The symbolic-program
-// harness later disables exactly this reset (DESIGN.md §Symbolic-
-// friendliness), which is a harness-local change, not an RTL one.
+// mode (SYM, below) lifts exactly this reset for the 32 words — the one
+// owner-ratified exception (SPEC-16-11, DESIGN.md §Symbolic-friendliness).
 
-module pio_instr_mem (
+// Symbolic-program mode (SPEC-16-11): default OFF. When SYM=1 (only the
+// C16 synthesis harness sets it, via a yosys `chparam` — never a sim or
+// elaboration flow), the 32 words become free `anyconst` constants with
+// no reset and no write port, so an SMT solver searches the program space
+// itself (DESIGN.md §Symbolic-friendliness "swap point"). The read ports
+// stay combinational in both modes (CC-33).
+
+module pio_instr_mem #(
+    parameter bit SYM = 1'b0   // SPEC-16-11: free words (C16 synthesis only)
+) (
     input  logic        clk,
     input  logic        rst,
 
@@ -63,14 +72,47 @@ module pio_instr_mem (
     end
   end
 
-  // Combinational read ports — the ratified exception (CC-33: a fetch in
-  // tick T reads the word at the PC against start-of-T state; write @e is
-  // visible to reads from e+1 because there is no output register).
+  // Word selects stay at module scope: yosys does not resolve indexed
+  // accesses to packed 2-D arrays declared inside generate blocks (the
+  // "Failed to detect width" frontend error), so the real-mode array is
+  // indexed here and only the final read mux is mode-selected below.
+  logic [DW-1:0] mem_word0, mem_word1, mem_word2, mem_word3;
+
   always_comb begin
-    rd_data0 = mem_r[rd_addr0];
-    rd_data1 = mem_r[rd_addr1];
-    rd_data2 = mem_r[rd_addr2];
-    rd_data3 = mem_r[rd_addr3];
+    mem_word0 = mem_r[rd_addr0];
+    mem_word1 = mem_r[rd_addr1];
+    mem_word2 = mem_r[rd_addr2];
+    mem_word3 = mem_r[rd_addr3];
   end
+
+  generate
+    if (SYM) begin : g_sym
+      // SPEC-16-11: the 32 free words — one flat anyconst vector (flat,
+      // not 2-D, for the same generate-scope reason as above), indexed
+      // by the shift-only form {rd_addr, 4'd0} = 16*rd_addr. No reset,
+      // no write port: the words are fixed per solver run. mem_r and
+      // its flops become dead in this mode and are optimized away by
+      // `prep` (verified: no $dff survives for the array).
+      (* anyconst *) logic [WORDS*DW-1:0] sym_words;
+
+      always_comb begin
+        rd_data0 = sym_words[{rd_addr0, 4'd0} +: DW];
+        rd_data1 = sym_words[{rd_addr1, 4'd0} +: DW];
+        rd_data2 = sym_words[{rd_addr2, 4'd0} +: DW];
+        rd_data3 = sym_words[{rd_addr3, 4'd0} +: DW];
+      end
+    end else begin : g_real
+      // Combinational read ports — the ratified exception (CC-33: a
+      // fetch in tick T reads the word at the PC against start-of-T
+      // state; write @e is visible to reads from e+1 because there is
+      // no output register).
+      always_comb begin
+        rd_data0 = mem_word0;
+        rd_data1 = mem_word1;
+        rd_data2 = mem_word2;
+        rd_data3 = mem_word3;
+      end
+    end
+  endgenerate
 
 endmodule

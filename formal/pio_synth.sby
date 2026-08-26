@@ -1,0 +1,84 @@
+# Formal symbolic-program synthesis harness (KANBAN C16, SPEC-16-11).
+#
+#   sq_cover   — square-wave smoke: free imem words (SYM=1 via chparam),
+#     fixed SM0 config prologue, cover the C15 [2,2] monitor counting
+#     >= 8 edges with gpio_oe[0] driven and the monitor live (SPEC-16-9).
+#     Depth 28 = 3-clk prologue + ~4 periods of 2-clk halves + arm/detect
+#     margin. Recorded (2026-08-26): PASS in 3:25, cover at step 25
+#     (boolector); the witness re-verifies through the full SPEC-16-12
+#     pipeline (make synth).
+#
+#   uart_cover — UART-TX-byte real target: cover one accepted frame
+#     (start + 8 data + even parity + stop, BIT window [2,2]) decoding
+#     0x55 with gpio_oe[0] driven and the monitor live. Depth 40 = 3-clk
+#     prologue + idle anchor + 11 slots x 2 clk + stop-tail/decode
+#     margin. Recorded (2026-08-26): PASS in 11:20, cover at step 31;
+#     witness re-verifies through the SPEC-16-12 pipeline.
+#
+# Cover/BMC only — never k-induction (SPEC-16-11): with free words the
+# state space is the program space; induction has no canonical state.
+# The environment pins are assumed idle (SPEC-16-11 A2) so witnesses
+# are programs of the machine and the word-serial replay prologue of
+# the witness pipeline reproduces them exactly.
+#
+# Red case (NOT a task — `make formal` must stay green): the
+# contradictory spec [2,2] AND [3,3] on one pin (pio_synth_red_fv).
+# Reproduce (temporary task file, never committed):
+#   cd formal && sed 's/prep -top pio_synth_sq_fv$/prep -top pio_synth_red_fv/' \
+#       pio_synth.sby > pio_synth_red.sby && sby -f pio_synth_red.sby sq_cover \
+#       && rm -rf pio_synth_red.sby pio_synth_red_sq_cover
+# Recorded (2026-08-26): FAIL "Unreached cover statement" at depth 28
+# in 3:45 — UNSAT at every step: no program satisfies both windows on
+# one pin (the non-vacuity demo, SPEC-16-11; also part of the
+# tools/hypersynth.py --self-test suite as the e2e-red-unsat check).
+#
+# Engine: smtbmc boolector + memory_map, the repo's pio_mon/pio_equiv
+# measurement (btormc decelerates past bound ~12 on doubled designs).
+# NB: files copied flat into src/.
+
+[tasks]
+sq_cover
+uart_cover
+
+[options]
+sq_cover:   mode cover
+sq_cover:   depth 28
+uart_cover: mode cover
+uart_cover: depth 40
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal -sv pio_block.sv
+read -formal -sv pio_instr_mem.sv
+read -formal -sv pio_sm.sv
+read -formal -sv pio_sm_regs.sv
+read -formal -sv pio_sm_decoder.sv
+read -formal -sv pio_sm_exec.sv
+read -formal -sv pio_sm_shift.sv
+read -formal -sv pio_sm_fifo.sv
+read -formal -sv pio_irq_flags.sv
+read -formal -sv pio_gpio_mux.sv
+read -formal -sv pio_mon_uart_tx.sv
+read -formal -sv pio_mon_square.sv
+read -formal -sv pio_synth_fv.sv
+chparam -set SYM 1 pio_instr_mem
+sq_cover:   prep -top pio_synth_sq_fv
+uart_cover: prep -top pio_synth_uart_fv
+memory_map
+
+[files]
+../rtl/pio_block.sv
+../rtl/pio_instr_mem.sv
+../rtl/pio_sm.sv
+../rtl/pio_sm_regs.sv
+../rtl/pio_sm_decoder.sv
+../rtl/pio_sm_exec.sv
+../rtl/pio_sm_shift.sv
+../rtl/pio_sm_fifo.sv
+../rtl/pio_irq_flags.sv
+../rtl/pio_gpio_mux.sv
+../rtl/pio_mon_uart_tx.sv
+../rtl/pio_mon_square.sv
+pio_synth_fv.sv

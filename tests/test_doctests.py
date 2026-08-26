@@ -1,4 +1,4 @@
-"""Doctest gate: every pio_model module's (and the C13 oracle's)
+"""Doctest gate: every pio_model module's (and the C13/C14/C16 tools')
 docstring examples run with the suite (`make py`). The package uses
 relative imports and runs stdlib-only (in the container too), so pytest's
 --doctest-modules file walk cannot import it — instead each module in
@@ -13,10 +13,21 @@ from types import ModuleType
 
 import hyperequiv
 import hyperopt
+import hypersynth
 import pytest
 from pio_model import asm, disasm, encoding, model, stim, tracefmt
 
-MODULES: tuple[ModuleType, ...] = (encoding, asm, disasm, tracefmt, stim, model, hyperequiv, hyperopt)
+MODULES: tuple[ModuleType, ...] = (
+    encoding,
+    asm,
+    disasm,
+    tracefmt,
+    stim,
+    model,
+    hyperequiv,
+    hyperopt,
+    hypersynth,
+)
 
 
 @pytest.fixture(params=MODULES, ids=lambda m: m.__name__)

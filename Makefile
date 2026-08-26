@@ -33,6 +33,16 @@
 #            (SPEC-16-8): a wrap_fold output certified PASS, and the
 #            delay tamper FAILed with a decoded counterexample.
 #            Needs sby on PATH or the vibe-pio container image.
+# `synth`  — C16 symbolic-program synthesis self-test
+#            (tools/hypersynth.py): hermetic fixtures (SPEC-16-9 window
+#            checkers red/green, VCD decode, canonicalization, .pio
+#            round-trip) plus the end-to-end witness pipeline for both
+#            targets — free-word cover synthesis (SYM=1), extraction,
+#            canonicalization + disassembly, and the three re-verify
+#            legs (C12 model replay, generated iverilog TB, bounded
+#            formal conformance) — and the red UNSAT contradictory-spec
+#            case. Needs sby on PATH or the vibe-pio container image;
+#            budget ~15 min (the two cover searches dominate).
 # `py`     — Python quality gate (host-side, needs uv; see
 #            docs/python-tooling.md): ruff format --check + ruff check +
 #            ty type check + pytest (unit tests + doctests). The
@@ -51,7 +61,7 @@ RTL_SRC := $(wildcard $(RTL_DIR)/*.sv)
 IVERILOG = iverilog -g2012 -I $(SIM_DIR)
 VVP      = vvp
 
-.PHONY: sim syn formal audit model equiv hyperopt py toolcheck clean $(TB_LIST)
+.PHONY: sim syn formal audit model equiv hyperopt synth py toolcheck clean $(TB_LIST)
 
 toolcheck:
 	@echo "=== toolchain versions ==="
@@ -140,6 +150,9 @@ equiv:
 
 hyperopt:
 	@python3 tools/hyperopt.py --self-test
+
+synth:
+	@python3 tools/hypersynth.py --self-test
 
 py:
 	uv run ruff format --check .
