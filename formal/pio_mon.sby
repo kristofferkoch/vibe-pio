@@ -1,0 +1,112 @@
+# Formal spec-conformance harnesses for the C15 monitors (KANBAN C15).
+#
+#   uart_bmc / uart_cover — standalone use (b): one pio_block running
+#     uart_tx9 (8 data bits + even parity, 8 clk/bit — the CC-26 INT=1
+#     exact window); free-phase TXF0 writes constrained to carry the
+#     feeder's even parity (SPEC-16-5/9). bmc: the monitor accepts every
+#     frame through depth 112 = 8-clk prologue + one full 11-slot frame
+#     + idle slack (SPEC-16-3 bounded claim). cover: a frame completed
+#     and the monitor decoded a real payload (0x55) — non-vacuous.
+#     Recorded (2026-08-26): bmc PASS in 44:15, cover PASS (boolector).
+#
+#   sq_bmc / sq_cover — the squarewave example (halves 2,2) accepted;
+#     cover pins real edge counting. Depth 24 = prologue + ~6 periods.
+#     Recorded: bmc PASS in 0:39, cover PASS.
+#
+#   eq_bmc / eq_cover — the SPEC-16-10 spec-eq twin: the (4,5) vs (4,4)
+#     pair under the shared [4,5] window (the CC-26 delta-sigma shape);
+#     B is the rw_wrap_speed mechanism, so trace-eq (E1) would fail by
+#     design while both monitors stay green — the mode that unlocks the
+#     C14 spec-only speed rewrites. Depth 40 = prologue + ~4 periods of
+#     the slower side. Recorded: bmc PASS in 5:41, cover PASS.
+#
+#   mon_prove — k-induction over the bare monitors' SPEC-16-9 status
+#     contract (onehot states, halt<->class-flag equivalence, saturation
+#     bounds, quiet halt, counters advance by <=1 mod 2^16, sticky err);
+#     closes at step 6. The block-level harnesses run BMC+cover only:
+#     their live SM needs the full C5/C8/C3 invariant set for induction,
+#     which lives in the per-module proofs (the pio_block_fv_b
+#     precedent).
+#
+# Red cases (NOT tasks — `make formal` must stay green). Reproduce
+# (temporary task files, never committed):
+#   cd formal && sed 's/prep -top pio_mon_uart_fv$/prep -top pio_mon_uart_fv_red/' \
+#       pio_mon.sby > pio_mon_red1.sby && sby -f pio_mon_red1.sby uart_bmc \
+#   && rm -rf pio_mon_red1.sby pio_mon_red1_uart_bmc
+# and likewise pio_mon_sq_fv_red (sq_bmc) and pio_mon_spec_eq_fv_red
+# (eq_bmc). Recorded (2026-08-26): uart_red u_noerr FAILs at step 25
+# (the start-bit edge: the 4-clk run decodes no legal m); sq_red
+# s_noerr FAILs at step 15 (the first falling edge after the 4-clk
+# half); spec_eq_red eq_a FAILs at step 21 (A's 5-clk low half vs the
+# [4,4] window — the monitor genuinely gates the spec-eq predicate).
+#
+# Engines: smtbmc boolector (the pio_equiv measurement — btormc
+# decelerates past bound ~12 on doubled designs; boolector carried the
+# depth-48 twin). memory_map flattens the FIFO/imem $mem cells (same
+# rationale as pio_equiv.sby). NB: files copied flat into src/.
+
+[tasks]
+uart_bmc
+uart_cover
+sq_bmc
+sq_cover
+eq_bmc
+eq_cover
+mon_prove
+
+[options]
+uart_bmc:    mode bmc
+uart_bmc:    depth 112
+uart_cover:  mode cover
+uart_cover:  depth 112
+sq_bmc:      mode bmc
+sq_bmc:      depth 24
+sq_cover:    mode cover
+sq_cover:    depth 24
+eq_bmc:      mode bmc
+eq_bmc:      depth 40
+eq_cover:    mode cover
+eq_cover:    depth 40
+mon_prove:   mode prove
+mon_prove:   depth 8
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal -sv pio_block.sv
+read -formal -sv pio_instr_mem.sv
+read -formal -sv pio_sm.sv
+read -formal -sv pio_sm_regs.sv
+read -formal -sv pio_sm_decoder.sv
+read -formal -sv pio_sm_exec.sv
+read -formal -sv pio_sm_shift.sv
+read -formal -sv pio_sm_fifo.sv
+read -formal -sv pio_irq_flags.sv
+read -formal -sv pio_gpio_mux.sv
+read -formal -sv pio_mon_uart_tx.sv
+read -formal -sv pio_mon_square.sv
+read -formal -sv pio_mon_fv.sv
+uart_bmc:    prep -top pio_mon_uart_fv
+uart_cover:  prep -top pio_mon_uart_fv
+sq_bmc:      prep -top pio_mon_sq_fv
+sq_cover:    prep -top pio_mon_sq_fv
+eq_bmc:      prep -top pio_mon_spec_eq_fv
+eq_cover:    prep -top pio_mon_spec_eq_fv
+mon_prove:   prep -top pio_mon_probe_fv
+memory_map
+
+[files]
+../rtl/pio_block.sv
+../rtl/pio_instr_mem.sv
+../rtl/pio_sm.sv
+../rtl/pio_sm_regs.sv
+../rtl/pio_sm_decoder.sv
+../rtl/pio_sm_exec.sv
+../rtl/pio_sm_shift.sv
+../rtl/pio_sm_fifo.sv
+../rtl/pio_irq_flags.sv
+../rtl/pio_gpio_mux.sv
+../rtl/pio_mon_uart_tx.sv
+../rtl/pio_mon_square.sv
+pio_mon_fv.sv

@@ -29,20 +29,11 @@ on `pio_block` (pio_top stays a separate later card). Dependency
 order: C11 ∥ C12 → C13 → C14; C15 after C11; C16 after C12 + C15.
 C11 (trace-equivalence miter + observable contract), C12 (Python
 golden model + assembler/disassembler, `make model`), C13 (equivalence
-oracle CLI, `make equiv`) and C14 (hyperoptimizer, `make hyperopt`)
-are done.
+oracle CLI, `make equiv`), C14 (hyperoptimizer, `make hyperopt`) and
+C15 (spec-conformance monitors + spec-eq predicate) are done.
 Tooling cards (C14) state their own done-when gates; the RTL-card
-template above applies to C15/C16.
+template above applies to C16.
 
-- [ ] **C15 — Spec-conformance monitors.** SV monitors over the C11
-      observables (UART-TX frame and square-wave period first; timing
-      windows cite CC-23/25/26), usable (a) as the miter comparison
-      predicate (spec-eq mode — timing may change, which unlocks speed
-      rewrites) and (b) standalone on one instance; shared between
-      formal/ and sim/ so synthesized witnesses get re-checked in sim.
-      Done-when: ≥2 monitors; reference program accepted and corrupted
-      program (wrong baud/parity) rejected — red/green recorded; sby
-      tasks pass; `make audit` green. Depends: C11.
 - [ ] **C16 — Symbolic-program synthesis harness (stretch).**
       `formal/pio_synth.sby` + harness with the imem words free per
       DESIGN.md §Symbolic-friendliness. Mechanism ratified at launch:

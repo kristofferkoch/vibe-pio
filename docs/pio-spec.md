@@ -855,8 +855,10 @@ Provenance: vibe-pio methodology decisions ratified at the C11 promotion
 (grilling session 2026-08-25) — these are contract facts about *this
 model's* equivalence methodology, not datasheet facts. Consumers:
 `formal/pio_equiv_fv.sv` (the lockstep miter, C11), `tools/pio_model/`
-(C12 model trace emission / RTL trace-dump TBs) and `tools/hyperequiv.py`
-(C13 oracle + divergence reports).
+(C12 model trace emission / RTL trace-dump TBs), `tools/hyperequiv.py`
+(C13 oracle + divergence reports), and `rtl/pio_mon_uart_tx.sv` /
+`rtl/pio_mon_square.sv` + `formal/pio_mon_fv.sv` (C15 monitors and the
+spec-eq twin).
 
 - [SPEC-16-1] **Per-clk observables.** Two configurations under comparison are
   observably equivalent only if `gpio_out[31:0]`, `gpio_oe[31:0]` and
@@ -929,3 +931,67 @@ model's* equivalence methodology, not datasheet facts. Consumers:
   behaviour fails the equivalence claim. PINCTRL/SHIFTCTRL overlays
   (side-set fusion, autopull rewrites) remain future extension
   (SPEC-16-6).
+- [SPEC-16-9] **Spec-conformance monitors (landed C15).** `rtl/pio_mon_uart_tx.sv`
+  and `rtl/pio_mon_square.sv` are protocol monitors over the SPEC-16-1
+  per-clk `gpio_out` observables — verification IP placed in `rtl/`
+  because that is the one source tree every flow already compiles
+  (iverilog sim TBs via the Makefile's rtl glob; the sby `[files]`
+  sets). Monitors carry no assertions: they export status (sticky `err`
+  with class sub-flags, `frame_done`/edge strobes, captured data and
+  counters) so one instance serves both as the spec-eq comparison
+  predicate (SPEC-16-10) and as a standalone checker in sim/formal
+  wrappers (the C16 synthesized-witness re-check). Contract: reset
+  clears all state; a violation sets the sticky error class flags and
+  halts the monitor until the next reset — one deterministic,
+  bounded-latency error per run, which is what makes the verdict usable
+  as a formal comparison predicate. Durations are measured on the
+  registered `gpio_out` sample: a level written at the end of tick T is
+  pad-visible from T+1 (CC-40, composing CC-3/CC-8 with CC-23), and
+  registered sampling preserves run lengths — only absolute alignment
+  shifts by a constant, which duration windows cannot see. Timing
+  windows are parameters: `[BIT_LO, BIT_HI]` per UART bit-time and
+  `[HALF_LO, HALF_HI]` per square-wave half-period, sized from CC-26
+  (the delta-sigma divider alternates INT and INT+1 clk periods, so a
+  fractional divisor legitimately produces slots anywhere in
+  `[k*INT, k*(INT+1)]`; an exact window means FRAC = 0) with CC-25 as
+  the same fact's lower bound. UART-TX frame semantics are run-based:
+  the frame is the sequence of maximal constant-level runs between
+  edges; a run of L clk must equal m bit-times with `m*BIT_LO <= L <=
+  m*BIT_HI` for the decoded m; the concatenated run values must form
+  start (0), `DBITS` data bits, the optional parity bit (even or odd
+  over the data bits) and stop (1); a high tail completes the frame
+  once it has outlasted `(stop_pos - pos + 1) * BIT_LO` clk, so a stop
+  merged into idle (SPEC-15-3 stall-holds-idle-high) costs nothing.
+  [MODEL] three simplifications: m is decoded as the fewest bits,
+  `m = ceil(L / BIT_HI)` — acceptance-equivalent to the exists-m test,
+  and unambiguous (data/parity placement exact) whenever the parameter
+  windows are disjoint (`m*(BIT_HI-BIT_LO) < BIT_LO`), which every repo
+  parameterization satisfies (exact windows); a stop merged into a
+  preceding ones-run is checked only in that run's aggregate window,
+  not bit-granular; a line stuck at the frame's complement past
+  `RMAX*BIT_HI + 1` clk raises the timing error immediately (bounded
+  detection — no wait for an edge that never comes). Square-wave
+  semantics: every interval between consecutive edges must lie in
+  `[HALF_LO, HALF_HI]`; the interval spanning monitor start is not
+  measured (no reference edge); a missing edge past `HALF_HI + 1` is an
+  immediate error. Both monitors export `dbg_*` ports (state, counters)
+  so their formal properties are port-level equations (the pio_sm dbg
+  idiom).
+- [SPEC-16-10] **Spec-eq mode (landed C15).** The C11 miter's comparison
+  predicate is replaceable: instead of the E1..E4 trace equalities
+  (SPEC-16-1/2), each instance's observables feed its own SPEC-16-9
+  monitor with identical parameters (the spec's timing window), and the
+  claim is that both monitors stay error-free through the horizon
+  (`formal/pio_mon_fv.sv`, `pio_mon_spec_eq`; SPEC-16-3/4/5 still frame
+  the run — same prologue/init discipline and traffic-only free phase,
+  with the SPEC-16-8 per-side EXECCTRL overlay available). Timing may
+  differ between the sides: a rewrite whose waveform stays inside the
+  spec window passes spec-eq while failing trace-eq — the demo pair is
+  the C14 `rw_wrap_speed` mechanism (terminal JMP replaced by the free
+  wrap, SPEC-8-2/CC-10, without delay compensation) — which is what
+  unlocks C14's spec-only speed rewrites for certification. Each side
+  is still checked independently, so an overlay that breaks protocol
+  conformance on either side fails the claim. `reg_rdata` (SPEC-16-2)
+  is not compared in spec-eq: readback timing is free to change. C16
+  consumes the same monitors as cover goals and as the sim re-check of
+  synthesized witnesses.

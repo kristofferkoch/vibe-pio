@@ -414,6 +414,34 @@ flowchart TB
   assertions: pad@k visible at k+2 (shift-register equivalence), priority
   resolution matches a reference per-pin resolution function.
 
+#### `pio_mon_uart_tx` / `pio_mon_square` (C15 monitors)
+
+- **Purpose.** Spec-conformance monitors over the C11 observables
+  (SPEC-16-9): a UART-TX frame checker (run-based timing windows, data
+  decode, optional parity, stop) and a square-wave half-period checker.
+  Verification IP, not design — placed in `rtl/` because that is the
+  one source tree every flow already compiles (sim TBs via the
+  Makefile's rtl glob; sby `[files]` sets), which is what lets
+  synthesized witnesses be re-checked in sim (C16).
+- **Interfaces.** `clk`/`rst` plus the observed pin (`rx`/`sig` =
+  `gpio_out[pin]`); status outputs — sticky `err` with class sub-flags
+  (`err_timing`/`err_frame`; `err_lo`/`err_hi`), `frame_done`/`edge_t`
+  strobes, captured `data`, `frames`/`edges` counters, and `dbg_*`
+  readback (state, run length, bit position) so formal properties are
+  port-level equations (the pio_sm dbg idiom). No assertions inside:
+  wrappers check the exported verdicts — the same instance is the
+  spec-eq miter predicate (SPEC-16-10) and a standalone checker
+  (`sim/tb_pio_mon.sv`, `formal/pio_mon_fv.sv`).
+- **Cycle contract.** Timing windows cite CC-26/CC-25 (divider INT vs
+  INT+1 slot lengths); duration measurement cites CC-40 (pin levels
+  land on the pad from T+1; registered sampling preserves run lengths).
+  Semantics and [MODEL] simplifications: SPEC-16-9.
+- **Reset/formal.** One violation latches the class flag and halts the
+  monitor until `rst` (bounded-latency, deterministic — usable as a
+  formal comparison predicate). `pio_mon_probe_fv` k-inducts the status
+  contract; the block-level harnesses run BMC+cover (live-SM induction
+  lives in the per-module proofs — the pio_block_fv_b precedent).
+
 ### Interface decisions
 
 1. **Instruction memory sharing (CC-33).** Each SM drives its own
@@ -500,7 +528,8 @@ flowchart TB
 | sby + SMT solver | BMC, induction, equivalence, synthesis harness (`formal/`) |
 | `tools/pio_model` | C12: clk-accurate single-SM golden model of `pio_block` (SM0 live per SPEC-16-4), native .pio assembler + disassembler, and the model-vs-RTL trace differential (`make model`): the model consumes the same pio-stim schedules as `sim/tb_trace_dump.sv` and both emit SPEC-16-7 traces that the differ compares under the SPEC-16-2 exclusions. Gates: assembler bit-equality with pioasm on every `conf_pioexamples.svh` program, the 20-program conformance matrix, randomized fuzzing, and a mutation demo (injected model bugs must be caught red, green unmutated). |
 | `tools/hyperequiv.py` | C13 equivalence oracle (`make equiv`): program pair + horizon -> C12-model pre-filter, generated C11 miter instance, sby bmc verdict, decoded + replay-verified counterexample reports. Since C14 the miter takes per-side `SM0_EXECCTRL_A/B` (SPEC-16-8) so the oracle certifies EXECCTRL-overlay (wrap-rewritten) pairs, with the pair's differing bits masked out of the readback compare. |
-| `tools/hyperopt.py` | C14 hyperoptimizer (`make hyperopt`): a catalog of semantics-preserving rewrites (trace-eq vs spec-only tagged, SPEC-/CC-cited) searched to a peephole closure, screened by the C12 model under the seed schedule and the C13 pre-filter under the miter config, Pareto-filtered on (imem words, ticks per loop iteration) and certified through the oracle; spec-only speed rewrites and the PINCTRL/SHIFTCTRL-overlay entries (side-set fusion, autopull) are catalogued and regression-cased but reported uncertified until C15/overlay widening. |
+| `tools/hyperopt.py` | C14 hyperoptimizer (`make hyperopt`): a catalog of semantics-preserving rewrites (trace-eq vs spec-only tagged, SPEC-/CC-cited) searched to a peephole closure, screened by the C12 model under the seed schedule and the C13 pre-filter under the miter config, Pareto-filtered on (imem words, ticks per loop iteration) and certified through the oracle; spec-only speed rewrites and the PINCTRL/SHIFTCTRL-overlay entries (side-set fusion, autopull) are catalogued and regression-cased but reported uncertified — the C15 spec-eq predicate exists (SPEC-16-10), wiring the oracle to it is future work. |
+| `rtl/pio_mon_*.sv` | C15 spec-conformance monitors (SPEC-16-9): UART-TX frame and square-wave half-period checkers over the gpio_out observables, shared by `sim/tb_pio_mon.sv` (standalone, reference programs accepted / corrupted rejected) and `formal/pio_mon.sby` (standalone BMC+cover, the spec-eq twin `pio_mon_spec_eq_fv` — monitors as the miter comparison predicate, SPEC-16-10 — and a k-induction probe of the monitors' status contract). |
 
 ### Golden model (C12, as built)
 
