@@ -23,9 +23,13 @@ Conventions for AI agents (and subagents) working in this repo.
   record it in the commit message (which check, which re-injected
   defect, first failing section). Prefer this order for any fix: write
   the failing check first, watch it fail, then fix the RTL.
-- Code goes in the SystemVerilog subset common to iverilog (`-g2012`) and
-  yosys (`read_verilog -sv`): `always_ff`/`always_comb`, no interfaces or
-  classes. See `DESIGN.md` before structural changes.
+- Code goes in the SystemVerilog subset common to iverilog (`-g2012`),
+  yosys (`read_verilog -sv`) and verilator (`--lint-only -Wall`): 
+  `always_ff`/`always_comb`, no interfaces or classes. The verilator leg
+  waives exactly the four documented idiom classes (see the lint gate in
+  `tools/webbuild.py`); widths stay explicit — WIDTHEXPAND/WIDTHTRUNC
+  are fixed in RTL, never waived. See `DESIGN.md` before structural
+  changes.
 - **Python follows the same discipline** (see `docs/python-tooling.md`):
   uv + ruff + ty + pytest, gated by `make py` (host-side; the runtime
   scripts stay stdlib-only so `make model`/`make audit` also run in the

@@ -43,6 +43,18 @@
 #            formal conformance) — and the red UNSAT contradictory-spec
 #            case. Needs sby on PATH or the vibe-pio container image;
 #            budget ~15 min (the two cover searches dominate).
+# `web`    — C17 web-backend self-test (tools/webbuild.py): verilator
+#            -Wall lint over rtl/*.sv (four documented idiom waivers),
+#            the AOT wasm build (verilator --cc --assert -> em++,
+#            build/web/pio_engine.js — the shipped game build for C18,
+#            invariant subset compiled in), the three-way SPEC-16-7
+#            trace gate (model <-> iverilog <-> verilator-wasm on the
+#            conformance matrix + fuzz corpus), and the two red/green
+#            mutation demos (the sample-late shim defect caught by the
+#            trace diff; the stale-shadow defect caught by the
+#            compiled-in asserts). Needs verilator+em++/node on PATH or
+#            the vibe-pio container image; budget ~10 min (three wasm
+#            builds + the iverilog corpus dominate).
 # `py`     — Python quality gate (host-side, needs uv; see
 #            docs/python-tooling.md): ruff format --check + ruff check +
 #            ty type check + pytest (unit tests + doctests). The
@@ -61,7 +73,7 @@ RTL_SRC := $(wildcard $(RTL_DIR)/*.sv)
 IVERILOG = iverilog -g2012 -I $(SIM_DIR)
 VVP      = vvp
 
-.PHONY: sim syn formal audit model equiv hyperopt synth py toolcheck clean $(TB_LIST)
+.PHONY: sim syn formal audit model equiv hyperopt synth web py toolcheck clean $(TB_LIST)
 
 toolcheck:
 	@echo "=== toolchain versions ==="
@@ -72,6 +84,12 @@ toolcheck:
 	@boolector --version | tail -1
 	@echo "btormc $$(btormc --version | tail -1)"
 	@python3 --version
+	@if command -v verilator >/dev/null; then verilator --version; \
+		else echo "verilator: not on PATH (make web falls back to the vibe-pio container)"; fi
+	@if command -v em++ >/dev/null; then em++ --version | head -1; \
+		else echo "emsdk em++: not on PATH (make web falls back to the vibe-pio container)"; fi
+	@if command -v node >/dev/null; then echo "node $$(node --version)"; \
+		else echo "node: not on PATH (make web falls back to the vibe-pio container)"; fi
 	@if command -v uv >/dev/null; then \
 		echo "uv $$(uv --version | cut -d' ' -f2) (host-side Python tooling)"; \
 		uv run --quiet ruff --version; \
@@ -153,6 +171,9 @@ hyperopt:
 
 synth:
 	@python3 tools/hypersynth.py --self-test
+
+web:
+	@python3 tools/webbuild.py --self-test
 
 py:
 	uv run ruff format --check .

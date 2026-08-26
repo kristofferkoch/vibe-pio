@@ -361,9 +361,9 @@ module pio_sm_exec (
   logic [31:0] status_val_c;  // SPEC-3.6-12, SPEC-14.10-1
   always_comb begin
     case (cfg_status_sel)
-      2'd0: status_val_c = ({1'b0, tx_level} < {1'b0, cfg_status_n})
+      2'd0: status_val_c = ({2'b00, tx_level} < {1'b0, cfg_status_n})
                            ? 32'hFFFF_FFFF : 32'd0;
-      2'd1: status_val_c = ({1'b0, rx_level} < {1'b0, cfg_status_n})
+      2'd1: status_val_c = ({2'b00, rx_level} < {1'b0, cfg_status_n})
                            ? 32'hFFFF_FFFF : 32'd0;
       2'd2: status_val_c = flag_rd(irq_flags, irq_prev, irq_next,
                                    {cfg_status_n[4], cfg_status_n[3]},

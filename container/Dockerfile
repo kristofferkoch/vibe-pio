@@ -17,6 +17,11 @@
 # yosys-0.47, still emits `read_ilang`, which yosys >= 0.68 removed in
 # favour of `read_rtlil`).
 #
+# C17 adds the web-backend tools (appended after the layers above, so
+# rebuilding with cache only runs the new layers): Verilator from trixie
+# (5.032) and emsdk 6.0.8 (repo commit-pinned), for `make web` — see
+# docs/toolchain.md.
+#
 # All source builds happen in a single RUN with the build toolchain
 # installed and purged in the same layer, so compilers never bloat the
 # final image.
@@ -31,6 +36,8 @@ ARG YOSYS_COMMIT=38e001a6ff74ca434bf4cc02c053f53619160ab0
 ARG SBY_COMMIT=b1a1e98cba941ec8433f8dc27f416cd7bb7f14be
 ARG BOOSTECTOR_TAG=3.2.4
 ARG BOOSTECTOR_COMMIT=393cdfba3735d334bb4e6525500b8a0280dd41e6
+ARG EMSDK_TAG=6.0.8
+ARG EMSDK_COMMIT=e5bd3d0874e302a18f13c5b41f5bacf9a40c8e59
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         iverilog \
@@ -90,6 +97,38 @@ RUN apt-get update \
     # restore runtime libs the purges above removed but yosys links against
     && apt-get install -y --no-install-recommends tcl8.6 \
     && rm -rf /var/lib/apt/lists/* /tmp/*
+
+# ---- C17 web build: verilator + emsdk (pinned) --------------------------
+# Verilator (trixie package 5.032-1+b2, fixed by the Debian release —
+# docs/toolchain.md): elaborates rtl/*.sv for the wasm backend and is
+# the third tool of the iverilog/yosys/verilator subset convention
+# (AGENTS.md). python-is-python3: emsdk's scripts expect a bare `python`;
+# xz-utils: emsdk unpacks its node/clang downloads as .tar.xz.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        verilator \
+        python-is-python3 \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# emsdk (the AOT wasm link of the Verilated model, `make web`): repo
+# pinned by commit like every git-sourced tool in this image, SDK
+# version pinned by tag; the bundled node becomes the container's node
+# (the headless gate runner, web/node_gate.js). `emsdk activate` writes
+# its portable config (all paths $CFGDIR-relative) next to the SDK;
+# install zips are dropped to keep the layer lean.
+RUN git clone --branch ${EMSDK_TAG} --depth 1 \
+           https://github.com/emscripten-core/emsdk /opt/emsdk \
+    && cd /opt/emsdk \
+    && test "$(git rev-parse HEAD)" = "${EMSDK_COMMIT}" \
+    && ./emsdk install ${EMSDK_TAG} \
+    && ./emsdk activate ${EMSDK_TAG} \
+    && rm -rf zips /tmp/* \
+    && ln -s /opt/emsdk/node/*/bin/node /usr/local/bin/node
+
+ENV EMSDK=/opt/emsdk \
+    EM_CONFIG=/opt/emsdk/.emscripten \
+    PATH=/opt/emsdk:/opt/emsdk/upstream/emscripten:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 WORKDIR /work
 

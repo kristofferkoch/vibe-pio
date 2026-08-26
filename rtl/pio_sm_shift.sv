@@ -131,7 +131,7 @@ module pio_sm_shift (
 
     // SPEC-3.4-1: bits from the LSB end (right) or MSB end (left),
     // remainder zero.
-    out_data_c = out_shift_left ? (osr_r >> (DW - out_count))
+    out_data_c = out_shift_left ? (osr_r >> (CW'(DW) - out_count))
                                 : (osr_r & out_mask_c);
 
     // SPEC-5-1: OSR fills with zeroes as it empties.
@@ -145,11 +145,11 @@ module pio_sm_shift (
       isr_rotated_c = isr_r;     // rotate by 32 = identity
     end else if (in_shift_left) begin
       isr_shifted_c = (isr_r << in_count) | (in_data & in_mask_c);
-      isr_rotated_c = (isr_r << in_count) | (isr_r >> (DW - in_count));
+      isr_rotated_c = (isr_r << in_count) | (isr_r >> (CW'(DW) - in_count));
     end else begin
       isr_shifted_c = (isr_r >> in_count)
-                    | ((in_data & in_mask_c) << (DW - in_count));
-      isr_rotated_c = (isr_r >> in_count) | (isr_r << (DW - in_count));
+                    | ((in_data & in_mask_c) << (CW'(DW) - in_count));
+      isr_rotated_c = (isr_r >> in_count) | (isr_r << (CW'(DW) - in_count));
     end
     // SPEC-3.3-8: self-shift rotates.
     isr_next_in_c = in_src_isr ? isr_rotated_c : isr_shifted_c;
@@ -173,8 +173,8 @@ module pio_sm_shift (
   always_comb begin
     osr_cnt_sum_c = {1'b0, osr_cnt_r} + {1'b0, out_count};  // SPEC-5-4
     isr_cnt_sum_c = {1'b0, isr_cnt_r} + {1'b0, in_count};
-    osr_cnt_sat_c = (osr_cnt_sum_c > CW'(DW)) ? CW'(DW) : CW'(osr_cnt_sum_c);
-    isr_cnt_sat_c = (isr_cnt_sum_c > CW'(DW)) ? CW'(DW) : CW'(isr_cnt_sum_c);
+    osr_cnt_sat_c = (osr_cnt_sum_c > {1'b0, CW'(DW)}) ? CW'(DW) : CW'(osr_cnt_sum_c);
+    isr_cnt_sat_c = (isr_cnt_sum_c > {1'b0, CW'(DW)}) ? CW'(DW) : CW'(isr_cnt_sum_c);
 
     // CC-11 / CC-12 / SPEC-5-8: start-of-tick threshold compare.
     autopull_ge_thr  = autopull_en && (osr_cnt_r >= pull_thr_c);

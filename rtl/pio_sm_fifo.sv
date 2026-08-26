@@ -192,8 +192,8 @@ module pio_sm_fifo (
   // -----------------------------------------------------------------------
   assign tx_head_data = tx_mem[tx_head_r];               // CC-29
   assign sys_rx_rdata = rx_mem[rx_head_r];               // SPEC-6-5
-  assign aux_get_data = rx_mem[aux_get_idx];             // SPEC-3.7-3
-  assign sys_aux_rdata = rx_mem[sys_aux_addr];           // SPEC-7-13
+  assign aux_get_data = rx_mem[{1'b0, aux_get_idx}];     // SPEC-3.7-3
+  assign sys_aux_rdata = rx_mem[{1'b0, sys_aux_addr}];   // SPEC-7-13
 
   assign rx_level = rx_level_r;
   assign tx_level = tx_level_r;

@@ -52,24 +52,9 @@ gets its own grilling after C18 re-reads the fun gate on the real
 engine. Dependency order: C17 → C18 ∥ C19 (C18's
 re-assemble-on-edit milestone waits for C19). Tooling/web cards state
 their own done-when gates; the RTL-card template applies only to the
-lint-compat work C17 does.
+lint-compat work C17 does. C17 (Verilator backend + wasm build +
+three-way trace gate, `make web`) is done.
 
-- C17 (Verilator backend + wasm build + three-way trace gate,
-  `make web`): verilator lint-clean over rtl/*.sv — the
-  iverilog∩yosys subset convention gains a third tool (AGENTS.md /
-  DESIGN.md updated in this card's commit); C++ harness shim around
-  pio_block (load program + config overlay, tick, pin in, state out);
-  em++ build under web/, headless node-runnable for gating; difftest
-  runs its conformance matrix + fuzz corpus through the wasm backend
-  and compares SPEC-16-7 traces model ↔ iverilog ↔ verilator-wasm;
-  the shipped game build carries a subset of the formal invariants
-  compiled in (Verilator --assert; fall back to an immediate-assertion
-  wrapper where concurrent SVA won't elaborate) so the binary
-  self-checks in play; pin verilator + emsdk versions, extend
-  `make toolcheck` and the container image. Done-when: `make web`
-  builds, the three-way gate passes with a red/green demonstration
-  (a re-injected shim defect is caught by the trace diff), and
-  `make sim` / `make formal` stay green.
 - C18 (wire the SM view to the wasm engine): promote
   mockups/sm-view.html to a shipped client under web/ (mockups/ stays
   as the design record), delete the throwaway JS simulator, run the

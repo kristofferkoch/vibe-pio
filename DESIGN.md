@@ -43,6 +43,15 @@ Decided:
 - SystemVerilog subset: files use `.sv` extension; `logic` everywhere (no
   `reg`/`wire` declarations); `always_ff` for state, `always_comb` for
   logic, no `always @*`/`always @(posedge ...)`.
+- Third tool (C17): rtl/*.sv must also stay verilator `--lint-only
+  -Wall` clean under exactly four waived idiom classes — PINMISSING /
+  PINCONNECTEMPTY (the dangling `dbg_*` readback idiom below),
+  UNUSEDPARAM (decode tables kept complete for readability) and
+  UNUSEDSIGNAL (interface-complete strobes with documented no-op
+  semantics). The waiver list lives in `tools/webbuild.py`'s lint gate;
+  width warnings (WIDTHEXPAND/WIDTHTRUNC) are fixed in RTL, never
+  waived — the explicit-width convention above is what keeps the third
+  tool cheap.
 - Non-blocking assignments (`<=`) in `always_ff`, blocking (`=`) in
   `always_comb`; never mix in one block.
 - Constants: `localparam`/`parameter` names in UPPER_SNAKE_CASE; widths
@@ -542,6 +551,7 @@ flowchart TB
 | `tools/hyperopt.py` | C14 hyperoptimizer (`make hyperopt`): a catalog of semantics-preserving rewrites (trace-eq vs spec-only tagged, SPEC-/CC-cited) searched to a peephole closure, screened by the C12 model under the seed schedule and the C13 pre-filter under the miter config, Pareto-filtered on (imem words, ticks per loop iteration) and certified through the oracle; spec-only speed rewrites and the PINCTRL/SHIFTCTRL-overlay entries (side-set fusion, autopull) are catalogued and regression-cased but reported uncertified — the C15 spec-eq predicate exists (SPEC-16-10), wiring the oracle to it is future work. |
 | `rtl/pio_mon_*.sv` | C15 spec-conformance monitors (SPEC-16-9): UART-TX frame and square-wave half-period checkers over the gpio_out observables, shared by `sim/tb_pio_mon.sv` (standalone, reference programs accepted / corrupted rejected) and `formal/pio_mon.sby` (standalone BMC+cover, the spec-eq twin `pio_mon_spec_eq_fv` — monitors as the miter comparison predicate, SPEC-16-10 — and a k-induction probe of the monitors' status contract). C16 reuses the same instances as synthesis cover goals and witness re-checks (SPEC-16-11/12). |
 | `formal/pio_synth_fv.sv` + `tools/hypersynth.py` | C16 symbolic-program synthesis (`make synth`): free imem words (`pio_instr_mem` SYM via chparam, SPEC-16-11) with the C15 monitors as cover goals — square-wave smoke and UART-TX-byte targets — plus the witness pipeline (SPEC-16-12): cover-trace extraction, canonicalization (nop-fills, delay-preserving nops for reserved parks), `.pio` disassembly, and the three re-verify legs (C12 model replay + SPEC-16-9 window check, generated iverilog TB, bounded formal conformance of the loaded witness); the red contradictory-spec case proves the cover goals genuinely bind the solver (UNSAT). |
+| `tools/webbuild.py` + `web/` | C17 wasm backend (`make web`): the verilator `-Wall` lint gate over rtl/*.sv (four documented idiom waivers), the AOT wasm build — Verilator `--cc --assert` over `web/pio_shim_top.sv` (pio_block + the compiled-in invariant subset) linked by em++ into one modularized `build/web/pio_engine.js` — and the three-way SPEC-16-7 trace gate (model ↔ iverilog ↔ verilator-wasm over the C12 conformance matrix + fuzz corpus). `web/pio_shim.cpp` is the C++ cycle engine: the gate face (`pio_stim_trace`, pio-stim replay → trace) and the game face (`pio_reg_write`/`pio_reg_read`/`pio_step`/`pio_snapshot` — the C18 client API). Two mutation demos keep it honest: the sample-late shim defect (trace diff) and the stale imem-shadow defect (compiled-in asserts abort the wasm run). |
 
 ### Golden model (C12, as built)
 
@@ -568,6 +578,43 @@ flowchart TB
 - Multi-SM runs, TXF1..3 writes and SM1..3 window accesses are out of
   the v1 scope and rejected by the model (the harness never issues
   them; single-SM equivalence is the SPEC-16-4 scoping).
+
+### Web backend (C17, as built)
+
+- The browser runs the verified RTL itself: Verilator `--cc --assert`
+  elaborates `web/pio_shim_top.sv` (pio_block plus the compiled-in
+  invariant subset) and em++ AOT-links the Verilated model into one
+  modularized wasm engine, `build/web/pio_engine.js` — Verilator itself
+  is not shipped into the browser. One build serves both faces of
+  `web/pio_shim.cpp`'s cycle engine: the gate face (`pio_stim_trace` —
+  pio-stim v1 replay emitting the SPEC-16-7 trace, run headless under
+  node by `web/node_gate.js`) and the game face
+  (`pio_engine_reset`/`pio_reg_write`/`pio_reg_read`/`pio_step`/
+  `pio_snapshot` — load program + config overlay, tick, pin in, state
+  out; the C18 client API). The timeline contract mirrors
+  `sim/tb_trace_dump.sv` exactly: CC-1 reset, mid-cycle input drive,
+  negedge-point observable sampling, posedge retire.
+- pio_model stays the CI cross-check oracle: `make web`'s three-way
+  gate runs the C12 conformance matrix + fuzz corpus through all three
+  backends and requires line-identical SPEC-16-7 traces (under the
+  SPEC-16-2 exclusions) model ↔ iverilog ↔ verilator-wasm.
+- The invariant subset compiled into the shipped build (immediate
+  assertions, the owner convention — the SVA dialect of `formal/` never
+  elaborates under Verilator): i1 CC-33 imem fetch-word coherence (the
+  fv_a a1 shadow, asserted unconditionally on the free-running
+  SMx_INSTR readback mux), i2 SPEC-7-2 SM_ENABLE storage shadow, i3
+  the output-visible reset contract (gpio_out/oe 0, intr 16'h00f0).
+  Two red-injection macros prove the self-checks fire:
+  PIO_DEFECT_SAMPLE_LATE (shim samples post-edge — caught by the trace
+  diff) and PIO_DEFECT_INVARIANT (stale shadow, DUT untouched — caught
+  only by the compiled-in assertion, which aborts the wasm run).
+- Known wasm-port wrinkles, for whoever touches the build next:
+  verilatedos.h needs `-DVL_IGNORE_UNKNOWN_ARCH` (no wasm branch for
+  VL_CPU_RELAX); verilated.mk hardcodes `LINK=g++` and appends
+  `-lpthread -latomic` (wasm-ld has neither), so the objects are built
+  via the generated makefile with `CXX=em++` and the final link is
+  webbuild's own em++ invocation; verilator does not `mkdir -p` a
+  nested `--Mdir`.
 
 ## Key reference
 
