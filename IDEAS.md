@@ -43,3 +43,31 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   margin note). Pinning the absolute sampling latency needs a formal
   property (the FV suites already carry CC-23 shift-register
   equivalence), not a directed sim.
+- TIS-100-style competitive PIO game over SSH (grilled 2026-08-25,
+  rounds 1–2). Each level = stimulus + a *receiver-style* conformance
+  monitor (C15 machinery, spec-eq mode): a lenient behavioral sink —
+  e.g. a naive UART that decodes bytes and shrugs at framing errors —
+  so acceptance is "the receiver got the right data", never
+  golden-trace equality. TIS-100's sneaky unit tests become a ladder
+  of increasingly strict monitor *profiles* over one receiver skeleton
+  (explicit tolerance parameters + nastier stimulus, never hand-tuned
+  per level); profiles are the level's visible spec ("receiver
+  datasheet" in-game manual page) and are versioned with the model.
+  Sim is cycle-accurate at game scale: 1 tick = 1 cycle, clkdiv
+  abstracted, timing windows in ticks (CC-style), no real-frequency
+  anchoring. Progression: one SM first, multi-SM parallel buses later
+  (cassette-emulator flavor), DMA at most as late-game fixed-function
+  pacing — not modeled until then. The stored program IS the object
+  code: 32×16-bit words + config overlay, canonical C12 disassembly
+  as the only source form; no .defines/comments; labels are edit-time
+  sugar that normalizes away (open: deterministic auto-labels derived
+  from jump targets so canonical text stays readable without a stored
+  symbol layer). Referee = tools/pio_model imported, never forked;
+  monitor profiles and scores versioned with the model. Server =
+  in-process SSH game daemon (pty per session, no shell — the
+  "ssh coffee shop" model), one language (Python). Score metric
+  deliberately open (C14's Pareto front is the natural fit when it
+  lands); par/solvability proofs likewise (C14/C16 certify for free).
+  Gate before any of it: a legible live SM view (pc/x/y/isr/osr,
+  FIFO levels, decoded exec + delay countdown, pin waveform strip,
+  single-step) — if that cannot be made fun, the game dies there.
