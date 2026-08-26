@@ -12,3 +12,6 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+
+# ZCode agent session state
+.zcode/
