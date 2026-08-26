@@ -35,3 +35,50 @@ C15 (spec-conformance monitors + spec-eq predicate) and C16
 are done.
 Tooling cards (C14/C16) state their own done-when gates; the RTL-card
 template above applies to the RTL they touch.
+
+## Browser game engine track (C17–C19)
+
+Promoted from the IDEAS game entry after the grilling round
+(2026-08-26, round 3 — browser pivot). Owner decisions: the browser
+runs the verified RTL itself (Verilator→wasm, AOT build of the
+Verilated model — Verilator itself is not shipped into the browser);
+pio_model stays the CI cross-check oracle, so difftest gains a third
+backend; the SSH daemon is deferred (browser-only now, reconsidered
+once the game loop lands); the in-browser assembler is a JS port of
+pio_model asm/disasm gated by golden bit-vectors — "never forked" is
+relaxed for the assembler only, never the referee. The game loop
+(levels, monitor profiles, scoring) is deliberately NOT promoted: it
+gets its own grilling after C18 re-reads the fun gate on the real
+engine. Dependency order: C17 → C18 ∥ C19 (C18's
+re-assemble-on-edit milestone waits for C19). Tooling/web cards state
+their own done-when gates; the RTL-card template applies only to the
+lint-compat work C17 does.
+
+- C17 (Verilator backend + wasm build + three-way trace gate,
+  `make web`): verilator lint-clean over rtl/*.sv — the
+  iverilog∩yosys subset convention gains a third tool (AGENTS.md /
+  DESIGN.md updated in this card's commit); C++ harness shim around
+  pio_block (load program + config overlay, tick, pin in, state out);
+  em++ build under web/, headless node-runnable for gating; difftest
+  runs its conformance matrix + fuzz corpus through the wasm backend
+  and compares SPEC-16-7 traces model ↔ iverilog ↔ verilator-wasm;
+  the shipped game build carries a subset of the formal invariants
+  compiled in (Verilator --assert; fall back to an immediate-assertion
+  wrapper where concurrent SVA won't elaborate) so the binary
+  self-checks in play; pin verilator + emsdk versions, extend
+  `make toolcheck` and the container image. Done-when: `make web`
+  builds, the three-way gate passes with a red/green demonstration
+  (a re-injected shim defect is caught by the trace diff), and
+  `make sim` / `make formal` stay green.
+- C18 (wire the SM view to the wasm engine): promote
+  mockups/sm-view.html to a shipped client under web/ (mockups/ stays
+  as the design record), delete the throwaway JS simulator, run the
+  engine in a Web Worker with batch stepping feeding state snapshots
+  to the view, re-assemble on edit commit (after C19). The fun gate
+  is re-read here on the real engine — if the view cannot be made
+  fun, the game stops and the game-loop grilling never happens.
+- C19 (in-browser assembler/disassembler): JS port of pio_model
+  asm/disasm + encoding tables; CI gate = golden bit-vectors
+  generated from pio_model (already bit-equal to pioasm) plus the
+  canonical round-trip property (C12 1-1: canonical disassembly
+  re-assembles bit-identical).
