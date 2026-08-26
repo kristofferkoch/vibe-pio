@@ -71,3 +71,11 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   Gate before any of it: a legible live SM view (pc/x/y/isr/osr,
   FIFO levels, decoded exec + delay countdown, pin waveform strip,
   single-step) — if that cannot be made fun, the game dies there.
+  A web mock-up of that view exists (`mockups/sm-view.html`, served
+  no-store via `mockups/serve.py`; decisions in
+  `mockups/DESIGN-NOTES.md`): beyond-80×25 layout, semantic color
+  grammar, config-as-margin-structure, no labels (jump arcs + address
+  typography), VLIW-ish side/delay columns with a live ds-field
+  allocator, modeless in-place row editing with trivial completions +
+  strong tooltips, receiver monitor on-screen. The gate reads as
+  passed; promotion to KANBAN still needs a grilling round.
