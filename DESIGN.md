@@ -499,6 +499,8 @@ flowchart TB
 | yosys | elaboration & synthesis sanity (`syn` target) |
 | sby + SMT solver | BMC, induction, equivalence, synthesis harness (`formal/`) |
 | `tools/pio_model` | C12: clk-accurate single-SM golden model of `pio_block` (SM0 live per SPEC-16-4), native .pio assembler + disassembler, and the model-vs-RTL trace differential (`make model`): the model consumes the same pio-stim schedules as `sim/tb_trace_dump.sv` and both emit SPEC-16-7 traces that the differ compares under the SPEC-16-2 exclusions. Gates: assembler bit-equality with pioasm on every `conf_pioexamples.svh` program, the 20-program conformance matrix, randomized fuzzing, and a mutation demo (injected model bugs must be caught red, green unmutated). |
+| `tools/hyperequiv.py` | C13 equivalence oracle (`make equiv`): program pair + horizon -> C12-model pre-filter, generated C11 miter instance, sby bmc verdict, decoded + replay-verified counterexample reports. Since C14 the miter takes per-side `SM0_EXECCTRL_A/B` (SPEC-16-8) so the oracle certifies EXECCTRL-overlay (wrap-rewritten) pairs, with the pair's differing bits masked out of the readback compare. |
+| `tools/hyperopt.py` | C14 hyperoptimizer (`make hyperopt`): a catalog of semantics-preserving rewrites (trace-eq vs spec-only tagged, SPEC-/CC-cited) searched to a peephole closure, screened by the C12 model under the seed schedule and the C13 pre-filter under the miter config, Pareto-filtered on (imem words, ticks per loop iteration) and certified through the oracle; spec-only speed rewrites and the PINCTRL/SHIFTCTRL-overlay entries (side-set fusion, autopull) are catalogued and regression-cased but reported uncertified until C15/overlay widening. |
 
 ### Golden model (C12, as built)
 

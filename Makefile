@@ -25,6 +25,14 @@
 #            replayed in the golden model), and the timeout path.
 #            Needs sby on PATH or the vibe-pio container image; budget
 #            ~3 min (the sby runs dominate).
+# `hyperopt` — C14 hyperoptimizer self-test (tools/hyperopt.py): the
+#            per-rewrite regression cases (model trace-equal green,
+#            compensation-removed red, the unsound delay tamper caught
+#            by the pre-filter), search/Pareto units, plus two
+#            end-to-end sby runs through the EXECCTRL-overlay miter
+#            (SPEC-16-8): a wrap_fold output certified PASS, and the
+#            delay tamper FAILed with a decoded counterexample.
+#            Needs sby on PATH or the vibe-pio container image.
 # `py`     — Python quality gate (host-side, needs uv; see
 #            docs/python-tooling.md): ruff format --check + ruff check +
 #            ty type check + pytest (unit tests + doctests). The
@@ -43,7 +51,7 @@ RTL_SRC := $(wildcard $(RTL_DIR)/*.sv)
 IVERILOG = iverilog -g2012 -I $(SIM_DIR)
 VVP      = vvp
 
-.PHONY: sim syn formal audit model equiv py toolcheck clean $(TB_LIST)
+.PHONY: sim syn formal audit model equiv hyperopt py toolcheck clean $(TB_LIST)
 
 toolcheck:
 	@echo "=== toolchain versions ==="
@@ -129,6 +137,9 @@ model:
 
 equiv:
 	@python3 tools/hyperequiv.py --self-test
+
+hyperopt:
+	@python3 tools/hyperopt.py --self-test
 
 py:
 	uv run ruff format --check .

@@ -11,12 +11,13 @@ strict tooling gates, and **red/green TDD** for every behavior change.
 | `tools/pio_model/` | the golden-model package (encoding, asm, disasm, model, tracefmt, stim, difftest CLI) |
 | `tools/trace_audit.py` | SPEC-/CC- traceability audit (`make audit`) |
 | `tools/hyperequiv.py` | C13 equivalence oracle: program pair + horizon -> pre-filter, generated C11 miter instance, sby verdict, decoded divergence reports (`make equiv`) |
+| `tools/hyperopt.py` | C14 hyperoptimizer: rewrite catalog + Pareto search over conformance seeds, model/prefilter screening, C13-oracle certification (`make hyperopt`) |
 | `sim/gen_conf_pioexamples.py` | regenerates `sim/conf_pioexamples.svh` from pioasm |
 | `tests/` | pytest suite: unit tests + the doctest gate (`tests/test_doctests.py`) |
 
 **Runtime code is stdlib-only.** `pio_model` and the audit/oracle
 scripts must import with a bare `python3` — they run inside the vibe-pio
-container (`make model`, `make audit`, `make equiv`), which has no uv,
+container (`make model`, `make audit`, `make equiv`, `make hyperopt`), which has no uv,
 no venv, and no network. The oracle shells out to `sby` (native or
 through the same container image as difftest) but never pip-installs
 anything. Dependencies (ruff, ty, pytest) are *dev-only* and live in the

@@ -9,7 +9,9 @@ after that clk's G line. Lowercase fixed-width hex throughout.
 Equivalence-aware comparison (SPEC-16-2 exclusions): R lines at the
 SMx_INSTR (imem[pc], SPEC-7-24) and SMx_ADDR (pc, SPEC-7-22) addresses
 are dropped; SMx_EXECCTRL reads compare with bit 31 masked (the
-EXEC_STALLED RO overlay, SPEC-7-15).
+EXEC_STALLED RO overlay, SPEC-7-15). Under an EXECCTRL config overlay
+(SPEC-16-8, C14) the pair's intentionally-differing bits are masked too,
+via normalize's ec_mask argument.
 """
 
 from collections.abc import Sequence
@@ -82,8 +84,18 @@ def _classify(addr: int) -> str:
     return "keep"
 
 
-def normalize(recs: Sequence[Rec]) -> list[Rec]:
-    """Apply the SPEC-16-2 exclusions -> comparable record list."""
+def normalize(recs: Sequence[Rec], ec_mask: int = 0x7FFFFFFF) -> list[Rec]:
+    """Apply the SPEC-16-2 exclusions -> comparable record list.
+
+    ec_mask ANDs SMx_EXECCTRL read payloads (bit 31 masked by the
+    default, SPEC-7-15); a pair running an EXECCTRL overlay passes the
+    complement of its intentional difference instead (SPEC-16-8).
+
+    >>> normalize([("R", 0, 0x0CC, 0x80001234)])
+    [('R', 0, 204, 4660)]
+    >>> normalize([("R", 0, 0x0CC, 0xFFFF1234)], ec_mask=0x7FF0FFFF)  # wrap bits overlaid
+    [('R', 0, 204, 2146439732)]
+    """
     out: list[Rec] = []
     for r in recs:
         if r[0] == "G":
@@ -93,7 +105,7 @@ def normalize(recs: Sequence[Rec]) -> list[Rec]:
             if kind == "drop":
                 continue
             if kind == "mask31":
-                out.append(("R", r[1], r[2], r[3] & 0x7FFFFFFF))
+                out.append(("R", r[1], r[2], r[3] & ec_mask))
             else:
                 out.append(r)
     return out

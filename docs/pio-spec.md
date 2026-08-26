@@ -915,3 +915,17 @@ model's* equivalence methodology, not datasheet facts. Consumers:
   lines at SPEC-16-2-excluded addresses and masking bit 31 of
   SMx_EXECCTRL reads. Emitted by the C12 model and by RTL trace-dump
   TBs; consumed by the C13 differ.
+- [SPEC-16-8] **EXECCTRL config overlay (landed C14).** The miter's prologue
+  writes SM0_EXECCTRL per instance (`SM0_EXECCTRL_A`/`_B` parameters), so
+  a compared pair may intentionally differ in EXECCTRL — the wrap
+  rewrites change WRAP_TOP/WRAP_BOTTOM (SPEC-7-19/20) while preserving
+  timing by folding the replaced JMP's 1+delay ticks into the preceding
+  instruction's delay field. The CPU-visible readback compare for
+  SMx_EXECCTRL masks exactly the bits 30:0 the pair intentionally
+  differs on (miter localparam `EC_CMP_MASK`; bit 31 stays masked per
+  SPEC-7-15) — the C12 trace comparison takes the same mask
+  (`tracefmt.normalize`'s `ec_mask`). The behavioural observables
+  (SPEC-16-1) still compare unconditionally, so an overlay that changes
+  behaviour fails the equivalence claim. PINCTRL/SHIFTCTRL overlays
+  (side-set fusion, autopull rewrites) remain future extension
+  (SPEC-16-6).

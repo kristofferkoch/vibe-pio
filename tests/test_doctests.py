@@ -12,10 +12,11 @@ import unittest
 from types import ModuleType
 
 import hyperequiv
+import hyperopt
 import pytest
 from pio_model import asm, disasm, encoding, model, stim, tracefmt
 
-MODULES: tuple[ModuleType, ...] = (encoding, asm, disasm, tracefmt, stim, model, hyperequiv)
+MODULES: tuple[ModuleType, ...] = (encoding, asm, disasm, tracefmt, stim, model, hyperequiv, hyperopt)
 
 
 @pytest.fixture(params=MODULES, ids=lambda m: m.__name__)

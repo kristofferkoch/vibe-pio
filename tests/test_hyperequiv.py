@@ -41,11 +41,38 @@ def test_default_execctrl_wrap() -> None:
 def test_wrapper_literals(green: H.ProgPair) -> None:
     w = H.wrapper_sv(green)
     assert "PROG_LEN(5'd5)" in w
-    assert "SM0_EXECCTRL(32'h00004000)" in w
+    assert "SM0_EXECCTRL_A(32'h00004000)" in w
+    assert "SM0_EXECCTRL_B(32'h00004000)" in w
     # MSB-first word lists, zero-padded to 32: word 0 last, padding
     # first; 27 zero pads per program, 54 across the pair.
     assert "16'h80A0" in w
     assert w.count("16'h0000") == 54
+
+
+def test_wrapper_literals_overlay() -> None:
+    pair = H.ProgPair(H.GREEN_A, H.GREEN_B, 0x4000, 0x5000)
+    w = H.wrapper_sv(pair)
+    assert "SM0_EXECCTRL_A(32'h00004000)" in w
+    assert "SM0_EXECCTRL_B(32'h00005000)" in w
+
+
+def test_execctrl_overlay_mask() -> None:
+    # SPEC-16-8: the readback mask clears exactly the pair's overlay
+    # difference (bit 31 always masked).
+    assert H.ProgPair((0,), (0,), 0x4000).ec_mask == 0x7FFFFFFF
+    assert H.ProgPair((0,), (0,), 0x4000, 0x5000).ec_mask == 0x7FFFEFFF
+    assert H.ProgPair((0,), (0,), 0x4000, 0x80004000).ec_mask == 0x7FFFFFFF
+
+
+def test_prefilter_execctrl_overlay() -> None:
+    # Dead-field EXECCTRL difference (STATUS_N, only MOV status reads
+    # it — absent): still equivalent, and the masked readback compare
+    # ignores it (SPEC-16-8).
+    inert = H.ProgPair(H.GREEN_A, H.GREEN_B, 0x4000, 0x401F)
+    assert H.prefilter(inert, 24, 4, 1) is None
+    # Wrap-field difference that changes flow: red.
+    live = H.ProgPair(H.GREEN_A, H.GREEN_B, 0x4000, 0x4080)  # wrap_bottom 0->1
+    assert H.prefilter(live, 24, 4, 1) is not None
 
 
 def test_parse_program_hex() -> None:
@@ -137,3 +164,24 @@ def test_divergence_report_lines(red: H.ProgPair) -> None:
     assert any("clk 10" in ln and "gpio_out pin 0" in ln for ln in lines)
     # Disassembled culprit PCs (C12): the flipped `set pins` word.
     assert any("'set pins, 1 [1]'" in ln and "'set pins, 0 [1]'" in ln for ln in lines)
+
+
+def test_replay_cex_substitutes_out_of_scope_reads() -> None:
+    # Red case from the C14 tamper e2e: a counterexample whose anyconst
+    # read address lands in the SM2 window (0x104) must not crash the
+    # model replay — the miter's compare there is the trivially-equal
+    # static reset view (SPEC-16-4), so both sides read FSTAT instead.
+    samples = [
+        H.Sample(t=0, step=0, rst=1, vals={}),
+        H.Sample(t=10, step=1, rst=0, vals={"read": 1, "addr": 0x104, "rd_a": 5, "rd_b": 5}),
+    ]
+    div, note = H.replay_cex(samples)
+    assert div is None
+    assert "no divergence" in note
+
+
+def test_read_subst_map() -> None:
+    assert H._read_subst(0x104) == stim.A_FSTAT  # SM2 EXECCTRL
+    assert H._read_subst(0x024) == stim.A_FSTAT  # RXF1
+    assert H._read_subst(stim.A_RXF0) == stim.A_RXF0
+    assert H._read_subst(stim.A_FLEVEL) == stim.A_FLEVEL

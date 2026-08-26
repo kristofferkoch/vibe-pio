@@ -28,29 +28,12 @@ certifies the winners; Pareto (size, speed) objective; synthesis runs
 on `pio_block` (pio_top stays a separate later card). Dependency
 order: C11 ∥ C12 → C13 → C14; C15 after C11; C16 after C12 + C15.
 C11 (trace-equivalence miter + observable contract), C12 (Python
-golden model + assembler/disassembler, `make model`) and C13
-(equivalence oracle CLI, `make equiv`) are done.
+golden model + assembler/disassembler, `make model`), C13 (equivalence
+oracle CLI, `make equiv`) and C14 (hyperoptimizer, `make hyperopt`)
+are done.
 Tooling cards (C14) state their own done-when gates; the RTL-card
 template above applies to C15/C16.
 
-- [ ] **C14 — Hyperoptimizer: rewrite catalog + Pareto search.**
-      `tools/hyperopt.py`: catalog of semantics-preserving rewrites,
-      each tagged trace-eq or spec-conformance-only and cited to the
-      SPEC-/CC- fact it exploits (side-set fusion SPEC-4/CC-5; wrap
-      instead of JMP CC-10/SPEC-8-2; delay absorption during stall
-      CC-22; autopull replacing PULL+OUT pairs CC-11/12; MOV ~ folding
-      SPEC-3.6; dead-code elimination via model reachability; …).
-      Search: exhaustive peephole closure + bounded stochastic
-      exploration; candidates evaluated by the C12 model; Pareto filter
-      on (imem words, ticks per loop iteration); final front certified
-      through the C13 oracle. Config-overlay support lands here if
-      rewrites need it (C11 extension point).
-      Done-when: conformance programs as seeds → formally-certified
-      Pareto set per program (or an honest "certified optimal within
-      rewrite closure at horizon N"); red/green — an intentionally
-      unsound rewrite (delay tamper) caught by the oracle; every
-      catalog rewrite carries a committed regression case.
-      Depends: C12, C13.
 - [ ] **C15 — Spec-conformance monitors.** SV monitors over the C11
       observables (UART-TX frame and square-wave period first; timing
       windows cite CC-23/25/26), usable (a) as the miter comparison

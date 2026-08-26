@@ -57,6 +57,16 @@
 // observable contract (emitted by the C12 model and RTL trace-dump TBs,
 // consumed by the C13 differ) is SPEC-16-7.
 //
+// EXECCTRL config overlay (C14, SPEC-16-8): SM0_EXECCTRL_A and
+// SM0_EXECCTRL_B are written to their own instance in the prologue, so
+// the pair may intentionally differ in EXECCTRL (the wrap-rewriting
+// rewrites change WRAP_TOP/WRAP_BOTTOM). E4's EXECCTRL readback compare
+// masks the bits the pair intentionally differs on (EC_CMP_MASK below);
+// every other EXECCTRL bit still compares, and the behavioural
+// observables E1..E3 compare unconditionally — an overlay that actually
+// changes behaviour still fails. PINCTRL/SHIFTCTRL overlays (side-set
+// fusion, autopull) remain future extension (SPEC-16-6).
+//
 // Default program pair (5 words, wrap 4->0): both run
 //   pull block / set pins,1 [1] / <word2> / set pins,0 [1] / push block
 // with word2 = `nop` = mov y,y (SPEC-3.6-10) in A and `mov x,x`
@@ -95,7 +105,10 @@ module pio_equiv_miter #(
                                 16'hE101,
                                 16'h80A0},
     parameter [4:0]   PROG_LEN     = 5'd5,          // words to load
-    parameter [31:0]  SM0_EXECCTRL = 32'h0000_4000  // wrap 4->0 (SPEC-7-15 wrap fields)
+    // Per-side SM0 EXECCTRL (SPEC-16-8 config overlay, C14): B defaults
+    // to A (the v1 shared-config case of SPEC-16-6).
+    parameter [31:0]  SM0_EXECCTRL_A = 32'h0000_4000,  // wrap 4->0 (SPEC-7-15)
+    parameter [31:0]  SM0_EXECCTRL_B = SM0_EXECCTRL_A
 ) (
     input  logic        clk,
     input  logic        rst,
@@ -111,6 +124,15 @@ module pio_equiv_miter #(
     input  logic [8:0]  waddr_free,
     input  logic [31:0] wdata_free
 );
+
+  // ------------------------------------------------------------------
+  // EXECCTRL overlay compare mask (SPEC-16-8): bits 30:0 the pair
+  // intentionally differs on drop out of the readback compare; bit 31
+  // stays masked (EXEC_STALLED RO overlay, SPEC-7-15). With A == B this
+  // is the plain 0x7fffffff of the v1 claim (SPEC-16-2).
+  // ------------------------------------------------------------------
+  localparam [31:0] EC_CMP_MASK =
+      32'h7fff_ffff & ~((SM0_EXECCTRL_A ^ SM0_EXECCTRL_B) & 32'h7fff_ffff);
 
   // Per-instance reg-bus nets (driven by the prologue mux below).
   logic [8:0]  reg_addr_a, reg_addr_b;
@@ -161,8 +183,8 @@ module pio_equiv_miter #(
       end else if (seq_r == 6'(PROG_LEN)) begin
         reg_addr_a  = 9'h0cc;             // SM0_EXECCTRL (SPEC-7-15)
         reg_addr_b  = 9'h0cc;
-        reg_wdata_a = SM0_EXECCTRL;
-        reg_wdata_b = SM0_EXECCTRL;
+        reg_wdata_a = SM0_EXECCTRL_A;     // per-side (SPEC-16-8)
+        reg_wdata_b = SM0_EXECCTRL_B;
         reg_write_a = 1'b1;
         reg_write_b = 1'b1;
       end else begin
@@ -258,11 +280,19 @@ module pio_equiv_miter #(
 
       // E4: CPU-visible read observables (SPEC-16-2). Exclusions:
       // SMx_INSTR (smreg 4, SPEC-7-24) and SMx_ADDR (smreg 3,
-      // SPEC-7-22); EXECCTRL (smreg 1) masked on bit 31 (SPEC-7-15).
-      if (!smhit_c || ((smreg_c != 3'd3) && (smreg_c != 3'd4)))
+      // SPEC-7-22) compare nothing; EXECCTRL (smreg 1) compares
+      // through the overlay mask (bit 31 EXEC_STALLED, SPEC-7-15; plus
+      // the pair's intentional overlay bits, SPEC-16-8). NB: smreg 1
+      // must be routed OUT of e_rd's condition — the original
+      // `else if (smreg_c == 1)` arm was unreachable (e_rd already
+      // claimed smreg 1), so the bit-31 mask was never applied; the
+      // dead arm was caught red by C14's overlay pair (an EXECCTRL
+      // readback difference at the first free-phase read) and
+      // re-verified green after this restructure.
+      if (!smhit_c || ((smreg_c != 3'd3) && (smreg_c != 3'd4) && (smreg_c != 3'd1)))
         e_rd  : assert (reg_rdata_a == reg_rdata_b);
       else if (smreg_c == 3'd1)
-        e_rdx : assert (reg_rdata_a[30:0] == reg_rdata_b[30:0]);
+        e_rdx : assert ((reg_rdata_a & EC_CMP_MASK) == (reg_rdata_b & EC_CMP_MASK));
 
       // Covers (cover task): the comparison is exercised on live data,
       // not vacuously.
