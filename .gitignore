@@ -15,3 +15,7 @@ __pycache__/
 
 # ZCode agent session state
 .zcode/
+
+# JS dev environment (the biome gate, make js; runtime JS under web/ is
+# dependency-free — see docs/js-tooling.md)
+node_modules/

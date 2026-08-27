@@ -21,8 +21,8 @@
 
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const argv = process.argv.slice(2);
 const defectArg = argv.find((a) => a.startsWith('--defect='));
@@ -30,7 +30,9 @@ const defects = defectArg ? { [defectArg.slice(9)]: true } : {};
 const engineJs = argv[0];
 const expPath = argv[1];
 if (!engineJs || !expPath) {
-  console.error('usage: node node_client_gate.js <pio_engine.js> <expected.json> [--defect=pin|mirror]');
+  console.error(
+    'usage: node node_client_gate.js <pio_engine.js> <expected.json> [--defect=pin|mirror]',
+  );
   process.exit(2);
 }
 
@@ -41,36 +43,47 @@ const RUN_CLKS = expected.runClks;
 
 let failed = false;
 function check(name, ok, detail) {
-  if (ok) console.log(`PASS ${name}${detail ? ' (' + detail + ')' : ''}`);
-  else { failed = true; console.log(`FAIL ${name}${detail ? ' — ' + detail : ''}`); }
+  if (ok) console.log(`PASS ${name}${detail ? ` (${detail})` : ''}`);
+  else {
+    failed = true;
+    console.log(`FAIL ${name}${detail ? ` — ${detail}` : ''}`);
+  }
 }
 
-PioEngine().then((M) => {
-  const drv = VibeDriver.create(M, defects);
-  drv.load();
-  drv.run(RUN_CLKS);
-  const flevel = drv.readFlevel();
-  const st = drv.getState();
+PioEngine()
+  .then((M) => {
+    const drv = VibeDriver.create(M, defects);
+    drv.load();
+    drv.run(RUN_CLKS);
+    const flevel = drv.readFlevel();
+    const st = drv.getState();
 
-  const pins = drv.allPins();
-  check('pins series vs pio_model',
-        pins.length === expected.pins.length
-        && pins.every((p, i) => p === expected.pins[i]),
-        pins.length !== expected.pins.length
-          ? `length ${pins.length} vs ${expected.pins.length}`
+    const pins = drv.allPins();
+    check(
+      'pins series vs pio_model',
+      pins.length === expected.pins.length && pins.every((p, i) => p === expected.pins[i]),
+      pins.length !== expected.pins.length
+        ? `length ${pins.length} vs ${expected.pins.length}`
         : (() => {
             const i = pins.findIndex((p, k) => p !== expected.pins[k]);
             return i < 0 ? `${pins.length} clks equal` : `first divergence at clk ${i}`;
-          })());
-  check('flevel read vs pio_model', flevel === expected.flevel,
-        `0x${flevel.toString(16)} vs 0x${expected.flevel.toString(16)}`);
-  check('monitor decoded', st.monitor.decoded === 'PIO!',
-        JSON.stringify(st.monitor.decoded));
-  check('tx mirror vs engine level', st.txWords.length === st.txLevel,
-        `mirror ${st.txWords.length} vs engine ${st.txLevel}`);
+          })(),
+    );
+    check(
+      'flevel read vs pio_model',
+      flevel === expected.flevel,
+      `0x${flevel.toString(16)} vs 0x${expected.flevel.toString(16)}`,
+    );
+    check('monitor decoded', st.monitor.decoded === 'PIO!', JSON.stringify(st.monitor.decoded));
+    check(
+      'tx mirror vs engine level',
+      st.txWords.length === st.txLevel,
+      `mirror ${st.txWords.length} vs engine ${st.txLevel}`,
+    );
 
-  process.exit(failed ? 1 : 0);
-}).catch((err) => {
-  console.error(String(err));
-  process.exit(1);
-});
+    process.exit(failed ? 1 : 0);
+  })
+  .catch((err) => {
+    console.error(String(err));
+    process.exit(1);
+  });

@@ -25,45 +25,68 @@ function postState(extra) {
   postMessage(Object.assign({ cmd: 'state', state: drv.getState() }, extra || {}));
 }
 
-onmessage = function (e) {
+// biome-ignore lint/suspicious/noGlobalAssign: onmessage is the Web Worker API entry point — assigning the global handler is the worker's contract
+onmessage = (e) => {
   const m = e.data;
   if (m.cmd === 'init') {
     try {
       importScripts('engine-driver.js');
       importScripts(m.engineUrl); // defines the modularized PioEngine factory
       // The .wasm sits beside the engine JS, not beside this worker.
-      PioEngine({ locateFile: (f) => new URL(f, m.engineUrl).href }).then((M) => {
-        drv = VibeDriver.create(M);
-        drv.load();
-        postMessage({ cmd: 'ready' });
-        postState();
-      }, (err) => {
-        // an engine-side failure must reach the view — an unhandled
-        // worker rejection is invisible to worker.onerror
-        postMessage({ cmd: 'werr', message: String((err && err.stack) || err) });
-      });
+      PioEngine({ locateFile: (f) => new URL(f, m.engineUrl).href }).then(
+        (M) => {
+          drv = VibeDriver.create(M);
+          drv.load();
+          postMessage({ cmd: 'ready' });
+          postState();
+        },
+        (err) => {
+          // an engine-side failure must reach the view — an unhandled
+          // worker rejection is invisible to worker.onerror
+          postMessage({ cmd: 'werr', message: String(err?.stack || err) });
+        },
+      );
     } catch (err) {
-      postMessage({ cmd: 'werr', message: String((err && err.stack) || err) });
+      postMessage({ cmd: 'werr', message: String(err?.stack || err) });
     }
     return;
   }
   if (!drv) return; // commands before init are dropped
   try {
     switch (m.cmd) {
-      case 'load': drv.load(); postState(); break;
-      case 'run': drv.run(m.cycles | 0); postState(); break;
-      case 'step': drv.step(); postState(); break;
-      case 'stepInsn': drv.stepInsn(); postState(); break;
+      case 'load':
+        drv.load();
+        postState();
+        break;
+      case 'run':
+        drv.run(m.cycles | 0);
+        postState();
+        break;
+      case 'step':
+        drv.step();
+        postState();
+        break;
+      case 'stepInsn':
+        drv.stepInsn();
+        postState();
+        break;
       case 'enqueue': {
         const refused = drv.enqueue(m.bytes || []);
         postState({ refused });
         break;
       }
-      case 'alloc': drv.setAlloc(m.sideBits, !!m.opt); postState(); break;
-      case 'reset': drv.load(); postState(); break;
-      default: break;
+      case 'alloc':
+        drv.setAlloc(m.sideBits, !!m.opt);
+        postState();
+        break;
+      case 'reset':
+        drv.load();
+        postState();
+        break;
+      default:
+        break;
     }
   } catch (err) {
-    postMessage({ cmd: 'werr', message: String((err && err.stack) || err) });
+    postMessage({ cmd: 'werr', message: String(err?.stack || err) });
   }
 };

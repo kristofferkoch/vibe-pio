@@ -1,0 +1,9 @@
+{
+  "name": "vibe-pio-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dev-only JS tooling for the vibe-pio web client (make js). The runtime JS under web/ stays dependency-free: no require-able module may gain a runtime dependency — @biomejs/biome exists for the format+lint gate only, like ruff for make py.",
+  "devDependencies": {
+    "@biomejs/biome": "2.5.9"
+  }
+}

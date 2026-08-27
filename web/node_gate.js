@@ -10,20 +10,21 @@
 
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const engineJs = process.argv[2];
 const stimPath = process.argv[3];
 const tracePath = process.argv[4];
 if (!engineJs || !stimPath || !tracePath) {
-    console.error('usage: node node_gate.js <pio_engine.js> <stim.mem> <out.trace>');
-    process.exit(2);
+  console.error('usage: node node_gate.js <pio_engine.js> <stim.mem> <out.trace>');
+  process.exit(2);
 }
 // The engine path resolves from cwd (the gate always runs at repo root),
 // not from this script's directory.
 const PioEngine = require(path.resolve(engineJs));
-PioEngine().then((M) => {
+PioEngine()
+  .then((M) => {
     const stim = fs.readFileSync(stimPath, 'utf8');
     const bytes = M.lengthBytesUTF8(stim) + 1;
     const inPtr = M._malloc(bytes);
@@ -32,7 +33,8 @@ PioEngine().then((M) => {
     const trace = M.UTF8ToString(outPtr);
     fs.writeFileSync(tracePath, trace);
     process.exit(0);
-}).catch((err) => {
+  })
+  .catch((err) => {
     console.error(String(err));
     process.exit(1);
-});
+  });

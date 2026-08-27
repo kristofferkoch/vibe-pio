@@ -26,28 +26,51 @@
 //                    engine's tx_level.
 
 /* global PioEngine */
-(function (global) {
+((global) => {
   'use strict';
 
   // ---- register map (SPEC-7-x; mirrors tools/pio_model/stim.py) ----
   const REG = {
-    CTRL: 0x000, FSTAT: 0x004, FLEVEL: 0x00c, TXF0: 0x010,
+    CTRL: 0x000,
+    FSTAT: 0x004,
+    FLEVEL: 0x00c,
+    TXF0: 0x010,
     IMEM0: 0x048, // + 4*i (SPEC-7-10)
-    SM0: 0x0c8,   // + CLKDIV 0 / EXECCTRL 4 / SHIFTCTRL 8 / INSTR 16 / PINCTRL 20
+    SM0: 0x0c8, // + CLKDIV 0 / EXECCTRL 4 / SHIFTCTRL 8 / INSTR 16 / PINCTRL 20
   };
 
   // u_exec onehot FSM (rtl/pio_sm_exec.sv)
   const ST = { FETCH: 1, EXEC: 2, STALL: 4, DELAY: 8 };
 
   // PioCycle strobe bits (pio_shim.cpp)
-  const S_TICK = 1, S_EXEC = 2, S_COMPLETE = 4, S_PC_WR = 8,
-        S_TX_POP = 16, S_RX_PUSH = 32, S_TX_EMPTY = 64, S_TX_FULL = 128;
+  const S_TICK = 1,
+    S_EXEC = 2,
+    S_COMPLETE = 4,
+    S_PC_WR = 8,
+    S_TX_POP = 16,
+    S_RX_PUSH = 32,
+    S_TX_EMPTY = 64,
+    S_TX_FULL = 128;
 
   // PioCycle struct offsets in bytes (pio_shim.cpp — little-endian).
-  const CYC = { clk: 0, gpio_out: 8, gpio_oe: 12, intr: 16, pc: 20,
-                state: 24, delay: 28, x: 32, y: 36, osr: 40, isr: 44,
-                osr_cnt: 48, isr_cnt: 52, tx_level: 56, rx_level: 60,
-                strobes: 64 };
+  const CYC = {
+    clk: 0,
+    gpio_out: 8,
+    gpio_oe: 12,
+    intr: 16,
+    pc: 20,
+    state: 24,
+    delay: 28,
+    x: 32,
+    y: 36,
+    osr: 40,
+    isr: 44,
+    osr_cnt: 48,
+    isr_cnt: 52,
+    tx_level: 56,
+    rx_level: 60,
+    strobes: 64,
+  };
   const CYC_SIZE = 72;
 
   // ---- level 02 "IDLE HANDS" fixture (the mock-up's uart_tx) -------
@@ -59,16 +82,20 @@
   //   3: 0x0642  jmp x--, 2 [6]
   const LEVEL = {
     words: [0x9fa0, 0xf727, 0x6001, 0x0642],
-    wrapTarget: 0, wrapLast: 3,
-    sideBits: 1, opt: true,              // .side_set 1 opt
-    outCnt: 1, outBase: 0,               // out pins → gpio0
-    wrapTopBits: 3, wrapBotBits: 0,      // EXECCTRL wrap fields
+    wrapTarget: 0,
+    wrapLast: 3,
+    sideBits: 1,
+    opt: true, // .side_set 1 opt
+    outCnt: 1,
+    outBase: 0, // out pins → gpio0
+    wrapTopBits: 3,
+    wrapBotBits: 0, // EXECCTRL wrap fields
     // FJOIN_TX (8-deep TX, SPEC-6-2) + OUT_SHIFT_DIR right (SPEC-7-21):
     // stim.shiftctrl(fjoin_tx=True) bit-for-bit.
     shiftctrl: 0x40080000,
     seedFeeds: [0x50, 0x49, 0x4f, 0x21], // 'P','I','O','!'
     fifoDepth: 8,
-    bitCyc: 8,                            // 8 clks/bit (delay budget)
+    bitCyc: 8, // 8 clks/bit (delay budget)
   };
 
   function pinctrlFor(sideBits, opt) {
@@ -82,8 +109,8 @@
   }
 
   function create(M, defects) {
-    const DEFECT_PIN = !!(defects && defects.pin);
-    const DEFECT_MIRROR = !!(defects && defects.mirror);
+    const DEFECT_PIN = !!defects?.pin;
+    const DEFECT_MIRROR = !!defects?.mirror;
     const cyclePtr = M._pio_last_cycle();
     const dv = new DataView(M.HEAPU8.buffer, cyclePtr, CYC_SIZE);
 
@@ -109,12 +136,12 @@
     }
 
     // ---------------- state ----------------
-    let pins = [];        // gpio_out bit per cycle (the waveform truth)
-    let tags = [];        // monitor-derived meaning per cycle
-    let txWords = [];     // TX FIFO contents mirror (display bookkeeping)
-    let pendingOps = [];  // queued reg-bus ops, one rendered clk each
+    let pins = []; // gpio_out bit per cycle (the waveform truth)
+    let tags = []; // monitor-derived meaning per cycle
+    let txWords = []; // TX FIFO contents mirror (display bookkeeping)
+    let pendingOps = []; // queued reg-bus ops, one rendered clk each
     let alloc = { sideBits: LEVEL.sideBits, opt: LEVEL.opt };
-    let last = null;      // decoded PioCycle of the most recent clk
+    let last = null; // decoded PioCycle of the most recent clk
     let flashes = {};
     let mon = { armed: false, start: 0, bits: [], frameOff: null, stopTail: -1, decoded: '' };
     let refused = 0;
@@ -136,18 +163,24 @@
       const prev = k > 0 ? pins[k - 1] : 0;
       if (!mon.armed) {
         if (k <= mon.stopTail) return 'STOP';
-        if (prev === 1 && pin === 0) { mon.armed = true; mon.start = k; mon.bits = []; }
+        if (prev === 1 && pin === 0) {
+          mon.armed = true;
+          mon.start = k;
+          mon.bits = [];
+        }
         return 'IDLE';
       }
       const off = k - mon.start;
       mon.frameOff = off;
-      if (off >= 12 && off < 76 && (off - 12) % 8 === 0 && mon.bits.length < 8)
-        mon.bits.push(pin);
+      if (off >= 12 && off < 76 && (off - 12) % 8 === 0 && mon.bits.length < 8) mon.bits.push(pin);
       if (off < 8) return 'START';
-      if (off < 72) return 'D' + ((off - 8) >> 3);
-      if (off === 76) { // stop-bit center: 9.5 bit times
+      if (off < 72) return `D${(off - 8) >> 3}`;
+      if (off === 76) {
+        // stop-bit center: 9.5 bit times
         let ch = 0;
-        mon.bits.forEach((b, i) => { ch |= b << i; });
+        mon.bits.forEach((b, i) => {
+          ch |= b << i;
+        });
         if (pin === 1 && mon.bits.length === 8) mon.decoded += String.fromCharCode(ch);
         mon.armed = false;
         mon.frameOff = null;
@@ -162,13 +195,17 @@
       pins.push(pin);
       tags.push(monitorCycle(pin, k));
       if (cycle.strobes & S_TX_POP && !DEFECT_MIRROR) txWords.shift(); // defect: never pops
-      if (cycle.strobes & S_RX_PUSH) { /* rx path unused at level 02 */ }
+      if (cycle.strobes & S_RX_PUSH) {
+        /* rx path unused at level 02 */
+      }
       flashes = {
         pull: !!(cycle.strobes & S_TX_POP),
         push: !!(cycle.strobes & S_RX_PUSH),
         jmp: !!(cycle.strobes & S_PC_WR),
-        wrap: !!(cycle.strobes & S_COMPLETE) && !(cycle.strobes & S_PC_WR)
-              && cycle.pc === LEVEL.wrapLast,
+        wrap:
+          !!(cycle.strobes & S_COMPLETE) &&
+          !(cycle.strobes & S_PC_WR) &&
+          cycle.pc === LEVEL.wrapLast,
         execInsn: !!(cycle.strobes & S_EXEC),
       };
       last = cycle;
@@ -187,7 +224,8 @@
     function step() {
       if (pendingOps.length) {
         const op = pendingOps.shift();
-        if (op !== null) doWrite(op.addr, op.data); // null = the idle clk
+        if (op !== null)
+          doWrite(op.addr, op.data); // null = the idle clk
         else doStep();
         return;
       }
@@ -195,9 +233,14 @@
     }
 
     function clearRunState() {
-      pins = []; tags = []; txWords = []; pendingOps = [];
+      pins = [];
+      tags = [];
+      txWords = [];
+      pendingOps = [];
       mon = { armed: false, start: 0, bits: [], frameOff: null, stopTail: -1, decoded: '' };
-      refused = 0; flashes = {}; last = null;
+      refused = 0;
+      flashes = {};
+      last = null;
     }
 
     // The load timeline mirrors tools/pio_model stim._sched_basic exactly
@@ -209,18 +252,24 @@
     function load() {
       M._pio_engine_reset();
       clearRunState();
-      LEVEL.words.forEach((w, i) => pendingOps.push({ addr: REG.IMEM0 + 4 * i, data: w }));
+      LEVEL.words.forEach((w, i) => {
+        pendingOps.push({ addr: REG.IMEM0 + 4 * i, data: w });
+      });
       pendingOps.push({ addr: REG.SM0 + 20, data: pinctrlFor(alloc.sideBits, alloc.opt) });
       pendingOps.push({ addr: REG.SM0 + 4, data: execctrlFor(alloc.sideBits, alloc.opt) });
       pendingOps.push({ addr: REG.SM0 + 8, data: LEVEL.shiftctrl });
       pendingOps.push(null); // the idle clk (SPEC-6-2)
-      LEVEL.seedFeeds.forEach((f) => pendingOps.push({ addr: REG.TXF0, data: f }));
+      LEVEL.seedFeeds.forEach((f) => {
+        pendingOps.push({ addr: REG.TXF0, data: f });
+      });
       pendingOps.push({ addr: REG.CTRL, data: 1 }); // SM0 enable (SPEC-7-2)
       while (pendingOps.length) step();
       txWords = LEVEL.seedFeeds.slice();
     }
 
-    function run(n) { for (let i = 0; i < n; i++) step(); }
+    function run(n) {
+      for (let i = 0; i < n; i++) step();
+    }
 
     // Enqueue bytes into the TX FIFO as queued reg writes; refuse at the
     // first word that would overflow (tx_full from the last true sample —
@@ -228,7 +277,10 @@
     function enqueue(bytes) {
       refused = 0;
       for (const b of bytes) {
-        if (last && (last.strobes & S_TX_FULL)) { refused++; break; }
+        if (last && last.strobes & S_TX_FULL) {
+          refused++;
+          break;
+        }
         pendingOps.push({ addr: REG.TXF0, data: b & 0xff });
         txWords.push(b & 0xff);
       }
@@ -249,8 +301,10 @@
     function stepInsn() {
       const p0 = displayedPc();
       let n = 0;
-      do { step(); n++; }
-      while (displayedPc() === p0 && phaseOf() !== 'STALL' && n < 200);
+      do {
+        step();
+        n++;
+      } while (displayedPc() === p0 && phaseOf() !== 'STALL' && n < 200);
     }
 
     // A reg read is a rendered clk too (the trace's R-line discipline).
@@ -263,7 +317,7 @@
 
     let lastExecPc = 0;
     function recomputeDerived() {
-      if (last && (last.strobes & S_EXEC)) lastExecPc = last.pc;
+      if (last && last.strobes & S_EXEC) lastExecPc = last.pc;
     }
     function displayedPc() {
       if (!last) return 0;
@@ -275,7 +329,7 @@
       if (last.state === ST.STALL) return 'STALL';
       if (last.state === ST.DELAY) return 'DELAY';
       if (last.state === ST.FETCH || last.state === ST.EXEC)
-        return (last.strobes & S_TICK) ? 'EXEC' : 'OFF';
+        return last.strobes & S_TICK ? 'EXEC' : 'OFF';
       return 'OFF';
     }
 
@@ -309,8 +363,20 @@
       };
     }
 
-    return { load, step, run, stepInsn, enqueue, setAlloc, readFlevel, getState,
-             allPins: () => pins.slice(), LEVEL, REG, ST };
+    return {
+      load,
+      step,
+      run,
+      stepInsn,
+      enqueue,
+      setAlloc,
+      readFlevel,
+      getState,
+      allPins: () => pins.slice(),
+      LEVEL,
+      REG,
+      ST,
+    };
   }
 
   const api = { create, LEVEL, REG, ST, CYC };
