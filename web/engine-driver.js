@@ -208,6 +208,11 @@
           cycle.pc === LEVEL.wrapLast,
         execInsn: !!(cycle.strobes & S_EXEC),
       };
+      // Latch the executing pc at record time, not lazily at read time:
+      // a batch that spans EXEC->DELAY (worker {cmd:'run',cycles:N}, the
+      // ?t= URL pre-run) must still display the delaying instruction —
+      // found by the C20 unit suite (displayedPc latches... red/green).
+      if (cycle.strobes & S_EXEC) lastExecPc = cycle.pc;
       last = cycle;
     }
 
@@ -315,13 +320,11 @@
       return v >>> 0;
     }
 
+    // pc of the most recent S_EXEC clk — latched eagerly in record() so
+    // unobserved batches still display the delaying instruction
     let lastExecPc = 0;
-    function recomputeDerived() {
-      if (last && last.strobes & S_EXEC) lastExecPc = last.pc;
-    }
     function displayedPc() {
       if (!last) return 0;
-      recomputeDerived();
       return last.state === ST.DELAY ? lastExecPc : last.pc;
     }
     function phaseOf() {
@@ -335,7 +338,6 @@
 
     const WAVE_WIN = 128;
     function getState() {
-      recomputeDerived();
       const n = pins.length;
       const from = Math.max(0, n - WAVE_WIN);
       return {

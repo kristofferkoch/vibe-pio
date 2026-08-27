@@ -37,6 +37,14 @@ Conventions for AI agents (and subagents) working in this repo.
   check must be shown red against the re-injected defect, with the
   demonstration recorded in the commit. Doctests are part of the suite
   — every `pio_model` module carries them.
+- **JavaScript follows the same discipline** (see `docs/js-tooling.md`):
+  npm (dev-only) + Biome format/lint + bare `node --test`, gated by
+  `make js` (host-side, needs node+npm; the runtime JS under `web/`
+  stays dependency-free and classic-script-loadable so `make web` also
+  runs in the container). JS fixes are red/green TDD like RTL/Python —
+  the driver's `--defect=pin`/`--defect=mirror` hooks and the fake
+  engine are the cheap red cases; DOM glue is verified by the browser
+  session and `make web`, never unit tests.
 
 ## Fact and clause citations
 

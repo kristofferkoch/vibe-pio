@@ -52,11 +52,15 @@ gets its own grilling after C18 re-reads the fun gate on the real
 engine. Dependency order: C17 → C18 ∥ C19. Tooling/web cards state
 their own done-when gates; the RTL-card template applies only to the
 lint-compat work C17 does. C17 (Verilator backend + wasm build +
-three-way trace gate, `make web`) and C18 (the shipped SM-view client
+three-way trace gate, `make web`), C18 (the shipped SM-view client
 under web/ on the wasm engine — worker + batch stepping, client gate
 vs the model oracle; the fun-gate re-read now happens on the real
-engine) are done. C18's re-assemble-on-edit milestone is folded into
-C19's landing (the client marks unbuilt edits meanwhile).
+engine) and C20 (the `make js` gate: Biome format+lint over
+web/ js+css+html with `sm-view.css` extracted, the `node --test`
+hermetic unit suite with the fake engine, `package.json`+lockfile,
+`docs/js-tooling.md`, the AGENTS.md JS line) are done. C18's
+re-assemble-on-edit milestone is folded into C19's landing (the client
+marks unbuilt edits meanwhile).
 
 C20 was promoted after the 2026-08-27 JS-tooling grilling round
 (all owner decisions = the presented recommendations): **Biome** is
@@ -76,21 +80,6 @@ gate** (needs node+npm, like `make py` needs uv) — `make web` stays
 container-runnable and runtime JS stays dependency-free. Dependency
 order is thereby revised to C17 → C18 → **C20 → C19**: the
 assembler's encoding tables must land TDD from their first commit.
-
-- C20 (JS tooling gate, `make js`): the web client's `make py`
-  mirror. Biome `ci` (format --check + strict lint) over
-  `web/*.js|css|html` (mockups/ stays free-form), plus the
-  `node --test` unit suite under `web/tests/` — hermetic, the
-  driver's logic checked against a fake engine object (no wasm
-  build), with the red/green discipline demonstrated on the existing
-  `--defect=pin`/`--defect=mirror` hooks. Includes: the `<style>`
-  extraction to `sm-view.css`, the one mechanical format commit,
-  `package.json` + committed lockfile (dev-only deps; runtime JS
-  gains nothing), `docs/js-tooling.md` (the python-tooling.md
-  mirror: gate table, waiver rationale, TDD rule), and the
-  AGENTS.md JS-discipline line. Done-when: `make js` green (format
-  check, lint, tests incl. the defect-hook red/green demo) and
-  `make web` still green after the extraction + reformat.
 
 - C19 (in-browser assembler/disassembler): JS port of pio_model
   asm/disasm + encoding tables; CI gate = golden bit-vectors

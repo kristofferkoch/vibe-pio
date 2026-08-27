@@ -63,6 +63,13 @@
 #            ty type check + pytest (unit tests + doctests). The
 #            RTL-facing scripts stay stdlib-only so make model/audit
 #            also run inside the vibe-pio container (which has no uv).
+# `js`     — JS quality gate (host-side, needs node+npm; see
+#            docs/js-tooling.md): biome ci (format --check + strict lint
+#            over web/ js+css+html; mockups/ stays free-form) plus the
+#            bare node --test unit suite under web/tests/ (hermetic —
+#            the fake engine replaces the wasm build; it also runs under
+#            the container's bare node). Runtime JS stays dependency-
+#            free: node_modules exists only for the biome gate.
 
 SIM_DIR     := sim
 RTL_DIR     := rtl
@@ -76,7 +83,7 @@ RTL_SRC := $(wildcard $(RTL_DIR)/*.sv)
 IVERILOG = iverilog -g2012 -I $(SIM_DIR)
 VVP      = vvp
 
-.PHONY: sim syn formal audit model equiv hyperopt synth web py toolcheck clean $(TB_LIST)
+.PHONY: sim syn formal audit model equiv hyperopt synth web py js toolcheck clean $(TB_LIST)
 
 toolcheck:
 	@echo "=== toolchain versions ==="
@@ -99,6 +106,11 @@ toolcheck:
 		uv run --quiet ty --version; \
 		uv run --quiet pytest --version | head -1; \
 	else echo "uv: not found (make py unavailable; see docs/python-tooling.md)"; fi
+	@if command -v npm >/dev/null; then \
+		echo "npm $$(npm --version) (host-side JS tooling)"; \
+		if [ -x node_modules/.bin/biome ]; then node_modules/.bin/biome --version; \
+		else echo "biome: not installed (make js runs npm ci first)"; fi; \
+	else echo "npm: not found (make js unavailable; see docs/js-tooling.md)"; fi
 
 sim: $(TB_LIST)
 	@if [ -z "$(TB_LIST)" ]; then \
@@ -183,6 +195,11 @@ py:
 	uv run ruff check .
 	uv run ty check
 	uv run pytest
+
+js:
+	npm ci
+	npx biome ci web
+	node --test web/tests/*.test.js
 
 clean:
 	rm -rf build sim_out formal/out formal/*_bmc formal/*_prove formal/*_cover
