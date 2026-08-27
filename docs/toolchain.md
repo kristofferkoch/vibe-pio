@@ -19,8 +19,8 @@ Base: `debian:trixie-slim` (Debian 13).
 | make | 4.4.1 | Debian package |
 | python3 | 3.13.5 | Debian package (plus `python3-click` for sby, `python-is-python3` for emsdk) |
 | git / curl / wget | 2.47.3 / distro | Debian packages |
-| verilator | 5.032 | Debian package `verilator` 5.032-1+b2 (C17: the wasm backend and the third lint tool; fixed by the trixie release) |
-| emsdk | 6.0.8 | `emsdk` repo tag `6.0.8`, commit `e5bd3d0874e302a18f13c5b41f5bacf9a40c8e59` — commit-verified at build like every git-sourced tool; installs the pinned SDK under `/opt/emsdk` (C17: the AOT wasm link of the Verilated model) |
+| verilator | 5.032 | Debian package `verilator` 5.032-1+b2 (the wasm backend and the third lint tool; fixed by the trixie release) |
+| emsdk | 6.0.8 | `emsdk` repo tag `6.0.8`, commit `e5bd3d0874e302a18f13c5b41f5bacf9a40c8e59` — commit-verified at build like every git-sourced tool; installs the pinned SDK under `/opt/emsdk` (the AOT wasm link of the Verilated model) |
 | node | from emsdk | the SDK's bundled node, symlinked to `/usr/local/bin/node` (the headless gate runner `web/node_gate.js`; a host node works too — `make web` prefers native tools and falls back to the container) |
 
 The container deliberately has **no uv/venv**: every Python script under
@@ -28,7 +28,7 @@ The container deliberately has **no uv/venv**: every Python script under
 tooling (ruff, ty, pytest via uv) lives on the host and is gated by
 `make py` — see `docs/python-tooling.md`.
 
-Image size (docker): ~3.25 GB disk usage (the C17 emsdk layer — clang,
+Image size (docker): ~3.25 GB disk usage (the emsdk layer — clang,
 binaryen, the sysroot and the bundled node — accounts for ~2.7 GB of
 it; `make web` links against it, so it stays).
 

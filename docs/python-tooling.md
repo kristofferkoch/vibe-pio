@@ -1,6 +1,6 @@
 # Python tooling: uv + ruff + ty + pytest
 
-The Python side of the repo (the C12 golden model, assembler/disassembler,
+The Python side of the repo (the golden model, assembler/disassembler,
 trace differ, audits) is developed under the same discipline as the RTL:
 strict tooling gates, and **red/green TDD** for every behavior change.
 
@@ -10,9 +10,9 @@ strict tooling gates, and **red/green TDD** for every behavior change.
 |---|---|
 | `tools/pio_model/` | the golden-model package (encoding, asm, disasm, model, tracefmt, stim, difftest CLI) |
 | `tools/trace_audit.py` | SPEC-/CC- traceability audit (`make audit`) |
-| `tools/hyperequiv.py` | C13 equivalence oracle: program pair + horizon -> pre-filter, generated C11 miter instance, sby verdict, decoded divergence reports (`make equiv`) |
-| `tools/hyperopt.py` | C14 hyperoptimizer: rewrite catalog + Pareto search over conformance seeds, model/prefilter screening, C13-oracle certification (`make hyperopt`) |
-| `tools/hypersynth.py` | C16 witness pipeline: free-word cover synthesis (SYM=1) -> trace extraction -> canonicalization + `.pio` disassembly -> three re-verify legs (model replay, generated TB, bounded formal conformance) (`make synth`) |
+| `tools/hyperequiv.py` | equivalence oracle: program pair + horizon -> pre-filter, generated miter instance, sby verdict, decoded divergence reports (`make equiv`) |
+| `tools/hyperopt.py` | hyperoptimizer: rewrite catalog + Pareto search over conformance seeds, model/prefilter screening, oracle certification (`make hyperopt`) |
+| `tools/hypersynth.py` | witness pipeline: free-word cover synthesis (SYM=1) -> trace extraction -> canonicalization + `.pio` disassembly -> three re-verify legs (model replay, generated TB, bounded formal conformance) (`make synth`) |
 | `sim/gen_conf_pioexamples.py` | regenerates `sim/conf_pioexamples.svh` from pioasm |
 | `tests/` | pytest suite: unit tests + the doctest gate (`tests/test_doctests.py`) |
 
@@ -48,12 +48,12 @@ newest published before the cutoff).
 | formatting | `ruff format --check .` | line length **120** |
 | lint | `ruff check .` | strict curated rule set (below) |
 | types | `ty check` | every function annotated; strictness knobs in `[tool.ty.rules]` |
-| tests | `pytest` | `tests/` unit suite **+ doctests** of all `pio_model` modules and the C13 oracle |
+| tests | `pytest` | `tests/` unit suite **+ doctests** of all `pio_model` modules and the oracle |
 
 Python changes are not done until `make py` is green. The heavier
 RTL-facing gates stay separate: `make model` (differential vs RTL, needs
-iverilog or the vibe-pio container image), `make equiv` (C13 oracle
-self-test, needs sby or the container image), `make synth` (C16 witness
+iverilog or the vibe-pio container image), `make equiv` (oracle
+self-test, needs sby or the container image), `make synth` (witness
 pipeline self-test, same toolchain needs) and `make audit`.
 
 ## ruff configuration rationale
@@ -100,7 +100,7 @@ installed), so ty gets the same view via
 - **Unit suite** (`tests/`): fast, hermetic (no RTL, no `third_party/`,
   no docker) — encoding/asm/disasm/tracefmt/stim facts, model cadence
   (delay CC-10, divider CC-26), reset observables, and model-vs-model
-  mutation divergence (the pure-Python half of the C12 mutation demo).
+  mutation divergence (the pure-Python half of the model mutation demo).
 - **Doctests**: every `pio_model` module must have doctest examples;
   `tests/test_doctests.py` runs each module's `DocTestSuite` and fails
   if a module has none. Doctests double as usage documentation — prefer
@@ -120,7 +120,7 @@ encoder. The check `tests/test_asm.py::test_irq_without_index_raises`
 was shown red against the re-injected guard removal (TypeError escaped
 instead of `AsmError`), then green with the guard.
 
-## Conventions for new Python code (C13 `hyperequiv`, C14 `hyperopt`, ...)
+## Conventions for new Python code (`hyperequiv`, `hyperopt`, ...)
 
 1. Stdlib-only runtime; anything else must be dev-only.
 2. Type-annotate everything; new public bundles become `TypedDict`/dataclass.

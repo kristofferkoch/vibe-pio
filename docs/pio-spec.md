@@ -849,15 +849,15 @@ are under-specified in the datasheet/pioasm and therefore feed the future
   IN_COUNT, PREV/NEXT IRQ); §12 conformance must come from pio-sdk tests
   and datasheet pseudocode.
 
-## 16. Trace-equivalence contract (C11 miter + trace exchange)
+## 16. Trace-equivalence contract (miter + trace exchange)
 
-Provenance: vibe-pio methodology decisions ratified at the C11 promotion
-(grilling session 2026-08-25) — these are contract facts about *this
-model's* equivalence methodology, not datasheet facts. Consumers:
-`formal/pio_equiv_fv.sv` (the lockstep miter, C11), `tools/pio_model/`
-(C12 model trace emission / RTL trace-dump TBs), `tools/hyperequiv.py`
-(C13 oracle + divergence reports), and `rtl/pio_mon_uart_tx.sv` /
-`rtl/pio_mon_square.sv` + `formal/pio_mon_fv.sv` (C15 monitors and the
+Provenance: vibe-pio methodology decisions ratified at the 2026-08-25
+grilling session — these are contract facts about *this model's*
+equivalence methodology, not datasheet facts. Consumers:
+`formal/pio_equiv_fv.sv` (the lockstep miter), `tools/pio_model/`
+(model trace emission / RTL trace-dump TBs), `tools/hyperequiv.py`
+(equivalence oracle + divergence reports), and `rtl/pio_mon_uart_tx.sv` /
+`rtl/pio_mon_square.sv` + `formal/pio_mon_fv.sv` (the monitors and the
 spec-eq twin).
 
 - [SPEC-16-1] **Per-clk observables.** Two configurations under comparison are
@@ -886,7 +886,7 @@ spec-eq twin).
   reset protocol; program A/B are written word-serially into
   INSTR_MEM0.. (SPEC-7-10) by a deterministic prologue sequencer; config
   writes are broadcast identically; SM0 is enabled via CTRL (SPEC-7-2).
-  v1 scoping: SM1..3 stay disabled (single-SM equivalence — the card's
+  v1 scoping: SM1..3 stay disabled (single-SM equivalence — the
   sanctioned scoping for solver tractability).
 - [SPEC-16-5] **Free-phase rules.** After the prologue the reg bus is free but
   broadcast identically to both instances, confined to bus *traffic*:
@@ -896,7 +896,7 @@ spec-eq twin).
   equivalence claim quantifies over the loaded pair only), CTRL per
   SPEC-16-4 (SM1..3 stay disabled), and the SMx config / SMx_INSTR
   force / PUTGET windows per SPEC-16-6 (mid-run config rewrites are the
-  C14 config-overlay extension point; v1 claims instruction-stream
+  config-overlay extension point; v1 claims instruction-stream
   equivalence under fixed config). `gpio_in` and the IRQ neighbour
   views / imported requests are free but identical across instances.
 - [SPEC-16-6] **v1 scope and extension points.** The two configurations are
@@ -904,7 +904,7 @@ spec-eq twin).
   rewrites). Config overlays (rewrites that also touch config registers,
   e.g. side-set fusion changing EXECCTRL/PINCTRL) and spec-conformance
   predicates (timing-relaxed comparison) are the declared extension
-  points consumed by C14/C15.
+  points, consumed by SPEC-16-8 and SPEC-16-10.
 - [SPEC-16-7] **Trace exchange format v1.** Line-oriented ASCII; `#` starts a
   comment; the first non-comment line is the header `pio-trace v1`.
   Records are whitespace-separated with lowercase fixed-width hex
@@ -915,9 +915,9 @@ spec-eq twin).
   per clk, no gaps. Two configurations are trace-equivalent iff their
   traces under identical stimulus are line-identical after dropping R
   lines at SPEC-16-2-excluded addresses and masking bit 31 of
-  SMx_EXECCTRL reads. Emitted by the C12 model and by RTL trace-dump
-  TBs; consumed by the C13 differ.
-- [SPEC-16-8] **EXECCTRL config overlay (landed C14).** The miter's prologue
+  SMx_EXECCTRL reads. Emitted by the Python model and by RTL trace-dump
+  TBs; consumed by the trace differ.
+- [SPEC-16-8] **EXECCTRL config overlay.** The miter's prologue
   writes SM0_EXECCTRL per instance (`SM0_EXECCTRL_A`/`_B` parameters), so
   a compared pair may intentionally differ in EXECCTRL — the wrap
   rewrites change WRAP_TOP/WRAP_BOTTOM (SPEC-7-19/20) while preserving
@@ -925,13 +925,13 @@ spec-eq twin).
   instruction's delay field. The CPU-visible readback compare for
   SMx_EXECCTRL masks exactly the bits 30:0 the pair intentionally
   differs on (miter localparam `EC_CMP_MASK`; bit 31 stays masked per
-  SPEC-7-15) — the C12 trace comparison takes the same mask
+  SPEC-7-15) — the model trace comparison takes the same mask
   (`tracefmt.normalize`'s `ec_mask`). The behavioural observables
   (SPEC-16-1) still compare unconditionally, so an overlay that changes
   behaviour fails the equivalence claim. PINCTRL/SHIFTCTRL overlays
   (side-set fusion, autopull rewrites) remain future extension
   (SPEC-16-6).
-- [SPEC-16-9] **Spec-conformance monitors (landed C15).** `rtl/pio_mon_uart_tx.sv`
+- [SPEC-16-9] **Spec-conformance monitors.** `rtl/pio_mon_uart_tx.sv`
   and `rtl/pio_mon_square.sv` are protocol monitors over the SPEC-16-1
   per-clk `gpio_out` observables — verification IP placed in `rtl/`
   because that is the one source tree every flow already compiles
@@ -940,7 +940,7 @@ spec-eq twin).
   with class sub-flags, `frame_done`/edge strobes, captured data and
   counters) so one instance serves both as the spec-eq comparison
   predicate (SPEC-16-10) and as a standalone checker in sim/formal
-  wrappers (the C16 synthesized-witness re-check). Contract: reset
+  wrappers (the synthesized-witness re-check). Contract: reset
   clears all state; a violation sets the sticky error class flags and
   halts the monitor until the next reset — one deterministic,
   bounded-latency error per run, which is what makes the verdict usable
@@ -977,7 +977,7 @@ spec-eq twin).
   immediate error. Both monitors export `dbg_*` ports (state, counters)
   so their formal properties are port-level equations (the pio_sm dbg
   idiom).
-- [SPEC-16-10] **Spec-eq mode (landed C15).** The C11 miter's comparison
+- [SPEC-16-10] **Spec-eq mode.** The miter's comparison
   predicate is replaceable: instead of the E1..E4 trace equalities
   (SPEC-16-1/2), each instance's observables feed its own SPEC-16-9
   monitor with identical parameters (the spec's timing window), and the
@@ -987,15 +987,15 @@ spec-eq twin).
   with the SPEC-16-8 per-side EXECCTRL overlay available). Timing may
   differ between the sides: a rewrite whose waveform stays inside the
   spec window passes spec-eq while failing trace-eq — the demo pair is
-  the C14 `rw_wrap_speed` mechanism (terminal JMP replaced by the free
+  the `rw_wrap_speed` mechanism (terminal JMP replaced by the free
   wrap, SPEC-8-2/CC-10, without delay compensation) — which is what
-  unlocks C14's spec-only speed rewrites for certification. Each side
-  is still checked independently, so an overlay that breaks protocol
-  conformance on either side fails the claim. `reg_rdata` (SPEC-16-2)
-  is not compared in spec-eq: readback timing is free to change. C16
-  consumes the same monitors as cover goals and as the sim re-check of
-  synthesized witnesses.
-- [SPEC-16-11] **Symbolic-program synthesis harness (landed C16).** `pio_instr_mem`
+  unlocks the catalog's spec-only speed rewrites for certification. Each
+  side is still checked independently, so an overlay that breaks
+  protocol conformance on either side fails the claim. `reg_rdata`
+  (SPEC-16-2) is not compared in spec-eq: readback timing is free to
+  change. The synthesis harness consumes the same monitors as cover
+  goals and as the sim re-check of synthesized witnesses.
+- [SPEC-16-11] **Symbolic-program synthesis harness.** `pio_instr_mem`
   carries a default-off `SYM` parameter (the launch-ratified primary
   mechanism): when set — only by the synthesis harness's sby script, via
   `chparam -set SYM 1 pio_instr_mem`, never by a sim or elaboration
@@ -1009,7 +1009,7 @@ spec-eq twin).
   minus the word-serial imem writes the free words replace: PINCTRL,
   EXECCTRL wrap 31->0, CTRL SM0-enable; CLKDIV stays at reset INT=1
   FRAC=0 — the CC-26 exact window) and states the target behaviour as a
-  C15 monitor cover goal (SPEC-16-9) on `gpio_out[0]` with the pad
+  SPEC-16-9 monitor cover goal on `gpio_out[0]` with the pad
   driven (`gpio_oe[0]`): the square-wave smoke target covers the
   [2,2]-window monitor counting >= 8 edges; the UART-TX-byte real
   target covers one accepted frame (start + 8 data + even parity +
@@ -1030,7 +1030,7 @@ spec-eq twin).
   Non-vacuity: a deliberately contradictory spec — the same pin feeding
   [2,2] and [3,3] square monitors, cover both >= 8 edges — is UNSAT at
   every depth (the red case `pio_synth_red_fv`).
-- [SPEC-16-12] **Witness pipeline (landed C16).** A cover trace is a witness
+- [SPEC-16-12] **Witness pipeline.** A cover trace is a witness
   PIO program and must itself be re-verified before it is reported:
   `tools/hypersynth.py` (`make synth`) truncates the trace at the cover
   step (the sby log's "Reached cover statement" — sections past it are
@@ -1044,8 +1044,8 @@ spec-eq twin).
   decoder and model agree; `delay_load` is not illegal-gated), so the
   substitution is behaviour-equivalent and the leg-(a) diff re-checks
   every substitution anyway; disassembles the canonical words to `.pio`
-  text (C12, round-trip checked); then re-verifies the canonical program
-  three ways: (a) Python-model replay — the C12 model loads the
+  text (round-trip checked); then re-verifies the canonical program
+  three ways: (a) Python-model replay — the model loads the
   canonical words word-serially (SPEC-7-10), applies the same prologue
   and replays the VCD environment (pinned idle per SPEC-16-11's A2, so
   the 32-clk-longer load prologue cannot diverge), and its SPEC-16-1
@@ -1054,7 +1054,7 @@ spec-eq twin).
   Python) passes on the replayed `gpio_out[0]` — judged on all bits but
   the last, the monitor's registered sampling lagging the sampled
   stream by one clk; (b) an auto-generated iverilog testbench runs the
-  canonical words through `pio_block` under the same C15 monitor
+  canonical words through `pio_block` under the same SPEC-16-9 monitor
   instance and latches the cover predicate itself (edges/accepted frame
   with the decoded payload, pad driven, monitor error-free) at the clk
   it fires during the replay — checking at a fixed time instead would

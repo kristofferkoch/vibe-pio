@@ -18,11 +18,11 @@ extraction by construction.
 
 ```
 rtl/       RTL source (SystemVerilog subset supported by iverilog/yosys),
-           incl. the C15 spec-conformance monitors (verification IP kept
+           incl. the spec-conformance monitors (verification IP kept
            in rtl/ so sim and formal share one source tree)
 sim/       Classic (non-UVM) testbenches and simulation helpers
 formal/    SymbiYosys properties and proof scripts
-tools/     Python golden model + assembler/disassembler (C12) and the
+tools/     Python golden model + assembler/disassembler and the
            SPEC-/CC- traceability audit
 tests/     pytest suite + doctests for the Python side (`make py`)
 docs/      Reference material, notes extracted from the datasheet

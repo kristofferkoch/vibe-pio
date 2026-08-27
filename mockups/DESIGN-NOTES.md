@@ -67,7 +67,7 @@ is nothing to name.
 
 ## Modeless editing
 
-The listing *is* the source (canonical C12 is 1-1 with the
+The listing *is* the source (the canonical disassembly is 1-1 with the
 assembler/disassembler). Every row — including empty slots — is
 click-to-edit in place; the machine keeps running beside you (the
 mock-up does not re-assemble; the real game's referee does).
@@ -108,6 +108,7 @@ failure mode.
 
 Wire the view to `tools/pio_model` (referee never forked); re-assemble
 on commit; `.side_set` and friends editable as config; level/monitor
-profiles as the visible spec; score metric (C14 Pareto when it lands);
+profiles as the visible spec; score metric (the hyperoptimizer's
+Pareto front);
 `.side_set` slider should re-run, not just re-decode, once assembly
 exists.
