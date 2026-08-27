@@ -19,11 +19,12 @@ Card conventions (all RTL cards):
 - Full port lists live in DESIGN.md §Module descriptions — not duplicated
   here.
 
-## Game track (C22–C24)
+## Game track (C22, C24)
 
 Promoted from the IDEAS game entry after the 2026-08-27 game-loop
-grilling (round 1: sandbox). The sandbox card of that promotion has
-landed; the remaining cards extend it. Owner decisions: **sandbox
+grilling (round 1: sandbox). The sandbox card of that promotion and
+the multi-SM oracle card (C23) have landed; the remaining cards
+extend them. Owner decisions: **sandbox
 first, SM0-only** — "all features unlocked" means the complete per-SM
 surface (FIFO join/aux modes, real CLKDIV, shift/autopush/autopull
 config, pin mapping in both directions, IRQ flags, RX drain); the
@@ -47,7 +48,7 @@ overlay — the same JSON seeds level authoring) plus
 copy-as-canonical-listing via pio-asm. Sandbox boots to **empty
 memory** (all-zero = the jmp-0 park, the DESIGN-NOTES lesson), the
 old uart_tx demo demoted to a loadable promotion default (kept at
-kickoff). Dependency order: C22 ∥ C23; C24 after C23. Tooling/web
+kickoff). Dependency order: C22; C24 after the landed C23. Tooling/web
 cards state their own done-when gates below; the RTL-card template
 does not apply (the RTL is already multi-SM complete).
 
@@ -63,22 +64,6 @@ does not apply (the RTL is already multi-SM complete).
 - Done when: `make js` units pin the field↔reg-write mapping;
   `make web` and the browser session verify the glue (DOM work is
   never unit-tested — the docs/js-tooling.md discipline).
-
-### C23 — pio_model multi-SM extension (the multi-SM oracle)
-
-- The Python referee grows from SPEC-16-4's SM0 scope to all four
-  SMs: per-SM config/divider/FIFOs, cross-SM gpio priority
-  resolution (CC-6/CC-7), inter-SM IRQ, TXF1..3 and SM1..3 window
-  accesses. stim grows the SM-indexed vocabulary (a compatible
-  widening if possible); the conformance matrix gains multi-SM
-  programs (parallel SMs on the shared imem, inter-SM IRQ handoff,
-  pin arbitration), plus fuzz and the mutation demo — an injected
-  multi-SM model bug must go red.
-- Done when: `make model` and `make web`'s three-way gate (which
-  gains the multi-SM corpus) show line-identical SPEC-16-7 traces
-  model ↔ iverilog ↔ verilator-wasm on multi-SM schedules, and the
-  model's red/green discipline is re-demonstrated on a multi-SM
-  transcription bug.
 
 ### C24 — sandbox multi-SM (four machines, one playground)
 

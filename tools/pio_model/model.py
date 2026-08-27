@@ -1,12 +1,16 @@
-"""clk-accurate golden model of one pio_block (C12) — SM0 live, SM1..3
-held at reset (the SPEC-16-4 single-SM scoping).
+"""clk-accurate golden model of one pio_block — all four SMs live
+(the multi-SM scope; the trace TB and RTL were multi-SM complete from
+the start, the model grew per SM).
 
 This is a cycle-by-cycle transcription of the RTL, not a re-derivation
 from the datasheet: every section below carries the rtl/ file it
 mirrors and the SPEC-/CC- citations the RTL itself cites. The
 combinational-then-edge discipline matches the RTL's non-blocking
 assignments: all per-cycle reads see start-of-clk state (CC-4), all
-effects land at the cycle-closing edge (CC-3).
+effects land at the cycle-closing edge (CC-3). Cross-SM coupling is
+purely through the pre-edge state the RTL's always_ff blocks see: the
+shared imem read ports (CC-33), the IRQ flag register (CC-37/CC-39),
+and the GPIO priority resolution (CC-6/CC-7).
 
 Step protocol (difftest + sim/tb_trace_dump.sv use the identical one):
     obs = step(gpio_in, lb_mask, op, addr, wdata, ...)
@@ -19,7 +23,7 @@ Step protocol (difftest + sim/tb_trace_dump.sv use the identical one):
     if the op is a read (SPEC-16-2);
   - the edge update then applies every registered effect.
 
-Mutation hooks (the C12 red/green demo): named deviations from the
+Mutation hooks (the red/green demo): named deviations from the
 cited facts, e.g. mutations={"cc11_no_stall"} drops the CC-11
 autopull-OUT stall. Un-mutated, the model's contract is trace equality
 with the RTL on the SPEC-16-7 observables.
@@ -66,6 +70,8 @@ MUTATIONS = (
     "wrap_off",  # SPEC-8-2: no wrap, PC always +1
     "delay_in_stall",  # CC-14: delay elapses during a stall
     "irq_same_cycle",  # CC-37: flag set visible in its own clk cycle
+    "gpio_pri_low",  # CC-7: lowest-numbered SM wins pin conflicts
+    "irq_rel_off",  # SPEC-3.8-6: REL index ignores the SM id
 )
 
 
@@ -87,49 +93,104 @@ def _bitrev32(v: int) -> int:
     return int(f"{v:032b}"[::-1], 2)
 
 
-class PIOBlockModel:
-    """One pio_block (rtl/pio_block.sv and children), single-SM scope.
+def _place_mask(base: int, n: int) -> int:
+    """pio_gpio_mux place_mask: n data bits (0 or >31 = 32, SPEC-7-26)
+    placed at base with wrap (SPEC-10-1)."""
+    if n == 0 or n > 31:
+        return M32
+    return _rol32(M32 >> (32 - n), base)
 
-    >>> m = PIOBlockModel()
-    >>> obs = m.step(0)                # clk 0: reset values on the pads
-    >>> (obs["gpio_out"], obs["gpio_oe"], obs["intr"])   # doctest: +NORMALIZE_WHITESPACE
-    (0, 0, 240)
-    >>> obs["rdata"] is None           # no reg read this clk
-    True
-    >>> m.ctrl_r = 1                   # SM0 enable (SPEC-7-2)
-    >>> m.imem = [E.encode_set("pins", 1, 0), E.encode_jmp(None, 0, 0)]
-    >>> m.pinctrl_r = 1 << 26          # SET_COUNT=1 (SPEC-7-26)
-    >>> _ = [m.step(0) for _ in range(6)]
-    >>> m.gpio_lvl_r
-    1
-    """
 
-    def __init__(self, mutations: tuple[str, ...] | list[str] = ()) -> None:
-        bad = set(mutations) - set(MUTATIONS)
-        if bad:
-            raise ValueError(f"unknown mutations: {sorted(bad)}")
-        self.mut: set[str] = set(mutations)
+class _SMComb(TypedDict):
+    """One SM's combinational products for the cycle (pio_sm_exec /
+    pio_sm_shift / pio_sm_fifo combinational sections) — consumed by the
+    block compositions (GPIO priority CC-6/CC-7, flag compose CC-39,
+    read mux) and the per-SM edge update. The flag-shaped fields are
+    0/1 ints (truthy and-chains, the RTL expression shapes)."""
+
+    # tick arbitration (CC-1/CC-35/CC-36)
+    tick_forced: int
+    tick_any: int
+    m_restart: bool
+    m_delay: bool
+    m_exec: int
+    first_tick: int
+    # decode (kept for the edge's registered decisions)
+    d: E.Decoded
+    src_latch: int
+    # divider comb (CC-26)
+    terminal: bool
+    phase_next: int
+    phase_carry: int
+    # IRQ requests (SPEC-3.8-4..7, CC-37/CC-39) — onehot over 8 flags
+    irq_set_early: int
+    irq_clr_req: int
+    irq_flag_idx: int
+    irq_idx_mode: int
+    # GPIO write bundles (CC-5/CC-6/CC-8)
+    os_lvl_mask: int
+    os_lvl_data: int
+    os_dir_mask: int
+    os_dir_data: int
+    ss_lvl_mask: int
+    ss_lvl_data: int
+    ss_dir_mask: int
+    ss_dir_data: int
+    sticky_wr: int
+    sticky_isdir_next: int
+    # PC / X / Y / latch / delay decisions (SPEC-8, CC-34/35)
+    pc_next: int
+    pc_wr_explicit: int
+    just_latched: int
+    exec_word: int
+    delay_load: int
+    x_wr: int
+    y_wr: int
+    x_val: int
+    y_val: int
+    # shifter dispatch (pio_sm_exec §dispatch)
+    osr_wr_en: int
+    osr_wr_data: int
+    osr_wr_cnt: int
+    out_en: int
+    osr_shifted: int
+    osr_cnt_sat: int
+    isr_wr_en: int
+    isr_wr_data: int
+    isr_wr_cnt: int
+    in_en: int
+    isr_next_in: int
+    isr_cnt_sat: int
+    # FIFO dispatch (pio_sm_fifo accepted-op decoding)
+    tx_pop: int
+    rx_push: int
+    rx_push_data: int
+    aux_put_en: int
+    aux_idx: int
+    flush: bool
+    fm_pre: int
+    # FDEBUG stickies (SPEC-6-7)
+    tx_stall_req: int
+    rx_stall_req: int
+    # state-machine decisions the edge branches on
+    stall: int
+    compl: int
+
+
+class _SMSlice:
+    """One pio_sm instance's register groups and config decode
+    (pio_sm_regs / pio_sm_exec / pio_sm_shift / pio_sm_fifo, one per
+    SM_IDX parameter instantiation in pio_block)."""
+
+    def __init__(self, sm_id: int, mut: set[str]) -> None:
+        self.sm_id = sm_id
+        self.mut = mut
         self.reset()
 
     # ------------------------------------------------------------------
     # Reset (CC-1): every register's rst value, per its owner module.
     # ------------------------------------------------------------------
-    def reset(self) -> Self:
-        # pio_block.sv block regs
-        self.ctrl_r: int = 0  # CTRL.SM_ENABLE (SPEC-7-2)
-        self.isb_r: int = 0  # INPUT_SYNC_BYPASS (SPEC-7-7)
-        self.imem: list[int] = [0] * 32  # pio_instr_mem all-zero reset
-        # pio_irq_flags.sv
-        self.flags_r: int = 0
-        # pio_gpio_mux.sv
-        self.sync1_r: int = 0
-        self.sync2_r: int = 0
-        self.gpio_lvl_r: int = 0
-        self.gpio_oe_r: int = 0
-        self.sticky_mask: list[int] = [0] * 4  # SM0's record is live
-        self.sticky_lvl: list[int] = [0] * 4
-        self.sticky_dir: list[int] = [0] * 4
-        self.sticky_is_dir: list[int] = [0] * 4
+    def reset(self) -> None:
         # pio_sm_regs.sv config banks (datasheet defaults)
         self.clkdiv_r: int = CLKDIV_RESET
         self.execctrl_r: int = EXECCTRL_RESET
@@ -153,8 +214,6 @@ class PIOBlockModel:
         self.forced_stall_r: int = 0
         self.irqw_wait_r: int = 0
         self.restart_pend_r: int = 0
-        self.irq_prev: int = 0  # relay views (CC-38), latched
-        self.irq_next: int = 0  # at each step() entry
         # pio_sm_shift.sv (SPEC-5-3)
         self.osr_r: int = 0
         self.isr_r: int = 0
@@ -175,7 +234,6 @@ class PIOBlockModel:
         self.fdbg_tx_over: int = 0
         self.fdbg_rx_under: int = 0
         self._mut_stall_seen: bool = False  # delay_in_stall demo state
-        return self
 
     # ------------------------------------------------------------------
     # Config field decode (pio_sm_regs.sv bit positions, SPEC-7-14..26).
@@ -304,110 +362,69 @@ class PIOBlockModel:
             return FM_RX
         return FM_TXRX
 
-    def _flag_rd(self, flags: int, mode: int, idx: int) -> int:
-        """pio_sm_exec flag_rd (SPEC-3.8-4..7; SM0: REL adds 0 mod 4)."""
+    def fifo_depths(self) -> tuple[int, int]:
+        """-> (tx_depth, rx_depth) for the current mode (SPEC-6-2/6-4)."""
+        if self.fifo_mode == FM_TX:
+            return 8, 0  # SPEC-6-2
+        if self.fifo_mode == FM_RX:
+            return 0, 8
+        if self.fifo_mode in (FM_TXPUT, FM_TXGET, FM_PUTGET):
+            return 4, 0  # SPEC-6-4
+        return 4, 4
+
+    def rel_index(self, idx: int) -> int:
+        """SPEC-3.8-6 REL compose: SM id mod-4 on the two LSBs, bit 2
+        passes through (pio_irq_flags rel_index; SM0: identity)."""
+        if "irq_rel_off" in self.mut:
+            return idx & 7  # the SPEC-3.8-6 violation
+        return (idx & 4) | ((idx + self.sm_id) & 3)
+
+    def flag_rd(self, flags: int, irq_prev: int, irq_next: int, mode: int, idx: int) -> int:
+        """pio_sm_exec flag_rd (SPEC-3.8-4..7; REL adds the SM id)."""
         if mode == 0:
             return _bit(flags, idx)
         if mode == 1:
-            return _bit(self.irq_prev, idx)
+            return _bit(irq_prev, idx)
         if mode == 2:
-            return _bit(flags, (idx & 4) | (idx & 3))
-        return _bit(self.irq_next, idx)
+            return _bit(flags, self.rel_index(idx))
+        return _bit(irq_next, idx)
 
     # ==================================================================
-    # One clk cycle. Returns the per-clk observables dict (SPEC-16-1/2).
+    # One SM's combinational section. Everything below reads start-of-
+    # clk state only (CC-4); registered effects land in edge().
     # ==================================================================
-    def step(
+    def comb(
         self,
-        gpio_in: int,
-        lb_mask: int = 0,
-        op: int = 0,
-        addr: int = 0,
-        wdata: int = 0,
-        nb_set: int = 0,
-        nb_clr: int = 0,
-        irq_prev: int = 0,
-        irq_next: int = 0,
-    ) -> Observables:
-        self.irq_prev = irq_prev & 0xFF  # relay views (CC-38)
-        self.irq_next = irq_next & 0xFF
-        reg_write = op == 1
-        reg_read = op == 2
-        wdata &= M32
-
-        # ---------------- pio_block: address decode (SPEC-7-x) --------
-        widx = (addr >> 2) & 0x7F
-        imem_hit = 18 <= widx <= 49  # 0x048..0x0c4 (SPEC-7-10)
-        imem_addr = (widx - 18) & 0x1F
-        sm_hit = 50 <= widx <= 73  # 0x0c8..0x124
-        sm_off = widx - 50
-        sm_sel = min(sm_off // 6, 3)
-        sm_reg = sm_off - 6 * sm_sel
-        aux_hit = 74 <= widx <= 89  # 0x128..0x164 (SPEC-7-13)
-        aux_off = widx - 74
-        aux_sel, bus_aux_idx = aux_off >> 2, aux_off & 3
-        if sm_hit and sm_sel != 0 and (reg_write or reg_read):
-            raise ValueError(f"SM{sm_sel} window access 0x{addr:03x} is out of the single-SM scope (SPEC-16-4)")
-        if reg_write and widx in (5, 6, 7):  # TXF1..3
-            raise ValueError("TXF1..3 writes are out of scope (SPEC-16-4)")
-        if reg_read and widx in (9, 10, 11):  # RXF1..3
-            raise ValueError("RXF1..3 reads are out of scope (SPEC-16-4)")
-
-        clkdiv_we = reg_write and sm_hit and sm_reg == 0
-        execctrl_we = reg_write and sm_hit and sm_reg == 1
-        shiftctrl_we = reg_write and sm_hit and sm_reg == 2
-        pinctrl_we = reg_write and sm_hit and sm_reg == 5
-        force_we = reg_write and sm_hit and sm_reg == 4  # SPEC-7-23
-        sm_restart = reg_write and widx == 0 and _bit(wdata, 4)  # SPEC-7-3
-        clkdiv_restart = reg_write and widx == 0 and _bit(wdata, 8)  # CC-27
-        sys_tx_wr = reg_write and widx == 4  # TXF0 (SPEC-7-28)
-        sys_rx_rd = reg_read and widx == 8  # RXF0
-        sys_aux_wr = reg_write and aux_hit and aux_sel == 0
-        fdbg_clr: dict[str, int] = {  # FDEBUG W1C (SPEC-7-29)
-            "tx_stall": _bit(wdata, 24) if (reg_write and widx == 2) else 0,
-            "rx_stall": _bit(wdata, 0) if (reg_write and widx == 2) else 0,
-            "tx_over": _bit(wdata, 16) if (reg_write and widx == 2) else 0,
-            "rx_under": _bit(wdata, 8) if (reg_write and widx == 2) else 0,
-        }
-        irq_w1c = (wdata & 0xFF) if (reg_write and widx == 12) else 0
-        irq_force = (wdata & 0xFF) if (reg_write and widx == 13) else 0
-
-        # ---------------- gpio input path (pio_gpio_mux, CC-23) -------
-        if "sync_1ff" in self.mut:
-            gpio_seen = self.sync1_r
-        else:
-            gpio_seen = 0
-            for p in range(32):
-                seen = _bit(self.sync1_r, p) if _bit(self.isb_r, p) else _bit(self.sync2_r, p)
-                gpio_seen |= seen << p
-        count = self.in_mask_count  # SPEC-10-3 rotate + mask
-        in_mask = M32 if count == 0 else (M32 >> (32 - count))
-        in_bus = _ror32(gpio_seen, self.in_base) & in_mask
-
+        sm_en: int,
+        instr: int,
+        in_bus: int,
+        gpio_seen: int,
+        flags_now: int,
+        irq_prev: int,
+        irq_next: int,
+    ) -> _SMComb:
         # ---------------- divider combinational (pio_sm_regs, CC-26) --
-        sm_en = self.ctrl_r & 1  # SM0 enable (SPEC-7-2)
         int_eff = 65536 if self.clkdiv_int == 0 else self.clkdiv_int
         frac_eff = 0 if self.clkdiv_int == 0 else self.clkdiv_frac
         target = int_eff + (1 if (self.stretch_r and self.clkdiv_int != 0) else 0)
-        terminal = sm_en and self.count_r >= target - 1
+        terminal = bool(sm_en) and self.count_r >= target - 1
         phase_sum = self.phase_r + frac_eff
         phase_next = phase_sum & 0xFF
         phase_carry = 1 if phase_sum >= 256 else 0
 
         # pio_sm_exec tick arbitration (CC-1/CC-35/CC-36)
         force_tick = self.force_pend_r or self.forced_stall_r
-        sm_tick = sm_en and self.pending_r and not force_tick
+        sm_tick = bool(sm_en) and self.pending_r != 0 and not force_tick
         tick_forced = force_tick
         tick_sm = sm_tick and not tick_forced
 
-        m_restart = tick_sm and self.restart_pend_r  # [MODEL] restart
-        m_delay = tick_sm and not self.restart_pend_r and self.state_r == ST_DELAY
-        m_exec = tick_forced or (tick_sm and not self.restart_pend_r and self.state_r != ST_DELAY)
+        m_restart = tick_sm and self.restart_pend_r != 0  # [MODEL] restart
+        m_delay = tick_sm and self.restart_pend_r == 0 and self.state_r == ST_DELAY
+        m_exec = tick_forced or (tick_sm and self.restart_pend_r == 0 and self.state_r != ST_DELAY)
 
         # ---------------- instruction selection + decode (CC-33/34) ---
-        src_latch = tick_forced or (self.latch_vld_r and not self.latch_force_r)
-        instr_mem_w = self.imem[self.pc_r]
-        instr_cur = self.latch_r if src_latch else instr_mem_w
+        src_latch = tick_forced or (self.latch_vld_r != 0 and self.latch_force_r == 0)
+        instr_cur = self.latch_r if src_latch else instr
         d = E.decode(instr_cur, self.side_en, self.sideset_count)
 
         first_tick = m_exec and (not self.forced_stall_r if tick_forced else self.state_r != ST_STALL)
@@ -421,27 +438,16 @@ class PIOBlockModel:
         widx5 = d.get("wait_index", 0)
         irq_flag_idx = d.get("irq_index", 0) if d["is_irq"] else widx5 & 7
         irq_idx_mode = d.get("irq_idxmode", 0) if d["is_irq"] else (widx5 >> 3) & 3
-        loc_set_early = irq_force | (nb_set & 0xFF)
-        loc_clr_early = irq_w1c | (nb_clr & 0xFF)
-        if irq_idx_mode in (0, 2) and irq_set_req:  # SPEC-3.8-4/6
-            loc_set_early |= 1 << irq_flag_idx
-        flags_now = (
-            ((self.flags_r | loc_set_early) & ~loc_clr_early) & 0xFF if "irq_same_cycle" in self.mut else self.flags_r
-        )
+        # SPEC-3.8-4/6: THIS and REL set the local register (REL through
+        # the SM-id compose; PREV/NEXT route out to the neighbours).
+        irq_set_early = 0
+        if irq_idx_mode in (0, 2) and irq_set_req:
+            irq_set_early = 1 << (irq_flag_idx if irq_idx_mode == 0 else self.rel_index(irq_flag_idx))
 
         # ---------------- FIFO status (pio_sm_fifo, CC-4 start-of-tick)
-        if self.fifo_mode == FM_TX:
-            tx_depth, rx_depth = 8, 0  # SPEC-6-2
-        elif self.fifo_mode == FM_RX:
-            tx_depth, rx_depth = 0, 8
-        elif self.fifo_mode in (FM_TXPUT, FM_TXGET, FM_PUTGET):
-            tx_depth, rx_depth = 4, 0  # SPEC-6-4
-        else:
-            tx_depth = rx_depth = 4
-        tx_full = tx_depth == 0 or self.tx_level >= tx_depth
+        tx_depth, rx_depth = self.fifo_depths()
         tx_empty = tx_depth == 0 or self.tx_level == 0
         rx_full = rx_depth == 0 or self.rx_level >= rx_depth
-        rx_empty = rx_depth == 0 or self.rx_level == 0
 
         # ---------------- exec combinational (pio_sm_exec) ------------
         pull_thr = 32 if self.pull_thresh == 0 else self.pull_thresh
@@ -460,7 +466,7 @@ class PIOBlockModel:
         elif self.status_sel == 2:  # IRQ (SPEC-12-9)
             n = self.status_n
             mode = (((n >> 4) & 1) << 1) | ((n >> 3) & 1)
-            status_val = M32 if self._flag_rd(flags_now, mode, n & 7) else 0
+            status_val = M32 if self.flag_rd(flags_now, irq_prev, irq_next, mode, n & 7) else 0
         else:
             status_val = 0  # reserved selector
 
@@ -496,7 +502,7 @@ class PIOBlockModel:
         elif wsrc == E.WSRC_PIN:
             wait_pin = _bit(in_bus, widx5)
         elif wsrc == E.WSRC_IRQ:
-            wait_pin = self._flag_rd(flags_now, (widx5 >> 3) & 3, widx5 & 7)
+            wait_pin = self.flag_rd(flags_now, irq_prev, irq_next, (widx5 >> 3) & 3, widx5 & 7)
         else:  # JMPPIN (SPEC-3.2-5)
             wait_pin = _bit(gpio_seen, (self.jmp_pin + (widx5 & 3)) & 0x1F)
         wait_cond = wait_pin == d.get("wait_pol", 1)
@@ -526,8 +532,8 @@ class PIOBlockModel:
         push_guard = (not d.get("push_iff", 0)) or self.isr_cnt_r >= push_thr  # SPEC-3.5-5, CC-31
         pull_guard = (not d.get("pull_ife", 0)) or self.osr_cnt_r >= pull_thr  # SPEC-3.5-10, CC-31
         pull_fence = (not self.autopull) or self.osr_cnt_r >= pull_thr
-        irqw_flag = self._flag_rd(flags_now, d.get("irq_idxmode", 0), d.get("irq_index", 0))
-        irqw_rel = self.irqw_wait_r and not irqw_flag  # CC-16
+        irqw_flag = self.flag_rd(flags_now, irq_prev, irq_next, d.get("irq_idxmode", 0), d.get("irq_index", 0))
+        irqw_rel = self.irqw_wait_r != 0 and not irqw_flag  # CC-16
 
         out_count = d.get("out_count", 0)
         in_count = d.get("in_count", 0)
@@ -751,7 +757,7 @@ class PIOBlockModel:
         )
 
         # IRQ clear request (SPEC-3.8-1; WAIT-1-irq completing clear
-        # CC-15). The set request is computed early (flag view above).
+        # CC-15). The set request is computed early (flag compose above).
         irq_clr_req = (
             compl
             and not d["illegal"]
@@ -760,23 +766,18 @@ class PIOBlockModel:
             )
         )
 
-        # ---------------- pio_gpio_mux output resolution (CC-6/CC-7) --
-        def place_mask(base: int, n: int) -> int:
-            if n == 0 or n > 31:
-                return M32  # 0 = 32 pins (SPEC-7-26)
-            return _rol32(M32 >> (32 - n), base)
-
+        # ---------------- pio_gpio_mux per-SM writer resolution ------
         os_lvl_mask = os_lvl_data = 0
         os_dir_mask = os_dir_data = 0
         if gpio_out_we:
-            m = place_mask(self.out_base, self.out_count)
+            m = _place_mask(self.out_base, self.out_count)
             data = _rol32(gpio_out_data, self.out_base)
             if gpio_out_pindir:
                 os_dir_mask, os_dir_data = m, data & m
             else:
                 os_lvl_mask, os_lvl_data = m, data & m
         elif gpio_set_we and self.set_count != 0:
-            m = place_mask(self.set_base, self.set_count)
+            m = _place_mask(self.set_base, self.set_count)
             data = _rol32(d.get("set_data", 0), self.set_base)
             if d.get("set_dst", 0) == E.SETD_PINDIRS:
                 os_dir_mask, os_dir_data = m, data & m
@@ -785,39 +786,15 @@ class PIOBlockModel:
         ss_lvl_mask = ss_lvl_data = 0
         ss_dir_mask = ss_dir_data = 0
         if gpio_ss_we and ss_bits != 0:
-            m = place_mask(self.sideset_base, ss_bits)
+            m = _place_mask(self.sideset_base, ss_bits)
             data = _rol32(ss_val_mut, self.sideset_base)
             if self.side_pindir:  # SPEC-4-4
                 ss_dir_mask, ss_dir_data = m, data & m
             else:
                 ss_lvl_mask, ss_lvl_data = m, data & m
 
-        lvl_next = self.gpio_lvl_r
-        oe_next = self.gpio_oe_r
-        if self.out_sticky_en and not self.sticky_is_dir[0]:  # CC-5
-            lvl_next = ((lvl_next & ~self.sticky_mask[0]) | self.sticky_lvl[0]) & M32
-        if self.out_sticky_en and self.sticky_is_dir[0]:
-            oe_next = ((oe_next & ~self.sticky_mask[0]) | self.sticky_dir[0]) & M32
-        lvl_next = ((lvl_next & ~os_lvl_mask) | os_lvl_data) & M32
-        oe_next = ((oe_next & ~os_dir_mask) | os_dir_data) & M32
-        lvl_next = ((lvl_next & ~ss_lvl_mask) | ss_lvl_data) & M32  # CC-6
-        oe_next = ((oe_next & ~ss_dir_mask) | ss_dir_data) & M32
-
         sticky_wr = gpio_out_we or (gpio_set_we and self.set_count != 0)
         sticky_isdir_next = gpio_out_pindir if gpio_out_we else d.get("set_dst", 0) == E.SETD_PINDIRS
-        sticky_mask_next = (os_lvl_mask | os_dir_mask) if sticky_wr else self.sticky_mask[0]
-        sticky_lvl_next = os_lvl_data if (sticky_wr and not sticky_isdir_next) else self.sticky_lvl[0]
-        sticky_dir_next = os_dir_data if (sticky_wr and sticky_isdir_next) else self.sticky_dir[0]
-
-        # ---------------- pio_irq_flags combinational (CC-37/39) ------
-        loc_set = loc_set_early
-        loc_clr = loc_clr_early
-        if irq_idx_mode in (0, 2):  # SPEC-3.8-4/6 (REL: SM0 +0)
-            if irq_clr_req:
-                loc_clr |= 1 << irq_flag_idx
-        # IdxMode 1/3 (PREV/NEXT) route out to the neighbour blocks via
-        # pio_top's relay — out of single-block scope; no local effect.
-        flags_next = (self.flags_r | loc_set) & ~loc_clr & 0xFF  # CC-39
 
         # ---------------- pio_sm_fifo accepted-op decoding ------------
         # fifo_mode here is the pre-edge mode (config banks update in
@@ -827,95 +804,95 @@ class PIOBlockModel:
         fm_pre = self.fifo_mode  # pre-edge mode sample
         flush = fm_pre != self.mode_r  # SPEC-6-2
         tick_any = sm_tick or force_tick  # pio_sm tick fanout
-        rx_queue_wr = tick_any and rx_push and rx_depth != 0 and self.rx_level < rx_depth
-        rx_queue_rd = sys_rx_rd and rx_depth != 0 and self.rx_level != 0
-        tx_wr = sys_tx_wr and tx_depth != 0 and self.tx_level < tx_depth
-        tx_rd = tick_any and tx_pop and tx_depth != 0 and self.tx_level != 0
         aux_put_en = tick_any and aux_put and self.fifo_mode in (FM_TXPUT, FM_PUTGET)
-        sys_aux_wr_en = sys_aux_wr and self.fifo_mode == FM_TXGET
-        tx_over_set = sys_tx_wr and not tx_wr  # SPEC-6-5
-        rx_under_set = sys_rx_rd and not rx_queue_rd
 
-        # ---------------- read mux + compositions (SPEC-16-2) ---------
-        # SM1..3 static nibbles: empty FIFOs, reset config, pc 0. Their
-        # FSTAT bits come from the 0x0f00_0f00 reset pattern; SM0's four
-        # bits are overlaid from live state (SPEC-7-29).
-        sm0_mask = (1 << 24) | (1 << 16) | (1 << 8) | 1
-        fstat = (
-            (0x0F00_0F00 & ~sm0_mask)
-            | ((1 if tx_empty else 0) << 24)
-            | ((1 if tx_full else 0) << 16)
-            | ((1 if rx_empty else 0) << 8)
-            | ((1 if rx_full else 0) << 0)
-        )
-        fdebug = (self.fdbg_tx_stall << 24) | (self.fdbg_tx_over << 16) | (self.fdbg_rx_under << 8) | self.fdbg_rx_stall
-        flevel = (self.tx_level & 0xF) | ((self.rx_level & 0xF) << 4)
-        intr = (
-            (flags_now << 8)
-            | 0xE0  # SM3..1 TXNFULL = 1
-            | ((0 if tx_full else 1) << 4)
-            | (0 if rx_empty else 1)
-        ) & 0xFFFF
-        execctrl_rb = (self.execctrl_r & 0x7FFFFFFF) | (0x80000000 if self.forced_stall_r else 0)  # SPEC-7-15
-
-        if widx == 0:
-            rdata = self.ctrl_r & 0xF
-        elif widx == 1:
-            rdata = fstat
-        elif widx == 2:
-            rdata = fdebug
-        elif widx == 3:
-            rdata = flevel
-        elif widx == 8:
-            rdata = self.rx_mem[self.rx_head]  # RXF0 (SPEC-7-28)
-        elif widx == 12:
-            rdata = flags_now  # SPEC-7-6
-        elif widx == 14:
-            rdata = self.isb_r
-        elif widx == 15:
-            rdata = self.gpio_lvl_r  # DBG_PADOUT (SPEC-7-8)
-        elif widx == 16:
-            rdata = self.gpio_oe_r
-        elif widx == 17:
-            rdata = 0x10200404  # DBG_CFGINFO (SPEC-7-9)
-        elif sm_hit:
-            rdata = (
-                self.clkdiv_r
-                if sm_reg == 0
-                else execctrl_rb
-                if sm_reg == 1
-                else self.shiftctrl_r
-                if sm_reg == 2
-                else self.pc_r
-                if sm_reg == 3  # SPEC-7-22
-                else instr_mem_w
-                if sm_reg == 4  # SPEC-7-24
-                else self.pinctrl_r
-            )
-        elif aux_hit:
-            rdata = self.rx_mem[bus_aux_idx]  # SPEC-7-13
-        else:
-            rdata = 0
-
-        # ---------------- per-clk observables (SPEC-16-1/2) -----------
-        obs = Observables(
-            gpio_out=self.gpio_lvl_r,
-            gpio_oe=self.gpio_oe_r,
-            intr=intr,
-            rdata=rdata if reg_read else None,
-            read=reg_read,
-            addr=addr,
+        return _SMComb(
+            tick_forced=tick_forced,
+            tick_any=tick_any,
+            m_restart=m_restart,
+            m_delay=m_delay,
+            m_exec=m_exec,
+            first_tick=first_tick,
+            d=d,
+            src_latch=src_latch,
+            terminal=terminal,
+            phase_next=phase_next,
+            phase_carry=phase_carry,
+            irq_set_early=irq_set_early,
+            irq_clr_req=bool(irq_clr_req),
+            irq_flag_idx=irq_flag_idx,
+            irq_idx_mode=irq_idx_mode,
+            os_lvl_mask=os_lvl_mask,
+            os_lvl_data=os_lvl_data,
+            os_dir_mask=os_dir_mask,
+            os_dir_data=os_dir_data,
+            ss_lvl_mask=ss_lvl_mask,
+            ss_lvl_data=ss_lvl_data,
+            ss_dir_mask=ss_dir_mask,
+            ss_dir_data=ss_dir_data,
+            sticky_wr=sticky_wr,
+            sticky_isdir_next=sticky_isdir_next,
+            pc_next=pc_next,
+            pc_wr_explicit=pc_wr_explicit,
+            just_latched=just_latched,
+            exec_word=exec_word,
+            delay_load=delay_load,
+            x_wr=x_wr,
+            y_wr=y_wr,
+            x_val=x_val,
+            y_val=y_val,
+            osr_wr_en=osr_wr_en,
+            osr_wr_data=osr_wr_data,
+            osr_wr_cnt=osr_wr_cnt,
+            out_en=out_en,
+            osr_shifted=osr_shifted,
+            osr_cnt_sat=osr_cnt_sat,
+            isr_wr_en=isr_wr_en,
+            isr_wr_data=isr_wr_data,
+            isr_wr_cnt=isr_wr_cnt,
+            in_en=in_en,
+            isr_next_in=isr_next_in,
+            isr_cnt_sat=isr_cnt_sat,
+            tx_pop=tx_pop,
+            rx_push=rx_push,
+            rx_push_data=rx_push_data,
+            aux_put_en=aux_put_en,
+            aux_idx=aux_idx,
+            flush=flush,
+            fm_pre=fm_pre,
+            tx_stall_req=bool(tx_stall_req),
+            rx_stall_req=bool(rx_stall_req),
+            stall=stall,
+            compl=compl,
         )
 
-        # ==============================================================
-        # Edge update — every always_ff below its RTL priority order.
-        # ==============================================================
-        if reg_write and imem_hit:
-            self.imem[imem_addr] = wdata & M16  # CC-33
-        if reg_write and widx == 0:
-            self.ctrl_r = wdata & 0xF
-        if reg_write and widx == 14:
-            self.isb_r = wdata
+    # ==================================================================
+    # One SM's edge update — every always_ff below its RTL priority
+    # order (pio_sm_regs divider, pio_sm_exec G1..G5, pio_sm_shift,
+    # pio_sm_fifo, FDEBUG stickies).
+    # ==================================================================
+    def edge(
+        self,
+        c: _SMComb,
+        sm_en: int,
+        sm_restart: bool,
+        clkdiv_restart: bool,
+        clkdiv_we: bool,
+        execctrl_we: bool,
+        shiftctrl_we: bool,
+        pinctrl_we: bool,
+        force_we: bool,
+        wdata: int,
+        sys_tx_wr: bool,
+        sys_rx_rd: bool,
+        sys_aux_wr: bool,
+        bus_aux_idx: int,
+        fdbg_clr: dict[str, int],
+    ) -> None:
+        d = c["d"]
+        m_restart, m_delay, m_exec = c["m_restart"], c["m_delay"], c["m_exec"]
+        tick_forced, tick_any = c["tick_forced"], c["tick_any"]
+        compl, stall = c["compl"], c["stall"]
 
         if clkdiv_we:
             self.clkdiv_r = wdata
@@ -926,21 +903,6 @@ class PIOBlockModel:
         if pinctrl_we:
             self.pinctrl_r = wdata
 
-        self.flags_r = flags_next  # CC-37/CC-39
-
-        self.sync2_r = self.sync1_r  # CC-23
-        self.sync1_r = gpio_in & M32
-
-        self.gpio_lvl_r = lvl_next
-        self.gpio_oe_r = oe_next
-        if sticky_wr:
-            self.sticky_mask[0] = sticky_mask_next
-            self.sticky_is_dir[0] = 1 if sticky_isdir_next else 0
-            if sticky_isdir_next:
-                self.sticky_dir[0] = sticky_dir_next
-            else:
-                self.sticky_lvl[0] = sticky_lvl_next
-
         # Divider (pio_sm_regs always_ff, CC-26/CC-27/CC-36)
         if clkdiv_restart:
             self.phase_r = 0
@@ -948,26 +910,25 @@ class PIOBlockModel:
             self.count_r = 0
             self.pending_r = 0
         elif sm_en:
-            if terminal:
+            if c["terminal"]:
                 self.count_r = 0
                 self.pending_r = 1
-                self.phase_r = phase_next
-                self.stretch_r = phase_carry
+                self.phase_r = c["phase_next"]
+                self.stretch_r = c["phase_carry"]
             else:
                 self.count_r += 1
-                if not (force_tick and self.pending_r):
+                if not (tick_forced and self.pending_r):
                     self.pending_r = 0
 
-        # --- pio_sm_exec register groups ---
         # G1: FSM state
         if m_restart:
             if sm_restart and self.state_r == ST_DELAY:
                 self.state_r = ST_FETCH
         elif tick_forced:
             if compl:
-                if just_latched:
+                if c["just_latched"]:
                     self.state_r = ST_EXEC  # CC-34
-                elif pc_wr_explicit:
+                elif c["pc_wr_explicit"]:
                     self.state_r = ST_FETCH  # CC-35
                 elif self.state_r == ST_EXEC:
                     self.state_r = ST_FETCH
@@ -978,7 +939,7 @@ class PIOBlockModel:
         elif m_exec:
             if not compl:
                 self.state_r = ST_STALL
-            elif just_latched:
+            elif c["just_latched"]:
                 self.state_r = ST_EXEC
             elif d["delay"] != 0:
                 self.state_r = ST_DELAY  # CC-10
@@ -993,19 +954,19 @@ class PIOBlockModel:
 
         # G2: PC + X + Y (SM_RESTART preserves all three, SPEC-7-3)
         if compl:
-            self.pc_r = pc_next & 0x1F
-            if x_wr:
-                self.x_r = x_val & M32
-            if y_wr:
-                self.y_r = y_val & M32
+            self.pc_r = c["pc_next"] & 0x1F
+            if c["x_wr"]:
+                self.x_r = c["x_val"] & M32
+            if c["y_wr"]:
+                self.y_r = c["y_val"] & M32
 
         # G3: delay counter (CC-10/CC-14)
         mut_dly = "delay_in_stall" in self.mut and self._mut_stall_seen
-        if delay_load and not mut_dly:
+        if c["delay_load"] and not mut_dly:
             self.delay_cnt_r = d["delay"]
         elif sm_restart:
             self.delay_cnt_r = 0
-        elif tick_forced and compl and (just_latched or pc_wr_explicit):
+        elif tick_forced and compl and (c["just_latched"] or c["pc_wr_explicit"]):
             self.delay_cnt_r = 0  # preempted delay
         elif m_delay:
             self.delay_cnt_r = (self.delay_cnt_r - 1) & 0x1F
@@ -1015,7 +976,7 @@ class PIOBlockModel:
             # stall holds — the post-stall delay shrinks by the stall
             # length instead of freezing (the completion reload is
             # suppressed above via _mut_stall_seen).
-            if first_tick:
+            if c["first_tick"]:
                 self.delay_cnt_r = d["delay"]
             else:
                 self.delay_cnt_r = (self.delay_cnt_r - 1) & 0x1F
@@ -1034,8 +995,8 @@ class PIOBlockModel:
         elif sm_restart:
             self.force_pend_r = 0
             self.forced_stall_r = 0
-            if compl and just_latched:
-                self.latch_r = exec_word
+            if compl and c["just_latched"]:
+                self.latch_r = c["exec_word"]
                 self.latch_vld_r = 1
                 self.latch_force_r = 0
             elif self.latch_force_r:
@@ -1045,17 +1006,17 @@ class PIOBlockModel:
             if compl:
                 self.force_pend_r = 0
                 self.forced_stall_r = 0
-                self.latch_vld_r = 1 if just_latched else 0
+                self.latch_vld_r = 1 if c["just_latched"] else 0
                 self.latch_force_r = 0
-                if just_latched:
-                    self.latch_r = exec_word
+                if c["just_latched"]:
+                    self.latch_r = c["exec_word"]
             else:
                 self.forced_stall_r = 1  # EXEC_STALLED (SPEC-7-15)
-        elif compl and just_latched:
-            self.latch_r = exec_word
+        elif compl and c["just_latched"]:
+            self.latch_r = c["exec_word"]
             self.latch_vld_r = 1
             self.latch_force_r = 0
-        elif m_exec and src_latch and compl:
+        elif m_exec and c["src_latch"] and compl:
             self.latch_vld_r = 0
 
         # G5: irq-wait two-phase + restart pending (CC-16, SPEC-7-3)
@@ -1067,26 +1028,32 @@ class PIOBlockModel:
                 self.restart_pend_r = 0
             if m_exec and not d["illegal"] and d["is_irq"] and d.get("irq_wait", 0) and not d.get("irq_clr", 0):
                 self.irqw_wait_r = 0 if compl else 1
-            elif tick_forced and compl and pc_wr_explicit:
+            elif tick_forced and compl and c["pc_wr_explicit"]:
                 self.irqw_wait_r = 0
 
         # --- pio_sm_shift register groups (tick_any-qualified) ---
         if tick_any:
-            if osr_wr_en:
-                self.osr_r = osr_wr_data & M32
-                self.osr_cnt_r = osr_wr_cnt & 0x3F
-            elif out_en:
-                self.osr_r = osr_shifted
-                self.osr_cnt_r = osr_cnt_sat
-            if isr_wr_en:
-                self.isr_r = isr_wr_data & M32
-                self.isr_cnt_r = isr_wr_cnt & 0x3F
-            elif in_en:
-                self.isr_r = isr_next_in & M32
-                self.isr_cnt_r = isr_cnt_sat
+            if c["osr_wr_en"]:
+                self.osr_r = c["osr_wr_data"] & M32
+                self.osr_cnt_r = c["osr_wr_cnt"] & 0x3F
+            elif c["out_en"]:
+                self.osr_r = c["osr_shifted"]
+                self.osr_cnt_r = c["osr_cnt_sat"]
+            if c["isr_wr_en"]:
+                self.isr_r = c["isr_wr_data"] & M32
+                self.isr_cnt_r = c["isr_wr_cnt"] & 0x3F
+            elif c["in_en"]:
+                self.isr_r = c["isr_next_in"] & M32
+                self.isr_cnt_r = c["isr_cnt_sat"]
 
         # --- pio_sm_fifo register groups ---
-        if flush:
+        tx_depth, rx_depth = self.fifo_depths()
+        rx_push, tx_pop = c["rx_push"], c["tx_pop"]
+        rx_queue_wr = tick_any and rx_push and rx_depth != 0 and self.rx_level < rx_depth
+        rx_queue_rd = sys_rx_rd and rx_depth != 0 and self.rx_level != 0
+        tx_wr = sys_tx_wr and tx_depth != 0 and self.tx_level < tx_depth
+        tx_rd = tick_any and tx_pop and tx_depth != 0 and self.tx_level != 0
+        if c["flush"]:
             self.tx_head = self.tx_tail = 0
             self.tx_level = 0
             self.rx_head = self.rx_tail = 0
@@ -1099,11 +1066,11 @@ class PIOBlockModel:
                 self.tx_head = (self.tx_head + 1) & 7
             self.tx_level += (1 if tx_wr else 0) - (1 if tx_rd else 0)
             if rx_queue_wr:
-                self.rx_mem[self.rx_tail] = rx_push_data & M32
+                self.rx_mem[self.rx_tail] = c["rx_push_data"] & M32
                 self.rx_tail = (self.rx_tail + 1) & 7
-            elif aux_put_en:
-                self.rx_mem[aux_idx & 3] = self.isr_r & M32
-            elif sys_aux_wr_en:
+            elif c["aux_put_en"]:
+                self.rx_mem[c["aux_idx"] & 3] = self.isr_r & M32
+            elif sys_aux_wr and self.fifo_mode == FM_TXGET:
                 self.rx_mem[bus_aux_idx] = wdata & M32
             if rx_queue_rd:
                 self.rx_head = (self.rx_head + 1) & 7
@@ -1111,16 +1078,18 @@ class PIOBlockModel:
         # pio_sm_fifo mode sampler: the registered pre-edge mode (a
         # config write changes fifo_mode from the NEXT clk, so the flush
         # edge fires exactly once, the cycle after the FJOIN change).
-        self.mode_r = fm_pre
+        self.mode_r = c["fm_pre"]
 
         # FDEBUG stickies (SPEC-6-7): W1C beats set
+        tx_over_set = sys_tx_wr and not tx_wr
+        rx_under_set = sys_rx_rd and not rx_queue_rd
         if fdbg_clr["tx_stall"]:
             self.fdbg_tx_stall = 0
-        elif tx_stall_req and tick_any:
+        elif c["tx_stall_req"] and tick_any:
             self.fdbg_tx_stall = 1
         if fdbg_clr["rx_stall"]:
             self.fdbg_rx_stall = 0
-        elif rx_stall_req and tick_any:
+        elif c["rx_stall_req"] and tick_any:
             self.fdbg_rx_stall = 1
         if fdbg_clr["tx_over"]:
             self.fdbg_tx_over = 0
@@ -1130,5 +1099,327 @@ class PIOBlockModel:
             self.fdbg_rx_under = 0
         elif rx_under_set:
             self.fdbg_rx_under = 1
+
+
+class PIOBlockModel:
+    """One pio_block (rtl/pio_block.sv and children), all four SMs live.
+
+    >>> m = PIOBlockModel()
+    >>> obs = m.step(0)                # clk 0: reset values on the pads
+    >>> (obs["gpio_out"], obs["gpio_oe"], obs["intr"])   # doctest: +NORMALIZE_WHITESPACE
+    (0, 0, 240)
+    >>> obs["rdata"] is None           # no reg read this clk
+    True
+    >>> m.ctrl_r = 1                   # SM0 enable (SPEC-7-2)
+    >>> m.imem = [E.encode_set("pins", 1, 0), E.encode_jmp(None, 0, 0)]
+    >>> m.sms[0].pinctrl_r = 1 << 26   # SET_COUNT=1 (SPEC-7-26)
+    >>> _ = [m.step(0) for _ in range(6)]
+    >>> m.gpio_lvl_r
+    1
+    """
+
+    def __init__(self, mutations: tuple[str, ...] | list[str] = ()) -> None:
+        bad = set(mutations) - set(MUTATIONS)
+        if bad:
+            raise ValueError(f"unknown mutations: {sorted(bad)}")
+        self.mut: set[str] = set(mutations)
+        self.reset()
+
+    # SM0's PC and FSM state — the single-SM harnesses' divergence view
+    # (hyperopt/hyperequiv report them; SM1..3 live on the slices).
+    @property
+    def pc_r(self) -> int:
+        return self.sms[0].pc_r
+
+    @property
+    def state_r(self) -> int:
+        return self.sms[0].state_r
+
+    # ------------------------------------------------------------------
+    # Reset (CC-1): every register's rst value, per its owner module.
+    # ------------------------------------------------------------------
+    def reset(self) -> Self:
+        # pio_block.sv block regs
+        self.ctrl_r: int = 0  # CTRL.SM_ENABLE (SPEC-7-2)
+        self.isb_r: int = 0  # INPUT_SYNC_BYPASS (SPEC-7-7)
+        self.imem: list[int] = [0] * 32  # pio_instr_mem all-zero reset
+        # pio_irq_flags.sv
+        self.flags_r: int = 0
+        # pio_gpio_mux.sv
+        self.sync1_r: int = 0
+        self.sync2_r: int = 0
+        self.gpio_lvl_r: int = 0
+        self.gpio_oe_r: int = 0
+        self.sticky_mask: list[int] = [0] * 4  # per-SM records (SPEC-7-18)
+        self.sticky_lvl: list[int] = [0] * 4
+        self.sticky_dir: list[int] = [0] * 4
+        self.sticky_is_dir: list[int] = [0] * 4
+        # pio_sm.sv x4 (pio_block u_sm0..u_sm3, SM_IDX parameter)
+        self.sms: list[_SMSlice] = [_SMSlice(i, self.mut) for i in range(4)]
+        return self
+
+    # ==================================================================
+    # One clk cycle. Returns the per-clk observables dict (SPEC-16-1/2).
+    # ==================================================================
+    def step(
+        self,
+        gpio_in: int,
+        lb_mask: int = 0,
+        op: int = 0,
+        addr: int = 0,
+        wdata: int = 0,
+        nb_set: int = 0,
+        nb_clr: int = 0,
+        irq_prev: int = 0,
+        irq_next: int = 0,
+    ) -> Observables:
+        self.irq_prev = irq_prev & 0xFF  # relay views (CC-38)
+        self.irq_next = irq_next & 0xFF
+        reg_write = op == 1
+        reg_read = op == 2
+        wdata &= M32
+
+        # ---------------- pio_block: address decode (SPEC-7-x) --------
+        widx = (addr >> 2) & 0x7F
+        imem_hit = 18 <= widx <= 49  # 0x048..0x0c4 (SPEC-7-10)
+        imem_addr = (widx - 18) & 0x1F
+        sm_hit = 50 <= widx <= 73  # 0x0c8..0x124
+        sm_off = widx - 50
+        sm_sel = min(sm_off // 6, 3)
+        sm_reg = sm_off - 6 * sm_sel
+        aux_hit = 74 <= widx <= 89  # 0x128..0x164 (SPEC-7-13)
+        aux_off = widx - 74
+        aux_sel, bus_aux_idx = aux_off >> 2, aux_off & 3
+
+        # Per-SM write strobes (pio_block decode products, SPEC-7-25) —
+        # a write retiring at end of e is visible to consumers from e+1.
+        clkdiv_we = [reg_write and sm_hit and sm_sel == i and sm_reg == 0 for i in range(4)]
+        execctrl_we = [reg_write and sm_hit and sm_sel == i and sm_reg == 1 for i in range(4)]
+        shiftctrl_we = [reg_write and sm_hit and sm_sel == i and sm_reg == 2 for i in range(4)]
+        pinctrl_we = [reg_write and sm_hit and sm_sel == i and sm_reg == 5 for i in range(4)]
+        force_we = [reg_write and sm_hit and sm_sel == i and sm_reg == 4 for i in range(4)]  # SPEC-7-23
+        sm_restart = [reg_write and widx == 0 and _bit(wdata, 4 + i) != 0 for i in range(4)]  # SPEC-7-3
+        clkdiv_restart = [reg_write and widx == 0 and _bit(wdata, 8 + i) != 0 for i in range(4)]  # CC-27
+        sys_tx_wr = [reg_write and widx == 4 + i for i in range(4)]  # TXF0..3 (SPEC-7-28)
+        sys_rx_rd = [reg_read and widx == 8 + i for i in range(4)]  # RXF0..3
+        sys_aux_wr = [reg_write and aux_hit and aux_sel == i for i in range(4)]  # SPEC-7-13
+        fdbg_clr: list[dict[str, int]] = [
+            {  # FDEBUG W1C (SPEC-7-29 layout) per SM
+                "tx_stall": _bit(wdata, 24 + i) if (reg_write and widx == 2) else 0,
+                "rx_stall": _bit(wdata, 0 + i) if (reg_write and widx == 2) else 0,
+                "tx_over": _bit(wdata, 16 + i) if (reg_write and widx == 2) else 0,
+                "rx_under": _bit(wdata, 8 + i) if (reg_write and widx == 2) else 0,
+            }
+            for i in range(4)
+        ]
+        irq_w1c = (wdata & 0xFF) if (reg_write and widx == 12) else 0
+        irq_force = (wdata & 0xFF) if (reg_write and widx == 13) else 0
+
+        # ---------------- gpio input path (pio_gpio_mux, CC-23) -------
+        if "sync_1ff" in self.mut:
+            gpio_seen = self.sync1_r
+        else:
+            gpio_seen = 0
+            for p in range(32):
+                seen = _bit(self.sync1_r, p) if _bit(self.isb_r, p) else _bit(self.sync2_r, p)
+                gpio_seen |= seen << p
+
+        # Per-SM input mapping (SPEC-10-3 rotate + mask) — the four
+        # u_gpio in_bus read ports at each SM's IN_BASE/IN_COUNT.
+        in_bus: list[int] = []
+        for sm in self.sms:
+            count = sm.in_mask_count
+            mask = M32 if count == 0 else (M32 >> (32 - count))
+            in_bus.append(_ror32(gpio_seen, sm.in_base) & mask)
+
+        # ---------------- per-SM combinational sections ---------------
+        sm_en = [_bit(self.ctrl_r, i) for i in range(4)]
+        instrs = [self.imem[sm.pc_r] for sm in self.sms]  # u_imem read ports (CC-33)
+
+        def run_combs(flags_view: int) -> list[_SMComb]:
+            return [
+                sm.comb(
+                    sm_en[i],
+                    instrs[i],
+                    in_bus[i],
+                    gpio_seen,
+                    flags_view,
+                    self.irq_prev,
+                    self.irq_next,
+                )
+                for i, sm in enumerate(self.sms)
+            ]
+
+        combs = run_combs(self.flags_r)
+        flags_now = self.flags_r
+        if "irq_same_cycle" in self.mut:
+            # CC-37 violation: same-cycle readers see this cycle's early
+            # in-flight sets/clears (bus force + every SM's first-tick
+            # IRQ set) instead of the registered flag view.
+            early_set = irq_force | (nb_set & 0xFF)
+            early_clr = irq_w1c | (nb_clr & 0xFF)
+            for c in combs:
+                early_set |= c["irq_set_early"]
+            flags_now = ((self.flags_r | early_set) & ~early_clr) & 0xFF
+            combs = run_combs(flags_now)
+
+        # ---------------- pio_irq_flags combinational (CC-37/39) ------
+        loc_set = irq_force | (nb_set & 0xFF)
+        loc_clr = irq_w1c | (nb_clr & 0xFF)
+        for i, c in enumerate(combs):
+            if c["irq_idx_mode"] in (0, 2):  # SPEC-3.8-4/6 (REL: +SM id)
+                loc_set |= c["irq_set_early"]
+                if c["irq_clr_req"]:
+                    idx = c["irq_flag_idx"] if c["irq_idx_mode"] == 0 else self.sms[i].rel_index(c["irq_flag_idx"])
+                    loc_clr |= 1 << idx
+        # IdxMode 1/3 (PREV/NEXT) route out to the neighbour blocks via
+        # pio_top's relay — out of single-block scope; no local effect.
+        flags_next = (self.flags_r | loc_set) & ~loc_clr & 0xFF  # CC-39
+
+        # ---------------- pio_gpio_mux output resolution (CC-6/CC-7) --
+        lvl_next = self.gpio_lvl_r
+        oe_next = self.gpio_oe_r
+        # CC-7: across SMs the highest-numbered SM wins — the RTL loops
+        # ascending with later writers overriding; gpio_pri_low (the
+        # mutation) inverts that to lowest-wins.
+        order = range(3, -1, -1) if "gpio_pri_low" in self.mut else range(4)
+        for i in order:
+            sm, c = self.sms[i], combs[i]
+            if sm.out_sticky_en and not self.sticky_is_dir[i]:  # CC-5
+                lvl_next = ((lvl_next & ~self.sticky_mask[i]) | self.sticky_lvl[i]) & M32
+            if sm.out_sticky_en and self.sticky_is_dir[i]:
+                oe_next = ((oe_next & ~self.sticky_mask[i]) | self.sticky_dir[i]) & M32
+            lvl_next = ((lvl_next & ~c["os_lvl_mask"]) | c["os_lvl_data"]) & M32
+            oe_next = ((oe_next & ~c["os_dir_mask"]) | c["os_dir_data"]) & M32
+            lvl_next = ((lvl_next & ~c["ss_lvl_mask"]) | c["ss_lvl_data"]) & M32  # CC-6
+            oe_next = ((oe_next & ~c["ss_dir_mask"]) | c["ss_dir_data"]) & M32
+
+        # ---------------- read mux + compositions (SPEC-16-2) ---------
+        fstat = 0
+        fdebug = 0
+        flevel = 0
+        intr = flags_now << 8
+        for i, sm in enumerate(self.sms):
+            tx_depth, rx_depth = sm.fifo_depths()
+            tx_full = tx_depth == 0 or sm.tx_level >= tx_depth
+            tx_empty = tx_depth == 0 or sm.tx_level == 0
+            rx_full = rx_depth == 0 or sm.rx_level >= rx_depth
+            rx_empty = rx_depth == 0 or sm.rx_level == 0
+            fstat |= (
+                ((1 if tx_empty else 0) << (24 + i))
+                | ((1 if tx_full else 0) << (16 + i))
+                | ((1 if rx_empty else 0) << (8 + i))
+                | ((1 if rx_full else 0) << i)
+            )  # SPEC-7-29
+            fdebug |= (
+                (sm.fdbg_tx_stall << (24 + i))
+                | (sm.fdbg_tx_over << (16 + i))
+                | (sm.fdbg_rx_under << (8 + i))
+                | (sm.fdbg_rx_stall << i)
+            )
+            flevel |= ((sm.tx_level & 0xF) << (8 * i)) | ((sm.rx_level & 0xF) << (8 * i + 4))  # SPEC-7-29
+            intr |= ((0 if tx_full else 1) << (4 + i)) | ((0 if rx_empty else 1) << i)  # SPEC-7-12
+        intr &= 0xFFFF
+
+        execctrl_rb = [
+            (sm.execctrl_r & 0x7FFFFFFF) | (0x80000000 if sm.forced_stall_r else 0) for sm in self.sms
+        ]  # SPEC-7-15
+
+        if widx == 0:
+            rdata = self.ctrl_r & 0xF
+        elif widx == 1:
+            rdata = fstat
+        elif widx == 2:
+            rdata = fdebug
+        elif widx == 3:
+            rdata = flevel
+        elif 8 <= widx <= 11:
+            rdata = self.sms[widx - 8].rx_mem[self.sms[widx - 8].rx_head]  # RXFx (SPEC-7-28)
+        elif widx == 12:
+            rdata = flags_now  # SPEC-7-6
+        elif widx == 14:
+            rdata = self.isb_r
+        elif widx == 15:
+            rdata = self.gpio_lvl_r  # DBG_PADOUT (SPEC-7-8)
+        elif widx == 16:
+            rdata = self.gpio_oe_r
+        elif widx == 17:
+            rdata = 0x10200404  # DBG_CFGINFO (SPEC-7-9)
+        elif sm_hit:
+            sm = self.sms[sm_sel]
+            rdata = (
+                sm.clkdiv_r
+                if sm_reg == 0
+                else execctrl_rb[sm_sel]
+                if sm_reg == 1
+                else sm.shiftctrl_r
+                if sm_reg == 2
+                else sm.pc_r
+                if sm_reg == 3  # SPEC-7-22
+                else self.imem[sm.pc_r]
+                if sm_reg == 4  # SPEC-7-24
+                else sm.pinctrl_r
+            )
+        elif aux_hit:
+            rdata = self.sms[aux_sel].rx_mem[bus_aux_idx]  # SPEC-7-13
+        else:
+            rdata = 0
+
+        # ---------------- per-clk observables (SPEC-16-1/2) -----------
+        obs = Observables(
+            gpio_out=self.gpio_lvl_r,
+            gpio_oe=self.gpio_oe_r,
+            intr=intr,
+            rdata=rdata if reg_read else None,
+            read=reg_read,
+            addr=addr,
+        )
+
+        # ==============================================================
+        # Edge update — block registers first, then each SM's groups.
+        # ==============================================================
+        if reg_write and imem_hit:
+            self.imem[imem_addr] = wdata & M16  # CC-33
+        if reg_write and widx == 0:
+            self.ctrl_r = wdata & 0xF
+        if reg_write and widx == 14:
+            self.isb_r = wdata
+
+        self.flags_r = flags_next  # CC-37/CC-39
+
+        self.sync2_r = self.sync1_r  # CC-23
+        self.sync1_r = gpio_in & M32
+
+        self.gpio_lvl_r = lvl_next
+        self.gpio_oe_r = oe_next
+        # Sticky records (pio_gpio_mux always_ff, SPEC-7-18): per SM,
+        # the most recent OUT/SET pin write.
+        for i, c in enumerate(combs):
+            if c["sticky_wr"]:
+                self.sticky_mask[i] = c["os_lvl_mask"] | c["os_dir_mask"]
+                self.sticky_is_dir[i] = 1 if c["sticky_isdir_next"] else 0
+                if c["sticky_isdir_next"]:
+                    self.sticky_dir[i] = c["os_dir_data"]
+                else:
+                    self.sticky_lvl[i] = c["os_lvl_data"]
+
+        for i, sm in enumerate(self.sms):
+            sm.edge(
+                combs[i],
+                sm_en[i],
+                sm_restart[i],
+                clkdiv_restart[i],
+                clkdiv_we[i],
+                execctrl_we[i],
+                shiftctrl_we[i],
+                pinctrl_we[i],
+                force_we[i],
+                wdata,
+                sys_tx_wr[i],
+                sys_rx_rd[i],
+                sys_aux_wr[i],
+                bus_aux_idx,
+                fdbg_clr[i],
+            )
 
         return obs

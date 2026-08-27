@@ -887,7 +887,9 @@ spec-eq twin).
   INSTR_MEM0.. (SPEC-7-10) by a deterministic prologue sequencer; config
   writes are broadcast identically; SM0 is enabled via CTRL (SPEC-7-2).
   v1 scoping: SM1..3 stay disabled (single-SM equivalence — the
-  sanctioned scoping for solver tractability).
+  sanctioned scoping for solver tractability; this is the *miter's*
+  scope — the Python model / pio-stim trace exchange cover all four
+  SMs per SPEC-16-13).
 - [SPEC-16-5] **Free-phase rules.** After the prologue the reg bus is free but
   broadcast identically to both instances, confined to bus *traffic*:
   TXF0 (SPEC-7-28), FDEBUG W1C (SPEC-7-29), IRQ/IRQ_FORCE (SPEC-7-6)
@@ -1068,3 +1070,19 @@ spec-eq twin).
   goal moment is legal for any finite horizon, SPEC-16-3) by BMC at the
   replay depth; the goal-must-fire half is leg (b)'s check. A witness
   is reported only if all three pass.
+
+- [SPEC-16-13] **Multi-SM model scope.** The Python golden model and the
+  pio-stim trace exchange cover all four SMs of one block: per-SM
+  config banks / dividers / FIFOs, cross-SM gpio priority resolution
+  (CC-6/CC-7), the inter-SM IRQ REL index compose (SPEC-3.8-6), and the
+  reg-bus windows beyond SM0 (TXF1..3, RXF1..3, the SM1..3 config and
+  PUTGET windows). Provenance: vibe-pio methodology (the multi-SM
+  oracle decision) — the RTL was multi-SM complete from the start; the
+  model's earlier SM0-only scoping was the model's own limitation, not
+  the hardware's. Consumers: `tools/pio_model` (model/stim/difftest —
+  `make model`, whose conformance matrix carries the multi-SM corpus
+  and whose mutation demo re-demonstrates red/green on multi-SM
+  transcription bugs), `sim/tb_trace_dump.sv` (unchanged — a multi-SM
+  schedule is just bus traffic), and `tools/webbuild.py`'s three-way
+  gate (model <-> iverilog <-> verilator-wasm). The miter keeps the
+  SPEC-16-4 single-SM scoping.

@@ -827,14 +827,15 @@ def decode_vcd(samples: Sequence[Sample], ec_mask: int = 0x7FFFFFFF) -> Divergen
 
 def _read_subst(addr: int) -> int:
     """Replay-read substitution for SPEC-16-4 out-of-scope addresses
-    (SM1..3 windows, RXF1..3): the miter compares both sides' static
-    reset-view values there (trivially equal — E4 can never diverge on
-    them), but the single-SM C12 model has no such view and rejects the
-    access. Substituting an in-scope side-effect-free read (FSTAT)
-    identically on both sides keeps the lockstep replay running; the
-    cycle's rdata compare stays meaningful (live SM0 state). Caught red
-    by the C14 tamper e2e: its sby CEX sampled the anyconst read
-    address at 0x104 (SM2 EXECCTRL) and the replay crashed.
+    (SM1..3 windows, RXF1..3): the miter parks SM1..3, so both sides'
+    values there are the static reset views (trivially equal — E4 can
+    never diverge on them; the multi-SM model would return exactly
+    those parked values). Substituting an in-scope side-effect-free
+    read (FSTAT) identically on both sides keeps the lockstep replay
+    aligned with what the miter's E4 actually compares; the cycle's
+    rdata compare stays meaningful (live SM0 state). Caught red by the
+    tamper e2e: its sby CEX sampled the anyconst read address at 0x104
+    (SM2 EXECCTRL) and the replay crashed.
 
     >>> _read_subst(0x104) == stim.A_FSTAT
     True

@@ -255,6 +255,150 @@ class TestMutationsDiverge:
     def test_irq_same_cycle(self):
         assert trace(self._irq37_prog(), ("irq_same_cycle",)) != trace(self._irq37_prog())
 
+    def _multi_pri_prog(self):
+        # SM0 writes 0 / SM3 writes 1 to pin 0 every clk (CC-7)
+        mov0 = E.encode_mov("pins", "null", E.MOP_NONE)
+        mov1 = E.encode_mov("pins", "null", E.MOP_INV)
+        s = stim.Schedule()
+        s.load_imem([mov0, mov0])
+        s.load_imem([mov1, mov1], base=16)
+        s.w(stim.A_SM0 + 4 * 5, stim.pctrl(out_cnt=1))
+        s.w(stim.A_SM0 + 4 * 1, stim.execctrl(1, 0))
+        s.w(stim.sm_addr(3, 5), stim.pctrl(out_cnt=1))
+        s.w(stim.sm_addr(3, 1), stim.execctrl(17, 16))
+        s.set_pc(16, sm=3)
+        s.enable(0b1001)
+        s.run_to(60)
+        return s
+
+    def test_gpio_pri_low(self):
+        clean = trace(self._multi_pri_prog())
+        hi = [r for r in clean if r[0] == "G" and r[2] & 1]
+        assert len(hi) > 40  # SM3 wins the every-clk collision
+        mut = trace(self._multi_pri_prog(), ("gpio_pri_low",))
+        assert not any(r[0] == "G" and r[2] & 1 for r in mut[10:])  # SM0 wins instead
+
+    def _multi_irq_prog(self):
+        words = [
+            E.encode_wait(1, E.WSRC_IRQ, 1, 0),
+            E.encode_set("pins", 1, 0),
+            E.encode_jmp(None, 1, 0),
+            0,
+            0,
+            0,
+            0,
+            0,
+            E.encode_irq(False, False, 2, 0, 0),  # irq nowait 0 rel
+            E.encode_jmp(None, 9, 0),
+        ]
+        s = stim.Schedule()
+        s.load_imem(words)
+        s.w(stim.A_SM0 + 4 * 5, stim.pctrl(set_cnt=1))
+        s.w(stim.A_SM0 + 4 * 1, stim.execctrl(2, 0))
+        s.set_pc(8, sm=1)
+        s.enable(0b11)
+        s.run_to(60)
+        return s
+
+    def test_irq_rel_off(self):
+        clean = trace(self._multi_irq_prog())
+        assert any(r[0] == "G" and r[2] & 1 for r in clean)  # SM1's rel set releases SM0
+        mut = trace(self._multi_irq_prog(), ("irq_rel_off",))
+        assert not any(r[0] == "G" and r[2] & 1 for r in mut)  # flag 0 set: wait never releases
+
     def test_unknown_mutation_rejected(self):
         with pytest.raises(ValueError, match="unknown mutations"):
             M.PIOBlockModel(mutations=("bogus",))
+
+
+class TestMultiSM:
+    """All four SMs live (the multi-SM model scope): SM1..3 window
+    accesses, TXF1..3 feeds, per-SM compositions, inter-SM IRQ REL
+    (SPEC-3.8-6) and cross-SM pin priority (CC-7)."""
+
+    SM1 = stim.A_SM0 + 0x18  # SMx window stride 0x18 (SPEC-7-x)
+    SM3 = stim.A_SM0 + 0x18 * 3
+
+    def test_sm1_config_readback(self):
+        s = stim.Schedule()
+        s.w(self.SM1 + 4 * 0, stim.clkdiv(3, 7))  # SM1 CLKDIV
+        s.r(self.SM1 + 4 * 0)
+        s.r(self.SM3 + 4 * 5)  # SM3 PINCTRL: reset value (SPEC-7-26)
+        assert read_at(trace(s), self.SM1 + 4 * 0) == [stim.clkdiv(3, 7)]
+        assert read_at(trace(s), self.SM3 + 4 * 5) == [stim.pctrl(set_cnt=5)]
+
+    def test_txf1_flevel_nibble(self):
+        s = stim.Schedule()
+        s.w(stim.A_TXF0 + 4, 0xAA)  # TXF1
+        s.w(stim.A_TXF0 + 4, 0xBB)
+        s.r(stim.A_FLEVEL)
+        s.r(stim.A_FSTAT)
+        recs = trace(s)
+        assert read_at(recs, stim.A_FLEVEL) == [2 << 8]  # SM1 TX nibble at 8*1
+        # SM1 holds 2 of 4 words: not empty, not full -> TXEMPTY1 (bit 25) clears
+        assert read_at(recs, stim.A_FSTAT) == [0x0D00_0F00]
+
+    def test_all_four_squares(self):
+        # one shared imem squarewave, four SMs at per-SM SET_BASE pins
+        words = [E.encode_set("pins", 1, 2), E.encode_set("pins", 0, 2)]
+        s = stim.Schedule()
+        s.load_imem(words)
+        for i in range(4):
+            s.w(stim.A_SM0 + 0x18 * i + 4 * 1, stim.execctrl(1, 0))
+            s.w(stim.A_SM0 + 0x18 * i + 4 * 5, stim.pctrl(set_cnt=1, set_base=i))
+        s.enable(0xF)
+        s.run_to(80)
+        recs = trace(s)
+        for pin in range(4):
+            assert set(spacings(recs, pin)) == {3}  # 1 exec + 2 delay clks
+
+    def test_irq_rel_from_sm1(self):
+        # SM1 `irq nowait 0 rel` sets flag 1 (REL adds the SM id mod 4,
+        # SPEC-3.8-6); SM0 waits on flag 1, then drives its pin. The
+        # completing WAIT-1 clears the flag again (CC-15), so the final
+        # IRQ read shows 0 — the pin rise is the REL discriminator (a
+        # broken REL sets flag 0 and the wait never releases).
+        words = [
+            E.encode_wait(1, E.WSRC_IRQ, 1, 0),  # SM0 @0
+            E.encode_set("pins", 1, 0),
+            E.encode_jmp(None, 1, 0),
+            0,
+            0,
+            0,
+            0,
+            0,
+            E.encode_irq(False, False, 2, 0, 0),  # SM1 @8: irq nowait 0 rel
+            E.encode_jmp(None, 9, 0),  # park after the one set
+        ]
+        s = stim.Schedule()
+        s.load_imem(words)
+        s.w(stim.A_SM0 + 4 * 5, stim.pctrl(set_cnt=1))
+        s.w(self.SM1 + 4 * 4, 8)  # SM1_INSTR force: jmp 8 (set_pc idiom)
+        s.enable(0b11)
+        s.run_to(40)
+        s.r(stim.A_IRQ)
+        s.run_to(60)
+        recs = trace(s)
+        assert read_at(recs, stim.A_IRQ) == [0x00]  # cleared by the WAIT-1 (CC-15)
+        assert any(r[0] == "G" and r[2] & 1 for r in recs)  # SM0 released
+
+    def test_gpio_priority_cc7(self):
+        # SM0 writes 0 and SM3 writes 1 to pin 0 on every clk: the
+        # highest-numbered SM wins (CC-7), so pin 0 reads 1 throughout
+        # the steady state.
+        mov0 = E.encode_mov("pins", "null", E.MOP_NONE)
+        mov1 = E.encode_mov("pins", "null", E.MOP_INV)  # ~0 -> bit0 = 1
+        s = stim.Schedule()
+        s.load_imem([mov0, mov0])
+        s.load_imem([mov1, mov1], base=16)
+        s.w(stim.A_SM0 + 4 * 1, stim.execctrl(1, 0))
+        s.w(stim.A_SM0 + 4 * 5, stim.pctrl(out_cnt=1))
+        s.w(self.SM3 + 4 * 1, stim.execctrl(17, 16))
+        s.w(self.SM3 + 4 * 5, stim.pctrl(out_cnt=1))
+        s.w(self.SM3 + 4 * 4, 16)  # SM3_INSTR force: jmp 16
+        s.enable(0b1001)
+        s.run_to(60)
+        g = [r for r in trace(s) if r[0] == "G"]
+        steady = [r[2] & 1 for r in g[-20:]]
+        assert steady
+        assert all(steady)

@@ -568,9 +568,14 @@ flowchart TB
   write flushes the cycle after it retires, SPEC-6-2), and the
   bus-decoded PUTGET index is a separate signal from the executing
   instruction's aux index (SPEC-7-13 vs SPEC-3.7-4).
-- Multi-SM runs, TXF1..3 writes and SM1..3 window accesses are out of
-  the v1 scope and rejected by the model (the harness never issues
-  them; single-SM equivalence is the SPEC-16-4 scoping).
+- All four SMs are live (SPEC-16-13): per-SM config/divider/FIFO
+  state as one slice class, cross-SM gpio priority (CC-6/CC-7, the
+  ascending-SM override loop), the per-SM IRQ REL compose
+  (SPEC-3.8-6), TXF1..3 / RXF1..3 and the SM1..3 config/PUTGET
+  windows. The conformance matrix carries the multi-SM corpus and the
+  mutation demo includes two multi-SM transcription bugs (inverted
+  priority, REL-without-SM-id); the miter keeps the SPEC-16-4
+  single-SM scoping for solver tractability.
 
 ### Web backend (as built)
 

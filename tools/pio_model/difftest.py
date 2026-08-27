@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""C12 differential-test CLI: model vs RTL on the SPEC-16-7 observables.
+"""Differential-test CLI: model vs RTL on the SPEC-16-7 observables.
 
-Gates (KANBAN C12 done-when):
+Gates (the `make model` target):
   --asm-check        (1) native assembler bit-equal to pioasm on every
                        conf_pioexamples program (live pioasm when
                        build/pioasm exists — the docker recipe in
@@ -10,8 +10,11 @@ Gates (KANBAN C12 done-when):
                        plus the 65536-word disasm/reasm round-trip.
   --conformance      (2) model trace == RTL trace for every conformance
                        program (auto-generated pio-stim schedules on
-                       sim/tb_trace_dump.sv).
-  --fuzz N           (3) N randomized programs x stimulus, model vs RTL.
+                       sim/tb_trace_dump.sv) — the 19 CF programs plus
+                       the multi-SM corpus (parallel SMs, pin
+                       arbitration, inter-SM IRQ, SM1..3 FIFO windows).
+  --fuzz N           (3) N randomized programs x stimulus, model vs RTL
+                       (half the cases run 2..4 SMs on the shared imem).
   --mutation-demo    (4) injected model bugs caught by the differ (red),
                        same cases green unmutated.
 
@@ -291,6 +294,9 @@ def cmd_conformance() -> int:
 READ_ADDRS = stim.READ_POOL
 WRITE_OPS = [  # SPEC-16-5 traffic-only free-phase writes
     ("w", stim.A_TXF0, lambda r: r.getrandbits(32)),
+    ("w", stim.A_TXF0 + 4, lambda r: r.getrandbits(32)),  # TXF1
+    ("w", stim.A_TXF0 + 8, lambda r: r.getrandbits(32)),  # TXF2
+    ("w", stim.A_TXF0 + 12, lambda r: r.getrandbits(32)),  # TXF3
     ("w", stim.A_FDEBUG, lambda r: 1 << r.randrange(32)),
     ("w", stim.A_IRQ, lambda r: 1 << r.randrange(8)),
     ("w", stim.A_IRQ_FORCE, lambda r: 1 << r.randrange(8)),
@@ -336,7 +342,7 @@ def _random_program(rng: random.Random) -> list[int]:
             w = E.encode_irq(
                 rng.choice([False, False, False, True]),
                 rng.choice([False, False, False, True]),
-                rng.randrange(4),
+                rng.choice([0, 2]),  # THIS and REL hit the local flags
                 rng.randrange(8),
                 ds,
             )
@@ -349,55 +355,58 @@ def _random_program(rng: random.Random) -> list[int]:
 def _random_case(rng: random.Random, idx: int) -> tuple[str, stim.Schedule]:
     words = _random_program(rng)
     wrap_top = len(words) - 1
+    nsm = 1 if rng.random() < 0.5 else rng.randrange(2, 5)  # multi-SM half
     ss_cnt = rng.choice([0, 0, 1, 2])
     s = stim.Schedule()
     s.load_imem(words)
-    s.w(
-        stim.A_SM0 + 4 * 5,
-        stim.pctrl(
-            ss_cnt=ss_cnt,
-            set_cnt=rng.choice([0, 1, 2]),
-            out_cnt=rng.choice([0, 1, 2, 5]),
-            in_base=rng.randrange(32),
-            ss_base=rng.randrange(32),
-            set_base=rng.randrange(32),
-            out_base=rng.randrange(32),
-        ),
-    )
-    s.w(
-        stim.A_SM0 + 4 * 1,
-        stim.execctrl(
-            wrap_top,
-            rng.randrange(wrap_top + 1) if wrap_top else 0,
-            jmp_pin=rng.randrange(32),
-            side_en=(ss_cnt > 0 and rng.random() < 0.5),
-            out_sticky=rng.random() < 0.3,
-            status_sel=rng.randrange(4),
-            status_n=rng.choice([0, 1, 4, 8, 31]),
-        ),
-    )
-    s.w(
-        stim.A_SM0 + 4 * 2,
-        stim.shiftctrl(
-            fjoin_rx=rng.random() < 0.1,
-            fjoin_tx=rng.random() < 0.1,
-            pull_thr=rng.choice([0, 1, 4, 8, 16]),
-            push_thr=rng.choice([0, 1, 4, 8, 16]),
-            out_right=rng.random() < 0.5,
-            in_right=rng.random() < 0.5,
-            autopull=rng.random() < 0.6,
-            autopush=rng.random() < 0.6,
-            fjoin_rx_put=rng.random() < 0.08,
-            fjoin_rx_get=rng.random() < 0.08,
-        ),
-    )
-    if rng.random() < 0.3:
-        s.w(stim.A_SM0 + 4 * 0, stim.clkdiv(rng.choice([1, 1, 2, 3]), rng.choice([0, 85, 128, 200])))
-    if rng.random() < 0.25:
-        s.set_pc(rng.randrange(len(words)))  # prologue-phase force
+    for i in range(nsm):
+        # per-SM config, independent draws (bases/counters per SM)
+        s.w(
+            stim.sm_addr(i, 5),
+            stim.pctrl(
+                ss_cnt=ss_cnt,
+                set_cnt=rng.choice([0, 1, 2]),
+                out_cnt=rng.choice([0, 1, 2, 5]),
+                in_base=rng.randrange(32),
+                ss_base=rng.randrange(32),
+                set_base=rng.randrange(32),
+                out_base=rng.randrange(32),
+            ),
+        )
+        s.w(
+            stim.sm_addr(i, 1),
+            stim.execctrl(
+                wrap_top,
+                rng.randrange(wrap_top + 1) if wrap_top else 0,
+                jmp_pin=rng.randrange(32),
+                side_en=(ss_cnt > 0 and rng.random() < 0.5),
+                out_sticky=rng.random() < 0.3,
+                status_sel=rng.randrange(4),
+                status_n=rng.choice([0, 1, 4, 8, 31]),
+            ),
+        )
+        s.w(
+            stim.sm_addr(i, 2),
+            stim.shiftctrl(
+                fjoin_rx=rng.random() < 0.1,
+                fjoin_tx=rng.random() < 0.1,
+                pull_thr=rng.choice([0, 1, 4, 8, 16]),
+                push_thr=rng.choice([0, 1, 4, 8, 16]),
+                out_right=rng.random() < 0.5,
+                in_right=rng.random() < 0.5,
+                autopull=rng.random() < 0.6,
+                autopush=rng.random() < 0.6,
+                fjoin_rx_put=rng.random() < 0.08,
+                fjoin_rx_get=rng.random() < 0.08,
+            ),
+        )
+        if rng.random() < 0.3:
+            s.w(stim.sm_addr(i, 0), stim.clkdiv(rng.choice([1, 1, 2, 3]), rng.choice([0, 85, 128, 200])))
+        if rng.random() < 0.25:
+            s.set_pc(rng.randrange(len(words)), sm=i)  # prologue-phase force
     for _ in range(rng.randrange(4)):
-        s.feed(rng.getrandbits(32))
-    s.enable()
+        s.feed(rng.getrandbits(32), sm=rng.randrange(nsm))
+    s.enable((1 << nsm) - 1)
     # free phase
     n = rng.randrange(180, 420)
     gpio = 0
@@ -490,6 +499,56 @@ def mini_irq37() -> stim.Schedule:
     return s
 
 
+def mini_multi_pri() -> stim.Schedule:
+    """SM0 writes 0 and SM3 writes 1 to pin 0 on every clk (the CC-7
+    cross-SM priority corner): the clean model drives pin 0 to 1; the
+    gpio_pri_low mutation (lowest-numbered SM wins) drives it to 0."""
+    mov0 = E.encode_mov("pins", "null", E.MOP_NONE)
+    mov1 = E.encode_mov("pins", "null", E.MOP_INV)  # ~0 -> bit0 = 1
+    s = stim.Schedule()
+    s.load_imem([mov0, mov0])
+    s.load_imem([mov1, mov1], base=16)
+    s.w(stim.sm_addr(0, 5), stim.pctrl(out_cnt=1))
+    s.w(stim.sm_addr(0, 1), stim.execctrl(1, 0))
+    s.w(stim.sm_addr(3, 5), stim.pctrl(out_cnt=1))
+    s.w(stim.sm_addr(3, 1), stim.execctrl(17, 16))
+    s.set_pc(16, sm=3)
+    s.enable(0b1001)
+    s.run_to(60)
+    s.r(stim.A_PADOUT)
+    s.run_to(80)
+    return s
+
+
+def mini_multi_irq() -> stim.Schedule:
+    """SM1 `irq nowait 0 rel` must set flag 1 (SPEC-3.8-6: REL adds the
+    SM id mod 4) — SM0 waits on flag 1 and drives pin 0. The irq_rel_off
+    mutation sets flag 0 instead, so the wait never releases and the pin
+    never rises."""
+    words = [
+        E.encode_wait(1, E.WSRC_IRQ, 1, 0),  # SM0 @0
+        E.encode_set("pins", 1, 0),
+        E.encode_jmp(None, 1, 0),
+        0,
+        0,
+        0,
+        0,
+        0,
+        E.encode_irq(False, False, 2, 0, 0),  # SM1 @8: irq nowait 0 rel
+        E.encode_jmp(None, 9, 0),  # park after the one set
+    ]
+    s = stim.Schedule()
+    s.load_imem(words)
+    s.w(stim.sm_addr(0, 5), stim.pctrl(set_cnt=1))
+    s.w(stim.sm_addr(0, 1), stim.execctrl(2, 0))
+    s.set_pc(8, sm=1)
+    s.enable(0b11)
+    s.run_to(60)
+    s.r(stim.A_IRQ)
+    s.run_to(80)
+    return s
+
+
 MUTATION_DEMO: list[tuple[str, str | None, Callable[[], stim.Schedule] | None]] = [
     ("cc11_no_stall", None, mini_cc11),  # CC-11/CC-12
     ("jmp_postdec", "addition", None),  # SPEC-14.5-1
@@ -498,6 +557,8 @@ MUTATION_DEMO: list[tuple[str, str | None, Callable[[], stim.Schedule] | None]] 
     ("ss_opt_ignored", "uart_tx", None),  # SPEC-4-2
     ("delay_in_stall", "ws2812", None),  # CC-14
     ("irq_same_cycle", None, mini_irq37),  # CC-37
+    ("gpio_pri_low", None, mini_multi_pri),  # CC-7 (cross-SM priority)
+    ("irq_rel_off", None, mini_multi_irq),  # SPEC-3.8-6 (REL + SM id)
 ]
 
 

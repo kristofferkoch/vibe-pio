@@ -10,11 +10,14 @@
 #            script's hermetic self-test (incl. mutation checks), then the
 #            repo audit; exits nonzero on dangling citations, duplicate
 #            fact IDs, or index/body mismatches.
-# `model`  — C12 golden-model self-test (tools/pio_model/difftest.py):
-#            assembler/pioasm bit-equality, the 20-program conformance
-#            trace matrix, a fuzz batch and the mutation demo (model vs
-#            RTL through sim/tb_trace_dump.sv; needs iverilog or the
-#            vibe-pio container image).
+# `model`  — golden-model self-test (tools/pio_model/difftest.py):
+#            assembler/pioasm bit-equality, the conformance trace
+#            matrix (19 CF programs + the multi-SM corpus: parallel
+#            SMs, pin arbitration, inter-SM IRQ, SM1..3 windows), a
+#            fuzz batch (half multi-SM) and the mutation demo incl.
+#            the two multi-SM bugs (model vs RTL through
+#            sim/tb_trace_dump.sv; needs iverilog or the vibe-pio
+#            container image).
 # `equiv`  — C13 equivalence-oracle self-test (tools/hyperequiv.py):
 #            hermetic fixture checks (packing, VCD decode red/green,
 #            SPEC-16-2 exclusions, model pre-filter red/green) plus the
