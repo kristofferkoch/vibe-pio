@@ -49,21 +49,18 @@ pio_model asm/disasm gated by golden bit-vectors — "never forked" is
 relaxed for the assembler only, never the referee. The game loop
 (levels, monitor profiles, scoring) is deliberately NOT promoted: it
 gets its own grilling after C18 re-reads the fun gate on the real
-engine. Dependency order: C17 → C18 ∥ C19 (C18's
-re-assemble-on-edit milestone waits for C19). Tooling/web cards state
+engine. Dependency order: C17 → C18 ∥ C19. Tooling/web cards state
 their own done-when gates; the RTL-card template applies only to the
 lint-compat work C17 does. C17 (Verilator backend + wasm build +
-three-way trace gate, `make web`) is done.
+three-way trace gate, `make web`) and C18 (the shipped SM-view client
+under web/ on the wasm engine — worker + batch stepping, client gate
+vs the model oracle; the fun-gate re-read now happens on the real
+engine) are done. C18's re-assemble-on-edit milestone is folded into
+C19's landing (the client marks unbuilt edits meanwhile).
 
-- C18 (wire the SM view to the wasm engine): promote
-  mockups/sm-view.html to a shipped client under web/ (mockups/ stays
-  as the design record), delete the throwaway JS simulator, run the
-  engine in a Web Worker with batch stepping feeding state snapshots
-  to the view, re-assemble on edit commit (after C19). The fun gate
-  is re-read here on the real engine — if the view cannot be made
-  fun, the game stops and the game-loop grilling never happens.
 - C19 (in-browser assembler/disassembler): JS port of pio_model
   asm/disasm + encoding tables; CI gate = golden bit-vectors
   generated from pio_model (already bit-equal to pioasm) plus the
   canonical round-trip property (C12 1-1: canonical disassembly
-  re-assembles bit-identical).
+  re-assembles bit-identical). Landing it wires the client's
+  re-assemble-on-edit commit path (C18's deferred milestone).

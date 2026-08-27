@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vibe-pio // SM0 — uart_tx</title>
+<!--
+  vibe-pio SM0 view — the shipped client (KANBAN C18; design record:
+  mockups/sm-view.html + DESIGN-NOTES.md).
+
+  The machine below is the verified RTL itself: the C17 wasm engine
+  (Verilator -> em++, build/web/pio_engine.js) runs in a Web Worker
+  (engine-worker.js) and feeds per-clk state snapshots back to this
+  view (batch stepping; engine-driver.js is the shared client core —
+  the CI gate runs it headless against the pio_model oracle).
+
+  The throwaway JS simulator of the mock-up is gone: pins, PC, X/Y,
+  OSR/ISR, shift counters, FIFO level, stall/delay phase all come from
+  the engine's pre-edge cycle sample (the SPEC-16-7 observable point).
+  Waveform tags and the decoded-bytes monitor are receiver-side
+  interpretation of true pin samples (C15 flavor). Editing the listing
+  is modeless and live, but re-assembly lands with C19 (KANBAN): the
+  machine keeps running the loaded build; the program footer shows an
+  "unbuilt edits" chip. The ds-field allocator is REAL — it re-writes
+  PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, so the machine re-decodes
+  the same stored bits exactly as drawn.
+
+  Legend: amber = control · green = data · cyan = config/wiring ·
+  red = stall · gray = idle. Serve from the repo root (web/serve.py)
+  so the engine resolves at build/web/.
+-->
+<style>
+  :root{
+    --bg:#0a0d0e; --panel:#0e1315; --panel2:#12191c;
+    --line:#1c262a; --line2:#2a373d;
+    --txt:#c6d3d7; --bright:#eef4f5;
+    --dim:#5f7076; --dimmer:#39474c;
+    --amber:#ffb454; --amber-dim:#9c713a;
+    --green:#8ee08a; --green-dim:#4e7a52;
+    --red:#ff6f6f;
+    --cfg:#5ac8d8; --cfg-dim:#2f7c8a;
+    --addr:#c39a6b;
+    --mono:"Berkeley Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  [hidden]{display:none!important}   /* author display rules must not defeat [hidden] */
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--txt);font-family:var(--mono);
+    font-size:13px;line-height:1.45;
+    display:grid;grid-template-rows:auto 1fr 30px;min-height:100%;
+    overflow-x:auto;overflow-y:hidden;
+  }
+  .panel{background:var(--panel);min-width:0;min-height:0;overflow:hidden;position:relative}
+  .ptitle{
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:7px 10px 5px;color:var(--dim);
+    font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+    border-bottom:1px solid var(--line);
+    user-select:none;min-width:0;
+  }
+  .ptitle::before{content:"";width:3px;height:10px;background:var(--amber-dim);flex:none}
+  .ptitle .aux{margin-left:auto;letter-spacing:.06em;text-transform:none;font-size:10.5px;color:var(--dim);min-width:0}
+  .ptitle .aux b{color:var(--green);font-weight:normal}
+
+  /* ---------- header ---------- */
+  header{
+    display:flex;align-items:center;flex-wrap:wrap;gap:8px 18px;
+    padding:6px 14px;min-height:34px;
+    border-bottom:1px solid var(--line);background:var(--panel);
+    white-space:nowrap;
+  }
+  .brand{color:var(--bright);font-size:15px;letter-spacing:.04em;flex:none}
+  .brand em{font-style:normal;color:var(--amber)}
+  .lvl{color:var(--dim);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    min-width:0;overflow:hidden;text-overflow:ellipsis}
+  @media (max-width:1150px){
+    .lvl .tail{display:none}
+    header>.cfgtag{display:none}
+  }
+  @media (max-width:1020px){
+    header{gap:6px 10px}
+  }
+  .lvl b{color:var(--txt);font-weight:normal}
+  .spacer{flex:1}
+  .cyc{color:var(--dim);font-size:11px}
+  .cyc b{color:var(--amber);font-weight:normal;font-size:14px}
+  .ctrl{display:flex;gap:6px}
+  button{
+    font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+    color:var(--txt);background:var(--panel2);
+    border:1px solid var(--line2);padding:4px 10px;cursor:pointer;
+  }
+  button:hover{border-color:var(--amber-dim);color:var(--bright)}
+  button.primary{color:var(--amber);border-color:var(--amber-dim)}
+  button.on{background:var(--amber);border-color:var(--amber);color:#141008}
+  select{font-family:var(--mono);font-size:11px;color:var(--txt);background:var(--panel2);
+    border:1px solid var(--line2);padding:3px 4px}
+
+  /* ---------- main grid ---------- */
+  main{
+    display:grid;
+    grid-template-columns:clamp(330px,32vw,470px) minmax(338px,1fr) clamp(290px,23vw,330px);
+    gap:1px;background:var(--line);min-height:0;
+  }
+  main>*{min-width:0;min-height:0}
+
+  /* ---------- program ---------- */
+  #progrows{overflow-y:auto;flex:1; scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+  .prow{
+    display:grid;grid-template-columns:30px 1fr auto;
+    align-items:center;height:20px;padding:0 8px 0 48px;
+    color:var(--dim);white-space:nowrap;
+  }
+  /* addresses and their label aliases share one typographic class */
+  .prow .addr,.pcaddr,.lbldef{
+    font-style:italic;color:var(--addr);font-size:11px;
+  }
+  .lbldef:hover{color:var(--amber)}
+  .prow .addr{text-align:right;padding-right:6px}
+  .prow .ins{color:var(--txt);min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .prow .ins .op{color:var(--amber)}
+  .prow .ins .pf{color:var(--dim)}
+  .prow .ins .dly{color:var(--dim)}
+  .prow .chips{display:flex;gap:4px;align-items:center}
+  .prow.empty .ins{color:var(--dimmer)}
+  .prow.empty .addr{color:var(--dimmer);font-style:normal}
+  .prow.cur{background:linear-gradient(90deg,rgba(255,180,84,.17),rgba(255,180,84,.04));color:var(--bright)}
+  .prow.cur .addr{color:var(--amber);font-style:normal;font-size:12px}
+  .prow.cur .ins .op{color:var(--amber)}
+  .prow{position:relative}
+  .prow.cur::before{content:"";position:absolute;left:43px;width:3px;height:20px;background:var(--amber)}
+  .chip{
+    font-size:10px;padding:0 6px;border:1px solid var(--line2);color:var(--dim);
+    letter-spacing:.05em;
+  }
+  .chip.dly{color:var(--amber);border-color:var(--amber-dim)}
+  .chip.stall{color:var(--red);border-color:#5e3232;animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:.45}}
+  /* config-as-structure: wrap arc in the listing margin */
+  #progrows{position:relative}
+  #wraparc{
+    position:absolute;left:1px;width:7px;pointer-events:none;
+    border:1px solid var(--cfg-dim);border-right:none;
+    border-radius:7px 0 0 7px;
+    transition:border-color .45s,box-shadow .45s;
+  }
+  #wraparc.flash{border-color:var(--cfg);box-shadow:0 0 7px rgba(90,200,216,.55);transition:none}
+  #wraparrow{
+    position:absolute;left:8px;width:0;height:0;pointer-events:none;
+    border-top:4px solid transparent;border-bottom:4px solid transparent;
+    border-left:6px solid var(--cfg-dim);
+  }
+  /* jump arcs: control flow in the margin — four lanes, assigned by
+     interval packing so overlapping arcs land in different channels */
+  .jparc{
+    position:absolute;width:6px;pointer-events:none;
+    border:1px solid var(--amber-dim);border-right:none;
+    border-radius:6px 0 0 6px;
+    transition:border-color .45s,box-shadow .45s;
+  }
+  .jparc.flash{border-color:var(--amber);box-shadow:0 0 7px rgba(255,180,84,.55);transition:none}
+  .jparr{
+    position:absolute;width:0;height:0;pointer-events:none;
+    border-top:4px solid transparent;border-bottom:4px solid transparent;
+    border-left:6px solid var(--amber-dim);
+  }
+  /* ds-field allocator: the side/delay VLIW-ish split, program-wide */
+  #dsalloc{
+    display:flex;flex-direction:column;gap:4px;padding:6px 10px;
+    border-bottom:1px solid var(--line);color:var(--dim);
+    font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  }
+  .dsrow1{display:flex;align-items:center;gap:8px}
+  #dsalloc button{padding:1px 8px}
+  #dspips{display:flex;gap:2px}
+  .pip{width:11px;height:11px;border:1px solid var(--line2)}
+  .pip.en{border-color:var(--cfg);background:repeating-linear-gradient(45deg,transparent,transparent 2px,rgba(90,200,216,.35) 2px,rgba(90,200,216,.35) 4px)}
+  .pip.s{background:var(--cfg-dim);border-color:var(--cfg-dim)}
+  .pip.d{background:var(--amber-dim);border-color:var(--amber-dim)}
+  .opttgl{display:flex;gap:4px;align-items:center;cursor:pointer}
+  .opttgl input{accent-color:var(--amber);width:11px;height:11px}
+  #dsinfo{text-transform:none;letter-spacing:.04em;font-size:10.5px;line-height:1.4;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .phead,.prow{
+    display:grid;grid-template-columns:30px 1fr 50px 38px auto;
+  }
+  .phead{
+    padding:3px 8px 3px 48px;color:var(--dimmer);font-size:9px;
+    letter-spacing:.16em;text-transform:uppercase;
+    border-bottom:1px solid var(--line);
+  }
+  .cside{color:var(--cfg-dim);font-size:11px}
+  .cside b{color:var(--amber);font-weight:normal}
+  .cdly{color:var(--amber-dim);font-size:11px}
+  /* ---------- modeless row editor: the listing IS the source ---------- */
+  #rowedit{
+    position:absolute;left:78px;right:8px;height:20px;z-index:6;
+    background:var(--panel2);border:1px solid var(--amber-dim);
+    display:flex;align-items:stretch;overflow:visible;
+  }
+  #rowedit>*:focus-within{background:rgba(255,180,84,.07)}
+  .recell{display:flex;align-items:center;min-width:0}
+  .reins{flex:1;position:relative}
+  #edside,#eddly{
+    width:58px;border:0;border-left:1px solid var(--line);background:transparent;
+    color:var(--txt);font:12px/18px var(--mono);padding:0 6px;outline:none;
+    caret-color:var(--amber);resize:none;overflow:hidden;
+  }
+  #edside::placeholder,#eddly::placeholder{color:var(--dimmer)}
+  #edithl,#edittxt{
+    position:absolute;left:0;top:0;right:0;bottom:0;margin:0;border:0;padding:0 4px;
+    font:13px/20px var(--mono);letter-spacing:0;white-space:pre;overflow:hidden;
+  }
+  #edithl{color:var(--txt);pointer-events:none}
+  #edittxt{
+    background:transparent;color:transparent;caret-color:var(--amber);
+    resize:none;outline:none;
+  }
+  #edittxt::selection{background:rgba(90,200,216,.28)}
+  #edpop{
+    position:absolute;z-index:50;display:flex;
+    background:var(--panel2);border:1px solid var(--line2);
+    box-shadow:0 6px 24px rgba(0,0,0,.5);
+  }
+  #edcands{min-width:118px;max-height:220px;overflow-y:auto;padding:3px 0}
+  .ecand{padding:1px 10px;font-size:12px;color:var(--txt);white-space:nowrap;cursor:pointer}
+  .ecand.sel{background:var(--amber);color:#141008}
+  .ecand .kind{color:var(--dimmer);font-size:9px;margin-left:7px}
+  .ecand.sel .kind{color:#5a4014}
+  #eddetail{
+    width:330px;max-width:46vw;border-left:1px solid var(--line);padding:8px 12px 10px;
+    font-size:11px;color:var(--dim);line-height:1.5;overflow-y:auto;max-height:220px;
+  }
+  #eddetail .sig{font-size:12.5px;color:var(--bright);margin-bottom:6px}
+  #eddetail .sig b{color:var(--amber);font-weight:normal}
+  #eddetail table{border-collapse:collapse;margin:4px 0}
+  #eddetail td{vertical-align:top;padding:1px 10px 1px 0}
+  #eddetail td.k{color:var(--txt);white-space:nowrap}
+  #eddetail tr.curp td{background:rgba(255,180,84,.08)}
+  #eddetail tr.curp td.k{color:var(--amber)}
+  #eddetail .spec{color:var(--cfg-dim);font-size:9.5px;letter-spacing:.08em;margin-top:6px}
+  #progrows.picking .addr{color:var(--amber);cursor:crosshair}
+  #progrows.picking .addr:hover{outline:1px solid var(--amber);background:rgba(255,180,84,.18)}
+  #progfoot{border-top:1px solid var(--line);padding:5px 10px;color:var(--dim);font-size:10.5px;display:flex;gap:14px}
+  #progfoot b{color:var(--txt);font-weight:normal}
+
+  /* ---------- exec ---------- */
+  #exec{display:flex;flex-direction:column}
+  #execbody{flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;padding:8px 14px;min-height:0}
+  #execins{font-size:19px;color:var(--bright);letter-spacing:.02em}
+  #execins .op{color:var(--amber)}
+  #execins .pf{color:var(--dim);font-size:15px}
+  #execfields{color:var(--dim);font-size:10.5px;letter-spacing:.1em;margin-top:6px}
+  #execfields b{color:var(--txt);font-weight:normal}
+  #phase{margin-left:auto;text-align:right;min-width:180px}
+  #phasename{font-size:12px;letter-spacing:.14em}
+  #phasename.st{color:var(--green)} #phasename.dl{color:var(--amber)} #phasename.wa{color:var(--red)}
+  #phasebar{height:5px;background:var(--panel2);border:1px solid var(--line);margin-top:7px;position:relative}
+  #phasefill{position:absolute;inset:0;width:0%;background:var(--amber);transition:width .08s}
+  #phasesub{color:var(--dim);font-size:10.5px;margin-top:5px}
+  #framemap{border-top:1px solid var(--line);padding:6px 14px 9px;display:flex;align-items:center;gap:12px}
+  .fmlabel{color:var(--dim);font-size:10px;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap}
+  #fmcells{display:flex;gap:3px;flex:1}
+  .fmcell{flex:1;height:18px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
+    font-size:9.5px;color:var(--dimmer);letter-spacing:.05em}
+  .fmcell.past{color:var(--green-dim);border-color:#33513a}
+  .fmcell.now{color:var(--amber);border-color:var(--amber-dim);background:rgba(255,180,84,.12)}
+
+  /* ---------- wave ---------- */
+  #wave{display:flex;flex-direction:column}
+  #wavesvg{flex:1;width:100%;display:block;min-height:0}
+  #feed{
+    border-top:1px solid var(--line);padding:9px 12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap
+  }
+  #feed input[type=text]{
+    font-family:var(--mono);font-size:12px;color:var(--bright);
+    background:var(--panel2);border:1px solid var(--line2);padding:4px 8px;width:190px;
+  }
+  #feed input:focus{outline:none;border-color:var(--amber-dim)}
+  #feed .note{color:var(--dim);font-size:10.5px;margin-left:auto}
+  .fifofull{animation:blink .5s steps(2) 2;color:var(--red)!important}
+
+  /* ---------- right column ---------- */
+  #regs{display:grid;grid-template-rows:auto 1fr auto auto auto auto;gap:1px;background:var(--line)}
+  #regs>div{background:var(--panel);min-height:0;min-width:0}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:8px 12px 10px}
+  .kv .k{color:var(--dim);font-size:10.5px;letter-spacing:.08em}
+  .kv .v{text-align:right;color:var(--bright);font-size:13px}
+  .kv .v small{color:var(--dim);font-weight:normal;font-size:11px}
+  .bits{display:flex;gap:1.5px;padding:2px 12px 8px;align-items:center}
+  .bit{
+    flex:1 1 0;min-width:0;height:16px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:9px;color:#0c110d;background:var(--green);
+  }
+  .bit.z{background:var(--panel2);color:var(--dimmer);border:1px solid var(--line)}
+  .bit.spent{opacity:.22}
+  .bitmark{font-size:9px;color:var(--dim);width:26px;text-align:center}
+  .shiftnote{padding:0 12px 9px;color:var(--dim);font-size:10.5px;display:flex;gap:10px;align-items:center}
+  .shiftnote .flag{border:1px solid var(--line2);padding:0 5px}
+  .shiftnote .flag.lit{color:var(--amber);border-color:var(--amber-dim)}
+  .cfgtx{color:var(--cfg-dim)}
+  .cfgtx.on{color:var(--cfg)}
+  .cfgtag{
+    border:1px solid #23444c;color:var(--cfg);font-size:9.5px;padding:1px 6px;
+    letter-spacing:.08em;white-space:nowrap;
+  }
+  /* shift-flow visualization: entry ⇒ arrow ⇒ exit, then fill/threshold bar */
+  .shiftviz{display:flex;align-items:center;padding:0 12px 5px}
+  .sv-end{color:var(--cfg-dim);font-size:9.5px;letter-spacing:.06em;white-space:nowrap}
+  .sv-arrow{flex:1;height:0;border-top:2px solid var(--cfg-dim);position:relative;margin:0 7px}
+  .sv-arrow::after{content:"";position:absolute;right:-2px;top:-4px;border:3px solid transparent;border-left:6px solid var(--cfg-dim)}
+  .sv-arrow.l::after{right:auto;left:-2px;border-left:none;border-right:6px solid var(--cfg-dim)}
+  .shbar{height:5px;margin:0 12px 6px;background:var(--panel2);border:1px solid var(--line);position:relative}
+  .shfill{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--amber-dim);transition:width .08s}
+  .shnotch{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--cfg)}
+  /* datapath connectors: FIFO ⇣pull⇣ OSR, ISR ⇣push⇣ RX FIFO */
+  .flowconn{
+    display:flex;align-items:center;justify-content:center;gap:7px;
+    background:var(--panel);color:var(--dim);height:18px;
+    font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    transition:color .5s;
+  }
+  .flowconn .gly{color:var(--cfg-dim);letter-spacing:0}
+  .flowconn.flash{color:var(--amber);transition:none}
+  .flowconn.flash .gly{color:var(--amber)}
+  #rxfifo #rxrow{display:flex;gap:4px;padding:6px 12px 10px}
+  #rxfifo .rxslot{
+    width:34px;height:14px;border:1px dashed var(--line2);
+    border-left:3px solid var(--cfg-dim);
+  }
+  #rxfifo{opacity:.55}
+  .lamp{display:inline-block;width:7px;height:7px;margin-right:5px;background:var(--dimmer);vertical-align:1px}
+  .lamp.on{background:var(--amber);box-shadow:0 0 6px rgba(255,180,84,.8)}
+  #isr .bits,#isr .shiftnote,#isr .kv,#isr .shiftviz,#isr .shbar{opacity:.55}
+  #isr .bit.z{border-color:var(--line2)}
+  #fifobody{display:grid;grid-template-columns:1fr 86px;min-height:0}
+  #fslots{display:flex;flex-direction:column;padding:6px 10px;gap:2px}
+  .fslot{
+    display:grid;grid-template-columns:16px 1fr 34px;height:19px;
+    align-items:center;border:1px dashed transparent;color:var(--dimmer);font-size:11.5px;
+  }
+  .fslot.full{border:1px solid var(--line2);background:var(--panel2);color:var(--txt)}
+  .fslot.full .hexv{color:var(--green)}
+  .fslot.full .chv{color:var(--dim)}
+  .fslot .hexv{padding-left:8px}
+  .fslot .chv{text-align:right;padding-right:6px}
+  .fslot.next.full{border-color:var(--amber-dim)}
+  .fslot.next.full .idx{color:var(--amber)}
+  .fslot.borrowed{border-left:3px solid var(--cfg-dim)}
+  #fifometa{border-left:1px solid var(--line);padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+  #fifolvltxt{color:var(--dim);font-size:10.5px;letter-spacing:.08em}
+  #fifolvltxt b{color:var(--green);font-weight:normal}
+  #fifolvlbar{height:96px;width:12px;background:var(--panel2);border:1px solid var(--line);position:relative}
+  #fifolvlfill{position:absolute;left:0;right:0;bottom:0;background:var(--green);opacity:.75;transition:height .1s}
+  #fifostall{color:var(--red);font-size:10px;letter-spacing:.06em;display:none}
+  #fifostall.show{display:block;animation:blink 1s steps(2) infinite}
+
+  /* ---------- footer ---------- */
+  footer{
+    display:flex;align-items:center;gap:20px;padding:0 14px;
+    border-top:1px solid var(--line);background:var(--panel);
+    color:var(--dim);font-size:10.5px;white-space:nowrap;overflow:hidden;
+  }
+  footer .sw{display:inline-block;width:14px;height:3px;vertical-align:2px;margin-right:5px}
+  footer .right{margin-left:auto}
+  button:disabled{opacity:.35;cursor:default}
+  button:disabled:hover{border-color:var(--line2);color:var(--txt)}
+  .chip.unbuilt{color:var(--cfg);border-color:var(--cfg-dim)}
+  #boot{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:var(--panel);color:var(--dim);font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;z-index:40;gap:10px}
+  #boot .lamp{animation:blink 1s steps(2) infinite}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">vibe<em>-</em>pio</div>
+  <div class="lvl">SM0 · <b>LEVEL 02 “IDLE HANDS”</b><span class="tail"> · uart_tx 8N1 · 8 cyc/bit</span></div>
+  <span class="cfgtag" title="config · clock divider (abstracted at game scale)">clkdiv ÷1.0</span>
+  <div class="spacer"></div>
+  <div class="cyc">CYCLE <b id="cyc">0</b></div>
+  <div class="ctrl">
+    <button id="breset" title="reset SM (0)">⟲</button>
+    <button id="brun" class="primary" title="run / pause (R)">▶ RUN</button>
+    <select id="speed" title="run speed">
+      <option value="120">×1</option>
+      <option value="30" selected>×4</option>
+      <option value="8">×16</option>
+    </select>
+    <button id="bstep" title="single cycle (SPACE)">⏭ CYCLE</button>
+    <button id="binsn" title="step one instruction (I)">⏭ INSN</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ================= program ================= -->
+  <section class="panel" id="program" style="display:flex;flex-direction:column">
+    <div class="ptitle">program memory · 32 × 16b
+      <span class="aux">canonical C12 · <b id="usedct">4/32</b> used · click a row · Tab crosses ins/side/delay</span>
+    </div>
+    <div id="dsalloc" title="the ds field (bits 12:8) is one shared budget: side-set bits steal delay range. This allocation is the .side_set directive, program-wide.">
+      <div class="dsrow1">
+        <span>ds 5b</span>
+        <button id="ssminus" title="fewer side bits → more delay range">−</button>
+        <div id="dspips"></div>
+        <button id="ssplus" title="more side bits → less delay range">+</button>
+        <label class="opttgl" title="OPT: an enable bit so instructions may skip the side-set (out/jmp here rely on it)"><input type="checkbox" id="ssopt" checked>opt</label>
+      </div>
+      <div id="dsinfo"></div>
+    </div>
+    <div class="phead"><span>addr</span><span>instruction</span><span>side</span><span>delay</span><span></span></div>
+    <div id="progrows">
+      <div id="rowedit" hidden>
+        <div class="recell reins">
+          <pre id="edithl" aria-hidden="true"></pre>
+          <textarea id="edittxt" spellcheck="false" wrap="off"></textarea>
+        </div>
+        <textarea id="edside" class="recell" placeholder="side" rows="1" spellcheck="false"></textarea>
+        <textarea id="eddly" class="recell" placeholder="[dly]" rows="1" spellcheck="false"></textarea>
+      </div>
+    </div>
+    <div id="progfoot">
+      <span>words <b id="wordsct">4</b></span><span>free <b id="freect">28</b></span>
+      <span class="chip unbuilt" id="unbuilt" hidden title="the listing diverges from the loaded build — re-assembly on edit lands with C19 (KANBAN)">unbuilt edits</span>
+    </div>
+  </section>
+
+  <!-- ================= center ================= -->
+  <section class="panel" style="display:flex;flex-direction:column">
+    <div class="ptitle">execute
+      <span class="aux" id="mon">MONITOR uart_rx L2 · decoded <b id="monbuf"></b> <span id="moncnt"></span></span>
+    </div>
+    <div id="execbody">
+      <div>
+        <div id="execins"></div>
+        <div id="execfields"></div>
+      </div>
+      <div id="phase">
+        <div id="phasename">EXEC</div>
+        <div id="phasebar"><div id="phasefill"></div></div>
+        <div id="phasesub"></div>
+      </div>
+    </div>
+    <div id="framemap">
+      <span class="fmlabel">frame map · 8N1</span>
+      <div id="fmcells"></div>
+    </div>
+    <div class="ptitle" style="border-top:1px solid var(--line)">gpio0 · uart tx line
+      <span class="cfgtag" title="config · OUT mapping: out pins drives gpio0, 1 pin">out gpio0·1</span>
+      <span class="cfgtag" id="sidetag" title="config · SIDESET allocation shown in the program panel">side gpio0·1+opt</span>
+      <span class="aux">window <span id="wavewin">128</span> cycles · 8 cyc/grid</span>
+    </div>
+    <svg id="wavesvg" preserveAspectRatio="none"></svg>
+    <div id="feed">
+      <span class="ptitle" style="border:none;padding:0;background:none">stimulus →</span>
+      <input type="text" id="feedtxt" value="PIO!" maxlength="32" spellcheck="false">
+      <button id="bfeed">ENQUEUE</button>
+      <button id="bfeed55" title="one 0x55 word">0x55</button>
+      <span class="note">TX FIFO is 8 deep (join TX) — overflow is refused</span>
+    </div>
+  </section>
+
+  <!-- ================= registers ================= -->
+  <section id="regs">
+    <div id="xy">
+      <div class="ptitle">scratch</div>
+      <div class="kv">
+        <div class="k">X</div><div class="v" id="xval">0x00000000 <small>= 0</small></div>
+        <div class="k">Y</div><div class="v" id="yval" style="color:var(--dim)">0x00000000 <small>= 0</small></div>
+      </div>
+    </div>
+
+    <div id="fifo">
+      <div class="ptitle">tx fifo <span class="aux"><span class="cfgtx on" title="config · FIFO JOIN TX: the RX storage is borrowed as extra TX depth">join TX</span> · 8 deep</span></div>
+      <div id="fifobody">
+        <div id="fslots"></div>
+        <div id="fifometa">
+          <div id="fifolvltxt">LEVEL <b id="fifolvl">4</b>/8</div>
+          <div id="fifolvlbar"><div id="fifolvlfill"></div></div>
+          <div id="fifostall">EMPTY · SM STALLED</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flowconn" id="pullconn" title="PULL / autopull moves a word from the TX FIFO into the OSR">
+      <span class="gly">⇣</span> pull <span class="gly">⇣</span>
+    </div>
+
+    <div id="osr">
+      <div class="ptitle">osr · out shift register</div>
+      <div class="bits" id="osrbits"></div>
+      <div class="shiftviz">
+        <div class="sv-arrow r" style="flex:1"></div>
+        <span class="sv-end">out → pins</span>
+      </div>
+      <div class="shbar"><div class="shfill" id="osrfill"></div></div>
+      <div class="shiftnote">
+        <span>shift <span id="osrcnt" style="color:var(--txt)">0</span>/32</span>
+        <span class="cfgtx" title="config · autopull reloads OSR from TX FIFO at threshold">autopull — thr 32</span>
+        <span class="flag" id="osre" title="osr_cnt ≥ pull threshold">OSRE</span>
+      </div>
+    </div>
+
+    <div id="isr">
+      <div class="ptitle">isr · in shift register <span class="aux">idle — no IN in this program</span></div>
+      <div class="bits" id="isrbits"></div>
+      <div class="shiftviz">
+        <span class="sv-end">pins → in</span>
+        <div class="sv-arrow r"></div>
+        <span class="sv-end">push → rx</span>
+      </div>
+      <div class="shbar"><div class="shfill" id="isrfill"></div></div>
+      <div class="shiftnote">
+        <span>shift 0/32</span>
+        <span class="cfgtx" title="config · autopush writes ISR to RX FIFO at threshold">autopush — thr 32</span>
+        <span class="flag">ISR Full</span>
+      </div>
+    </div>
+
+    <div id="rxfifo">
+      <div class="ptitle">rx fifo <span class="aux"><span class="cfgtx on" title="config · its 4 slots live upstairs, borrowed into the TX FIFO">joined → tx</span></span></div>
+      <div id="rxrow">
+        <div class="rxslot" title="borrowed into TX slot 4"></div>
+        <div class="rxslot" title="borrowed into TX slot 5"></div>
+        <div class="rxslot" title="borrowed into TX slot 6"></div>
+        <div class="rxslot" title="borrowed into TX slot 7"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span><span class="sw" style="background:var(--amber)"></span>control (start/stop/idle)</span>
+  <span><span class="sw" style="background:var(--green)"></span>data bits D0..D7 (LSB first)</span>
+  <span><span class="sw" style="background:var(--cfg)"></span>config — where the machine is wired</span>
+  <span>keys: SPACE cycle · I insn · R run · 0 reset — outside the editor</span>
+  <span class="right">engine: verified RTL (verilator→wasm) · oracle: pio_model (CI cross-check)</span>
+</footer>
+
+<div id="edpop" hidden>
+  <div id="edcands"></div>
+  <div id="eddetail"></div>
+</div>
+
+<div id="boot"><span class="lamp on"></span>loading wasm engine…</div>
+
+<script src="engine-driver.js"></script>
+<script src="sm-view.js"></script>
+
+</body>
+</html>

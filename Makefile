@@ -43,18 +43,21 @@
 #            formal conformance) — and the red UNSAT contradictory-spec
 #            case. Needs sby on PATH or the vibe-pio container image;
 #            budget ~15 min (the two cover searches dominate).
-# `web`    — C17 web-backend self-test (tools/webbuild.py): verilator
+# `web`    — C17/C18 web gate (tools/webbuild.py): verilator
 #            -Wall lint over rtl/*.sv (four documented idiom waivers),
 #            the AOT wasm build (verilator --cc --assert -> em++,
-#            build/web/pio_engine.js — the shipped game build for C18,
+#            build/web/pio_engine.js — the shipped game engine,
 #            invariant subset compiled in), the three-way SPEC-16-7
 #            trace gate (model <-> iverilog <-> verilator-wasm on the
-#            conformance matrix + fuzz corpus), and the two red/green
-#            mutation demos (the sample-late shim defect caught by the
-#            trace diff; the stale-shadow defect caught by the
-#            compiled-in asserts). Needs verilator+em++/node on PATH or
-#            the vibe-pio container image; budget ~10 min (three wasm
-#            builds + the iverilog corpus dominate).
+#            conformance matrix + fuzz corpus), the C18 client gate
+#            (web/engine-driver.js — the exact client core the browser
+#            worker runs — checked against the pio_model oracle: pin
+#            series, FLEVEL read, decoded monitor, TX mirror), and the
+#            red/green mutation demos for the shim defects and the two
+#            client-side defect hooks (--defect=pin/--defect=mirror).
+#            Needs verilator+em++/node on PATH or the vibe-pio
+#            container image; budget ~10 min (three wasm builds + the
+#            iverilog corpus dominate).
 # `py`     — Python quality gate (host-side, needs uv; see
 #            docs/python-tooling.md): ruff format --check + ruff check +
 #            ty type check + pytest (unit tests + doctests). The

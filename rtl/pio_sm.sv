@@ -139,6 +139,10 @@ module pio_sm #(
     output logic        dbg_sm_tick,
     output logic        dbg_force_tick,
     output logic [3:0]  dbg_state,       // u_exec onehot FSM
+    output logic [4:0]  dbg_delay,       // delay countdown (CC-10)
+    output logic [31:0] dbg_x,           // X/Y scratch (G2 — the C18 view)
+    output logic [31:0] dbg_y,
+    output logic        dbg_pc_wr,       // completing instr explicitly sets PC
     output logic        dbg_exec,        // an instruction executes this clk
     output logic        dbg_complete,    // …and completes (effects land)
     output logic        dbg_is_in,       // executing word's class strobes
@@ -565,10 +569,13 @@ module pio_sm #(
       .irq_clr_req     (irq_clr_req),
       .irq_flag_idx    (irq_flag_idx),
       .irq_idx_mode    (irq_idx_mode),
-      // Dangling u_exec readbacks (dbg_delay, dbg_first, dbg_latch_* …)
-      // stay inside; the integration-relevant subset is re-exported
-      // below.
+      // Dangling u_exec readbacks (dbg_first, dbg_latch_* …) stay
+      // inside; the integration-relevant subset is re-exported below.
       .dbg_state       (dbg_state),
+      .dbg_delay       (dbg_delay),
+      .dbg_x           (dbg_x),
+      .dbg_y           (dbg_y),
+      .dbg_pc_wr       (dbg_pc_wr),
       .dbg_exec        (dbg_exec),
       .dbg_complete    (dbg_complete)
   );

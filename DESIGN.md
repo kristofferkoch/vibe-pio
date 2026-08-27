@@ -245,6 +245,9 @@ flowchart TB
   - SMx_EXECCTRL reads overlay EXEC_STALLED on bit 31 ([SPEC-7-15]);
     the stored bit is not readable. FSTAT/FDEBUG/FLEVEL use the RP2350
     nibble layouts ([SPEC-7-29]).
+  - C18 added the SM0-only view bundle (`dbg_sm0_*`, [SPEC-16-4]
+    scoping — the wasm client's live state; see §SM view client):
+    SM1..3's equivalents stay dangling (the pio_sm dbg idiom).
 
 #### `pio_instr_mem`
 
@@ -314,7 +317,9 @@ flowchart TB
     exec/complete/class strobes, shifter state, autop decision/output
     signals, FIFO mode + raw FJOIN bits). yosys cannot probe instance
     internals from a formal wrapper, so the C9 integration properties
-    live on these ports; pio_block leaves them dangling.
+    live on these ports; pio_block leaves them dangling except SM0's
+    C18 view bundle (dbg_sm0_*, above) and the delay/X/Y/pc_wr
+    forwards pio_block consumes from it.
 
 ##### `pio_sm_decoder`
 
@@ -551,7 +556,7 @@ flowchart TB
 | `tools/hyperopt.py` | C14 hyperoptimizer (`make hyperopt`): a catalog of semantics-preserving rewrites (trace-eq vs spec-only tagged, SPEC-/CC-cited) searched to a peephole closure, screened by the C12 model under the seed schedule and the C13 pre-filter under the miter config, Pareto-filtered on (imem words, ticks per loop iteration) and certified through the oracle; spec-only speed rewrites and the PINCTRL/SHIFTCTRL-overlay entries (side-set fusion, autopull) are catalogued and regression-cased but reported uncertified — the C15 spec-eq predicate exists (SPEC-16-10), wiring the oracle to it is future work. |
 | `rtl/pio_mon_*.sv` | C15 spec-conformance monitors (SPEC-16-9): UART-TX frame and square-wave half-period checkers over the gpio_out observables, shared by `sim/tb_pio_mon.sv` (standalone, reference programs accepted / corrupted rejected) and `formal/pio_mon.sby` (standalone BMC+cover, the spec-eq twin `pio_mon_spec_eq_fv` — monitors as the miter comparison predicate, SPEC-16-10 — and a k-induction probe of the monitors' status contract). C16 reuses the same instances as synthesis cover goals and witness re-checks (SPEC-16-11/12). |
 | `formal/pio_synth_fv.sv` + `tools/hypersynth.py` | C16 symbolic-program synthesis (`make synth`): free imem words (`pio_instr_mem` SYM via chparam, SPEC-16-11) with the C15 monitors as cover goals — square-wave smoke and UART-TX-byte targets — plus the witness pipeline (SPEC-16-12): cover-trace extraction, canonicalization (nop-fills, delay-preserving nops for reserved parks), `.pio` disassembly, and the three re-verify legs (C12 model replay + SPEC-16-9 window check, generated iverilog TB, bounded formal conformance of the loaded witness); the red contradictory-spec case proves the cover goals genuinely bind the solver (UNSAT). |
-| `tools/webbuild.py` + `web/` | C17 wasm backend (`make web`): the verilator `-Wall` lint gate over rtl/*.sv (four documented idiom waivers), the AOT wasm build — Verilator `--cc --assert` over `web/pio_shim_top.sv` (pio_block + the compiled-in invariant subset) linked by em++ into one modularized `build/web/pio_engine.js` — and the three-way SPEC-16-7 trace gate (model ↔ iverilog ↔ verilator-wasm over the C12 conformance matrix + fuzz corpus). `web/pio_shim.cpp` is the C++ cycle engine: the gate face (`pio_stim_trace`, pio-stim replay → trace) and the game face (`pio_reg_write`/`pio_reg_read`/`pio_step`/`pio_snapshot` — the C18 client API). Two mutation demos keep it honest: the sample-late shim defect (trace diff) and the stale imem-shadow defect (compiled-in asserts abort the wasm run). |
+| `tools/webbuild.py` + `web/` | C17/C18 wasm backend + browser client (`make web`): the verilator `-Wall` lint gate over rtl/*.sv (four documented idiom waivers), the AOT wasm build — Verilator `--cc --assert` over `web/pio_shim_top.sv` (pio_block + the compiled-in invariant subset) linked by em++ into one modularized `build/web/pio_engine.js` — the three-way SPEC-16-7 trace gate (model ↔ iverilog ↔ verilator-wasm over the C12 conformance matrix + fuzz corpus), the C18 client gate, and mutation demos for all three defect surfaces. `web/pio_shim.cpp` is the C++ cycle engine: the gate face (`pio_stim_trace`, pio-stim replay → trace), the game face (`pio_reg_write`/`pio_reg_read`/`pio_step`/`pio_snapshot`/`pio_last_cycle` — every cycle-closing entry point also fills the pre-edge `PioCycle` sample the client renders from). `web/sm-view.html` + `sm-view.js` is the shipped client (mockups/sm-view.html promoted), `web/engine-driver.js` the CI-gated client core, `web/engine-worker.js` the Worker transport, `web/serve.py` the dev server (repo root, no-store). |
 
 ### Golden model (C12, as built)
 
@@ -615,6 +620,68 @@ flowchart TB
   via the generated makefile with `CXX=em++` and the final link is
   webbuild's own em++ invocation; verilator does not `mkdir -p` a
   nested `--Mdir`.
+
+## SM view client (C18, as built)
+
+- The shipped client is `web/sm-view.html` + `web/sm-view.js` —
+  mockups/sm-view.html promoted (the mockup stays as the design
+  record; DESIGN-NOTES.md remains its rationale). The throwaway JS
+  simulator is deleted: every machine value the view renders — pins,
+  PC, phase (EXEC/DELAY/STALL), delay countdown, X/Y, OSR/ISR +
+  counters, TX level, strobes — comes from the wasm engine's
+  `PioCycle`, a **pre-edge** per-clk sample filled by every
+  cycle-closing entry point of the game face (`pio_last_cycle`, the
+  negedge point the trace face samples at — CC-40), so the view shows
+  the machine as it stands *during* the cycle whose pin it draws.
+- Three-layer client: **engine-driver.js** (pure client core — no DOM,
+  no Worker API), **engine-worker.js** (the Web Worker: batch stepping,
+  `{cmd:'run', cycles:N}` → one state snapshot per message, so the main
+  thread never stalls on engine work), **sm-view.js** (rendering, the
+  modeless editor, keyboard). The node gate runs the exact driver the
+  worker runs — the CI checks what the view shows.
+- SM0-only view state is a new pio_block export set (`dbg_sm0_*`,
+  SPEC-16-4 single-SM scope): u_exec gained `dbg_x`/`dbg_y`; pio_sm
+  forwards them plus `dbg_delay`/`dbg_pc_wr`; pio_block wires SM0's
+  dbg bundle + FIFO levels/flags out. pio_top (when it lands) leaves
+  them dangling per the dbg idiom.
+- Loading is honest reg-bus traffic: imem words + PINCTRL/EXECCTRL/
+  SHIFTCTRL + feeds + CTRL enable, one retired clk each — every load
+  clk is a rendered clk, mirroring stim._sched_basic (including the
+  SPEC-6-2 settle clk before feeds). Client feeds enqueue as *queued*
+  reg writes consumed by the next stepped clk, so a paused machine
+  stays frozen and an enqueue's cost is one visible cycle — the same
+  discipline as the trace's R lines. Overflow is refused against the
+  cached tx_full of the last true sample (exact between cycles).
+- The TX-FIFO **contents** panel is display bookkeeping, not a
+  semantics fork: the words this client wrote minus the engine's
+  tx_pop strobes; the level bar always shows the engine's tx_level.
+  The receiver monitor and waveform tags (START/D0..D7/STOP/IDLE) are
+  receiver-side interpretation of true pin samples (C15 flavor); the
+  monitor disarms at the stop-bit center — a back-to-back frame's next
+  falling edge lands exactly 80 clks after the previous arm and must
+  be catchable (stopTail keeps the tag warm through the stop bit).
+- The ds-field allocator is real: moving it re-writes
+  PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, so the machine genuinely
+  re-decodes the same stored bits within two clks — the "garbled"
+  display re-decode and the engine now agree by construction.
+- **Deferred to C19**: re-assembly on edit commit. Edits update the
+  canonical listing only; the machine keeps running the loaded build
+  and the program footer shows an "unbuilt edits" chip. The level-02
+  fixture (uart_tx words + config + 'PIO!' feeds) is data in the
+  driver (LEVEL), single-sourced: sm-view.js asserts its PROG display
+  table matches the driver's words at load.
+- **Gate** (`make web` leg 5): the model oracle produces the expected
+  per-clk gpio_out bit0 series + final FLEVEL for the identical load
+  timeline (pio_model is still the referee); the node gate requires
+  pin-identical samples over all 374 rendered clks, the reg-read
+  value, the decoded 'PIO!' and mirror↔tx_level agreement. Red/green:
+  `--defect=pin` (pin sampled off gpio_out bit 1 — caught by the pin
+  diff, first divergence clk 15) and `--defect=mirror` (TX mirror
+  never pops — caught by the mirror-vs-engine check, mirror 4 vs 0).
+- **The fun gate** is re-read on this engine per the card: the owner
+  plays it at `http://localhost:8138/web/sm-view.html`
+  (`python3 web/serve.py` after `make web`); if the view cannot be
+  made fun, the game stops and the game-loop grilling never happens.
 
 ## Key reference
 

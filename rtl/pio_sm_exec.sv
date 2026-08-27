@@ -229,7 +229,9 @@ module pio_sm_exec (
     output logic        dbg_restart_pend,
     output logic        dbg_latch_vld,   // latch holds a pending word
     output logic        dbg_latch_force, // …sourced from SMx_INSTR
-    output logic [15:0] dbg_latch_word   // the latched word itself
+    output logic [15:0] dbg_latch_word,  // the latched word itself
+    output logic [31:0] dbg_x,           // X scratch (G2 — the C18 view)
+    output logic [31:0] dbg_y            // Y scratch (G2)
 );
 
   // -----------------------------------------------------------------------
@@ -685,6 +687,8 @@ module pio_sm_exec (
   assign dbg_latch_vld    = latch_vld_r;
   assign dbg_latch_force  = latch_force_r;
   assign dbg_latch_word   = latch_r;
+  assign dbg_x            = x_r;
+  assign dbg_y            = y_r;
 
   // -----------------------------------------------------------------------
   // G1: FSM state (onehot by construction; asserted in formal).

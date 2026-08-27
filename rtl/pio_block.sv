@@ -87,7 +87,31 @@ module pio_block (
     // port-observable equations).
     output logic [3:0]     dbg_sm_en,   // CTRL.SM_ENABLE bank (SPEC-7-2)
     output logic [3:0][4:0] dbg_sm_pc,  // SM PCs — the fetch addrs (CC-33)
-    output logic [3:0]     dbg_force    // per-SM force_tick (CC-35)
+    output logic [3:0]     dbg_force,   // per-SM force_tick (CC-35)
+
+    // SM0 live-state view for the wasm engine's browser client (C18;
+    // SPEC-16-4 single-SM scope): phase, scratch, shifters, FIFO level
+    // and the per-clk strobes the view animates from. SM1..3 stay
+    // dangling (the pio_sm dbg idiom); pio_top leaves all of these
+    // dangling too.
+    output logic [3:0]  dbg_sm0_state,    // u_exec onehot FSM (ST_*)
+    output logic [4:0]  dbg_sm0_delay,    // delay countdown (CC-10)
+    output logic [31:0] dbg_sm0_x,        // G2 scratch
+    output logic [31:0] dbg_sm0_y,
+    output logic [31:0] dbg_sm0_osr,      // u_shift shifter view (SPEC-5-1)
+    output logic [31:0] dbg_sm0_isr,
+    output logic [5:0]  dbg_sm0_osr_cnt,  // saturating counters (SPEC-5-4)
+    output logic [5:0]  dbg_sm0_isr_cnt,
+    output logic [3:0]  dbg_sm0_tx_level, // FLEVEL TX nibble (SPEC-6-6)
+    output logic [3:0]  dbg_sm0_rx_level,
+    output logic        dbg_sm0_tx_empty, // FSTAT bits (SPEC-7-29)
+    output logic        dbg_sm0_tx_full,
+    output logic        dbg_sm0_tick,     // sm_tick strobe (CC-1)
+    output logic        dbg_sm0_exec,     // an instruction executes this clk
+    output logic        dbg_sm0_complete, // …and completes (effects land)
+    output logic        dbg_sm0_pc_wr,    // taken jmp / explicit PC write
+    output logic        dbg_sm0_tx_pop,   // PULL consumed a TX word (CC-29)
+    output logic        dbg_sm0_rx_push   // PUSH wrote RX (CC-9)
 );
 
   // -----------------------------------------------------------------------
@@ -309,7 +333,23 @@ module pio_block (
       .cfg_in_base     (sm_in_base[0]),
       .cfg_in_count    (sm_in_count[0]),
       .cfg_jmp_pin     (sm_jmp_pin[0]),
-      .dbg_force_tick  (sm_dbg_force[0])
+      .dbg_force_tick  (sm_dbg_force[0]),
+      // SM0 view bundle (C18, SPEC-16-4): the wasm client's live state.
+      .dbg_sm_tick     (dbg_sm0_tick),
+      .dbg_state       (dbg_sm0_state),
+      .dbg_delay       (dbg_sm0_delay),
+      .dbg_x           (dbg_sm0_x),
+      .dbg_y           (dbg_sm0_y),
+      .dbg_pc_wr       (dbg_sm0_pc_wr),
+      .dbg_exec        (dbg_sm0_exec),
+      .dbg_complete    (dbg_sm0_complete),
+      .dbg_tx_pop      (dbg_sm0_tx_pop),
+      .dbg_rx_push     (dbg_sm0_rx_push),
+      .dbg_osr         (dbg_sm0_osr),
+      .dbg_isr         (dbg_sm0_isr),
+      .dbg_osr_cnt     (dbg_sm0_osr_cnt),
+      .dbg_isr_cnt     (dbg_sm0_isr_cnt),
+      .dbg_tx_empty    (dbg_sm0_tx_empty)
   );
 
   pio_sm #(.SM_IDX(2'd1)) u_sm1 (
@@ -692,5 +732,9 @@ module pio_block (
   assign dbg_sm_en  = ctrl_r;
   assign dbg_sm_pc  = sm_pc;
   assign dbg_force  = sm_dbg_force;
+
+  assign dbg_sm0_tx_level = sm_tx_level[0];  // FLEVEL nibbles (SPEC-6-6)
+  assign dbg_sm0_rx_level = sm_rx_level[0];
+  assign dbg_sm0_tx_full  = sm_tx_full[0];   // FSTAT bit (SPEC-7-29)
 
 endmodule

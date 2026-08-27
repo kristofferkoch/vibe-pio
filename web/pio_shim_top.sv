@@ -29,6 +29,11 @@
 //       shadow: the DUT itself is untouched, so only the compiled-in
 //       assertion can catch it (proves the self-check path fires);
 //   PIO_DEFECT_SAMPLE_LATE lives in pio_shim.cpp (C++ side).
+//
+// The dbg_sm0_* ports (C18) are pio_block's SM0 live-state view for the
+// browser client — read by pio_shim.cpp's PioCycle sample, not asserted
+// here (their content is certified by the model-cross-checked client
+// gate, not an invariant).
 
 module pio_shim_top (
     input  logic clk,
@@ -58,7 +63,29 @@ module pio_shim_top (
 
     output logic [3:0]     dbg_sm_en,    // snapshot: enable bank (SPEC-7-2)
     output logic [3:0][4:0] dbg_sm_pc,   // snapshot: fetch addrs (CC-33)
-    output logic [3:0]     dbg_force     // snapshot: force ticks (CC-35)
+    output logic [3:0]     dbg_force,    // snapshot: force ticks (CC-35)
+
+    // SM0 live-state view (C18 client; SPEC-16-4 single-SM scope) —
+    // pio_block's dbg_sm0_* bundle, wired straight through to the shim's
+    // per-clk PioCycle sample.
+    output logic [3:0]  dbg_sm0_state,
+    output logic [4:0]  dbg_sm0_delay,
+    output logic [31:0] dbg_sm0_x,
+    output logic [31:0] dbg_sm0_y,
+    output logic [31:0] dbg_sm0_osr,
+    output logic [31:0] dbg_sm0_isr,
+    output logic [5:0]  dbg_sm0_osr_cnt,
+    output logic [5:0]  dbg_sm0_isr_cnt,
+    output logic [3:0]  dbg_sm0_tx_level,
+    output logic [3:0]  dbg_sm0_rx_level,
+    output logic        dbg_sm0_tx_empty,
+    output logic        dbg_sm0_tx_full,
+    output logic        dbg_sm0_tick,
+    output logic        dbg_sm0_exec,
+    output logic        dbg_sm0_complete,
+    output logic        dbg_sm0_pc_wr,
+    output logic        dbg_sm0_tx_pop,
+    output logic        dbg_sm0_rx_push
 );
 
   pio_block u_dut (
@@ -85,7 +112,25 @@ module pio_shim_top (
       .intr           (intr),
       .dbg_sm_en      (dbg_sm_en),
       .dbg_sm_pc      (dbg_sm_pc),
-      .dbg_force      (dbg_force)
+      .dbg_force      (dbg_force),
+      .dbg_sm0_state    (dbg_sm0_state),
+      .dbg_sm0_delay    (dbg_sm0_delay),
+      .dbg_sm0_x        (dbg_sm0_x),
+      .dbg_sm0_y        (dbg_sm0_y),
+      .dbg_sm0_osr      (dbg_sm0_osr),
+      .dbg_sm0_isr      (dbg_sm0_isr),
+      .dbg_sm0_osr_cnt  (dbg_sm0_osr_cnt),
+      .dbg_sm0_isr_cnt  (dbg_sm0_isr_cnt),
+      .dbg_sm0_tx_level (dbg_sm0_tx_level),
+      .dbg_sm0_rx_level (dbg_sm0_rx_level),
+      .dbg_sm0_tx_empty (dbg_sm0_tx_empty),
+      .dbg_sm0_tx_full  (dbg_sm0_tx_full),
+      .dbg_sm0_tick     (dbg_sm0_tick),
+      .dbg_sm0_exec     (dbg_sm0_exec),
+      .dbg_sm0_complete (dbg_sm0_complete),
+      .dbg_sm0_pc_wr    (dbg_sm0_pc_wr),
+      .dbg_sm0_tx_pop   (dbg_sm0_tx_pop),
+      .dbg_sm0_rx_push  (dbg_sm0_rx_push)
   );
 
   // -----------------------------------------------------------------------

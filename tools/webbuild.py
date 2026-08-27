@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""C17 web-backend gate: verilator lint + AOT wasm build + three-way trace
-gate. The browser runs the verified RTL itself — Verilator --cc --assert
-elaborates pio_shim_top (pio_block + the compiled-in invariant subset,
-web/pio_shim_top.sv), em++ links the Verilated model into one
-modularized wasm engine (build/web/pio_engine.js) that is both the
-headless gate runner's backend (web/node_gate.js) and the shipped game
-build for C18 (pio_model stays the CI cross-check oracle).
+"""C17/C18 web gate: verilator lint + AOT wasm build + three-way trace
+gate + the shipped-client gate. The browser runs the verified RTL
+itself — Verilator --cc --assert elaborates pio_shim_top (pio_block +
+the compiled-in invariant subset, web/pio_shim_top.sv), em++ links the
+Verilated model into one modularized wasm engine (build/web/
+pio_engine.js) that is both the headless gate runner's backend
+(web/node_gate.js) and the shipped game engine for the C18 client
+web/sm-view.html (pio_model stays the CI cross-check oracle).
 
-Gates (KANBAN C17 done-when):
+Gates (KANBAN C17/C18 done-when):
   --lint          (1) verilator --lint-only -Wall over rtl/*.sv. Waivers:
                   only the four documented verification idioms (below);
                   everything else is fixed in RTL (the C17 lint-compat
@@ -25,7 +26,20 @@ Gates (KANBAN C17 done-when):
                   drops word-0 writes — the DUT is untouched, only the
                   compiled-in asserts can catch it, leg 2: proves the
                   binary's self-check path fires).
-  --self-test     all four (the `make web` target).
+  --client        (5) the C18 client gate: web/engine-driver.js (the
+                  exact client core the browser worker runs) drives the
+                  wasm engine's game face through the level-02 load
+                  timeline; pio_model produces the expected pin series
+                  + final FLEVEL for the identical timeline and the
+                  node gate requires pin-identical samples, the
+                  reg-read value, the decoded 'PIO!' monitor output and
+                  the TX-mirror/tx_level agreement. Plus the two
+                  client-side mutation demos (red, then green):
+                  CLIENT_DEFECT_PIN (pin sampled off gpio_out bit 1 —
+                  caught by the model pin diff) and
+                  CLIENT_DEFECT_MIRROR (TX contents mirror never pops —
+                  caught by the mirror-vs-engine level check).
+  --self-test     all five (the `make web` target).
 
 Runs with native verilator+em++/node when present, else one vibe-pio
 container run per command (the difftest idiom; file arguments are
@@ -35,6 +49,8 @@ repo-relative, cwd = repo root).
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import random
 import re
 import shutil
@@ -82,7 +98,7 @@ EMXX_FLAGS = (
     "-sEXPORT_NAME=PioEngine",
     (
         "-sEXPORTED_FUNCTIONS=_pio_stim_trace,_pio_engine_reset,_pio_reg_write,"
-        "_pio_reg_read,_pio_step,_pio_snapshot,_malloc,_free"
+        "_pio_reg_read,_pio_step,_pio_snapshot,_pio_last_cycle,_malloc,_free"
     ),
     "-sEXPORTED_RUNTIME_METHODS=lengthBytesUTF8,stringToUTF8,UTF8ToString,HEAPU8",
     "-sALLOW_MEMORY_GROWTH=1",
@@ -117,10 +133,11 @@ def _rel(p: Path) -> str:
     return p.resolve().relative_to(REPO).as_posix()
 
 
-def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+def _run(cmd: list[str], *, check: bool = True, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     tc = _web_toolchain()
     full = [*tc, *cmd] if cmd[0] in _PREFIXED else cmd
-    r = subprocess.run(full, cwd=REPO, capture_output=True, text=True, check=False)
+    run_env = {**os.environ, **env} if env else None
+    r = subprocess.run(full, cwd=REPO, capture_output=True, text=True, check=False, env=run_env)
     if check and r.returncode != 0:
         tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-12:])
         raise RuntimeError(f"command failed ({' '.join(full[:5])}...):\n{tail}")
@@ -389,6 +406,104 @@ def cmd_mutation_demo(engine: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Gate 5: the C18 client gate (driver-level, model-cross-checked).
+# ---------------------------------------------------------------------------
+
+# The client-gate run length: 4 frames x 80 clks + startup/stall tail —
+# 'P','I','O','!' decoded and the SM parked in the TX-empty stall.
+CLIENT_RUN_CLKS = 360
+
+
+def _client_level_sched() -> stim.Schedule:
+    """The level-02 load timeline, mirroring web/engine-driver.js load()
+    cycle for cycle (imem words, PINCTRL, EXECCTRL, SHIFTCTRL, the
+    SPEC-6-2 settle clk, seed feeds, enable) then CLIENT_RUN_CLKS clks
+    and a final FLEVEL read. web/sm-view.js asserts the words match
+    VibeDriver.LEVEL; this python mirror is pinned by the pin-series
+    comparison itself."""
+    words = [0x9FA0, 0xF727, 0x6001, 0x0642]
+    s = stim.Schedule()
+    s.load_imem(words)
+    s.w(stim.A_SM0 + 4 * 5, stim.pctrl(ss_cnt=2, out_cnt=1))
+    s.w(stim.A_SM0 + 4 * 1, stim.execctrl(3, 0, side_en=True))
+    s.w(stim.A_SM0 + 4 * 2, stim.shiftctrl(fjoin_tx=True))
+    s.idle(1)
+    for f in (0x50, 0x49, 0x4F, 0x21):  # 'P','I','O','!'
+        s.feed(f)
+    s.enable()
+    s.run_to(len(s.cycles) + CLIENT_RUN_CLKS)
+    s.r(stim.A_FLEVEL)
+    return s
+
+
+def _client_expected() -> dict[str, object]:
+    """pio_model's oracle for the client run: the per-clk gpio_out bit0
+    series (SPEC-16-7 G records) and the final FLEVEL read."""
+    recs = run_model_trace(_client_level_sched())
+    pins: list[int] = []
+    flevel = None
+    for rec in recs:
+        if rec[0] == "G":
+            pins.append(rec[2] & 1)
+        elif rec[0] == "R" and rec[2] == stim.A_FLEVEL:
+            flevel = rec[3]
+    if flevel is None:
+        raise RuntimeError("client oracle: model trace carries no FLEVEL R record")
+    return {"runClks": CLIENT_RUN_CLKS, "pins": pins, "flevel": flevel}
+
+
+def run_client_gate(engine: Path, expected: Path, defect: str | None = None) -> subprocess.CompletedProcess[str]:
+    cmd = ["node", _rel(WEB / "node_client_gate.js"), _rel(engine), _rel(expected)]
+    if defect:
+        cmd.append(f"--defect={defect}")
+    return _run(cmd, check=False)
+
+
+def cmd_client(engine: Path | None = None) -> int:
+    if engine is None:
+        engine = build_engine(BUILD / "web")
+    exp = _client_expected()
+    exp_path = BUILD / "web" / "client_expected.json"
+    exp_path.parent.mkdir(parents=True, exist_ok=True)
+    exp_path.write_text(json.dumps(exp))
+    fails = 0
+
+    def report(r: subprocess.CompletedProcess[str]) -> list[str]:
+        return [ln for ln in (r.stdout + r.stderr).splitlines() if ln.startswith(("PASS", "FAIL"))]
+
+    # Green: the clean client core against the model oracle.
+    print("--- client gate: driver vs pio_model oracle (level 02, uart_tx)")
+    r = run_client_gate(engine, exp_path)
+    for ln in report(r):
+        print(f"  {ln}")
+    if r.returncode != 0:
+        fails += 1
+        print("FAIL client: diverged from the model oracle (see above)")
+    else:
+        print("PASS client: green")
+
+    # Mutation demo legs — the client-side red-injection hooks.
+    print("--- client mutation demo 1: --defect=pin (model pin diff catches)")
+    r = run_client_gate(engine, exp_path, defect="pin")
+    pin_fail = next((ln for ln in report(r) if ln.startswith("FAIL pins")), "")
+    if r.returncode == 0 or not pin_fail:
+        fails += 1
+        print("FAIL defect_pin: NOT caught (the pin series never diverges?)")
+    else:
+        print(f"PASS defect_pin: red ({pin_fail.split(' — ', 1)[-1]})")
+
+    print("--- client mutation demo 2: --defect=mirror (mirror-vs-engine check catches)")
+    r = run_client_gate(engine, exp_path, defect="mirror")
+    mir_fail = next((ln for ln in report(r) if ln.startswith("FAIL tx mirror")), "")
+    if r.returncode == 0 or not mir_fail:
+        fails += 1
+        print("FAIL defect_mirror: NOT caught (the mirror never disagrees?)")
+    else:
+        print(f"PASS defect_mirror: red ({mir_fail.split(' — ', 1)[-1]})")
+    return 1 if fails else 0
+
+
+# ---------------------------------------------------------------------------
 
 
 def cmd_self_test() -> int:
@@ -396,6 +511,7 @@ def cmd_self_test() -> int:
     engine = cmd_build()
     rc |= cmd_threeway(engine)
     rc |= cmd_mutation_demo(engine)
+    rc |= cmd_client(engine)
     print(f"=== self-test {'PASS' if rc == 0 else 'FAIL'}")
     return rc
 
@@ -408,6 +524,7 @@ def main() -> int:
     ap.add_argument("--fuzz", type=int, default=6, metavar="N")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--mutation-demo", action="store_true")
+    ap.add_argument("--client", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     rc = 0
@@ -419,9 +536,11 @@ def main() -> int:
         rc |= cmd_threeway(fuzz_n=args.fuzz, seed=args.seed)
     if args.mutation_demo:
         rc |= cmd_mutation_demo(build_engine(BUILD / "web"))
+    if args.client:
+        rc |= cmd_client(build_engine(BUILD / "web"))
     if args.self_test:
-        rc = cmd_self_test()
-    if not any([args.lint, args.build, args.threeway, args.mutation_demo, args.self_test]):
+        rc |= cmd_self_test()
+    if not any([args.lint, args.build, args.threeway, args.mutation_demo, args.client, args.self_test]):
         ap.print_help()
         rc = 2
     return rc
