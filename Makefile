@@ -59,8 +59,10 @@
 #            generator, clkdiv!=1, join/aux overlays + RXF0 drains,
 #            aux put/get; full gpio word series + reg-read rdata), and
 #            the
-#            red/green mutation demos for the shim defects and the two
-#            client-side defect hooks (--defect=pin/--defect=mirror).
+#            red/green mutation demos for the shim defects and the
+#            three client-side defect hooks (--defect=pin /
+#            --defect=mirror / --defect=smaddr, the C24 window-stride
+#            transcription caught by the arbitration leg).
 #            Needs verilator+em++/node on PATH or the vibe-pio
 #            container image; budget ~10 min (three wasm builds + the
 #            iverilog corpus dominate).

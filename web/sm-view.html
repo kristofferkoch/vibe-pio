@@ -3,31 +3,36 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>vibe-pio // SM0 — sandbox</title>
+    <title>vibe-pio // sandbox — four machines</title>
     <!--
-  vibe-pio SM0 view — the shipped client (KANBAN C18/C19; the C21
-  sandbox surface; design record: mockups/sm-view.html + DESIGN-NOTES.md).
+  vibe-pio SM view — the shipped client (KANBAN C18/C19; the C21
+  sandbox surface; C24 grows it to the four-machine playground. Design
+  record: mockups/sm-view.html + DESIGN-NOTES.md).
 
   The machine below is the verified RTL itself: the C17 wasm engine
   (Verilator -> em++, build/web/pio_engine.js) runs in a Web Worker
   (engine-worker.js) and feeds per-clk state snapshots back to this
   view (batch stepping; engine-driver.js is the shared client core —
-  the CI gate runs it headless against the pio_model oracle, five
-  sandbox legs: the uart demo, pin drives + pattern, clkdiv≠1, join
-  overlays + RX drains, aux put/get).
+  the CI gate runs it headless against the pio_model oracle, nine
+  legs: the uart demo, pin drives + pattern, clkdiv≠1, join overlays +
+  RX drains, aux put/get, then per-SM load, parallel SMs, inter-SM IRQ
+  handoff and cross-SM pin arbitration).
 
-  The sandbox is "everything unlocked": the full single-SM register
-  surface (the inspector panel — every datasheet field readable and
-  settable, tooltips citing SPEC-7-x), pin drives + hold latches + a
-  pattern generator on the pin strip, the RX drain, IRQ flags, real
+  The sandbox is "everything unlocked" on all four SMs: one shared
+  instruction memory with four PC cursors, per-SM config overlays (the
+  inspector panel follows the selected machine — every datasheet field
+  readable and settable, tooltips citing SPEC-7-x), per-SM FIFOs and
+  entry points, pad ownership on the pin strip (the last SM to write a
+  pin, highest-numbered on same-clk conflicts — CC-7), pin drives +
+  hold latches + a pattern generator, the RX drain, IRQ flags, real
   CLKDIV, and the selectable monitor lens (off / square / uart on a
   picked pin — a lens, never a judge, until levels). Boots to empty
-  memory (all-zero = the jmp-0 park); the old level-02 uart_tx lives
-  on as the loadable demo. Persistence is localStorage autosave +
-  JSON export/import of the stored-program format (32 words + config
-  overlay), plus copy-as-canonical-listing via the in-browser
-  assembler (pio-asm.js, the C19 port — CI-checked bit-equal against
-  pio_model).
+  memory (all-zero = the jmp-0 park, now on four cursors); the old
+  level-02 uart_tx lives on as the loadable demo. Persistence is
+  localStorage autosave + JSON export/import of the stored-program
+  format (32 words + the per-SM config overlay), plus
+  copy-as-canonical-listing via the in-browser assembler (pio-asm.js,
+  the C19 port — CI-checked bit-equal against pio_model).
 
   Legend: amber = control · green = data · cyan = config/wiring ·
   red = stall · gray = idle. The C22 drawn-config grammar rides the
@@ -35,19 +40,20 @@
   toggles + threshold steppers (notch on the fill bar), the FIFO join
   chip (ticked borrowed TX slots, ghost panels), wrap steppers on the
   arc, and base·count steppers on the waveform's pin-mapping tags —
-  every drawn control a real reg write through the overlay. Serve from
-  the repo root (web/serve.py) so the engine resolves at build/web/.
+  every drawn control a real reg write through the selected SM's
+  overlay. Serve from the repo root (web/serve.py) so the engine
+  resolves at build/web/.
 -->
     <link rel="stylesheet" href="sm-view.css">
   </head>
   <body>
     <header>
       <div class="brand">vibe<em>-</em>pio</div>
-      <div class="lvl">SM0 · <b>SANDBOX</b><span class="tail"> · all features unlocked</span></div>
+      <div class="lvl">4×SM · <b>SANDBOX</b><span class="tail"> · all features unlocked</span></div>
       <span
         class="cfgtag"
         id="clkdivtag"
-        title="config · SM0_CLKDIV — the real divider (SPEC-7-14); set it in the inspector"
+        title="config · SMx_CLKDIV — the real divider (SPEC-7-14); set it in the inspector"
         >clkdiv ÷1.0</span
       >
       <div class="spacer"></div>
@@ -100,10 +106,20 @@
       </div>
     </header>
 
+    <!-- ============ the four machines: cursors, per-SM FIFO columns === -->
+    <div
+      id="smsbar"
+      title="four machines, one playground — the shared listing carries all four PC cursors; a chip selects the machine the detail panes (exec, registers, inspector, drawn config) follow"
+    >
+      <span class="pslabel">machines · click selects · keys 1–4</span>
+      <div id="smscells"></div>
+    </div>
+
     <!-- ============ pin I/O strip: drives, hold latches, pattern ============ -->
     <div id="pinstrip">
       <span class="pslabel"
-        >pins · click cycles the drive latch <b>Z→1→0</b> · cyan = driven · ▲ = engine output</span
+        >pins · click cycles the drive latch <b>Z→1→0</b> · cyan = driven · ▲ = engine output · the
+        colored corner names the owning SM (last writer, CC-7)</span
       >
       <div id="pincells"></div>
     </div>
@@ -176,6 +192,11 @@
       <section class="panel" style="display:flex;flex-direction:column">
         <div class="ptitle">
           execute
+          <b
+            id="execsm"
+            title="the machine this pane follows — select with the machines bar above or keys 1–4"
+            >SM0</b
+          >
           <span class="aux" id="mon"
             >MONITOR lens
             <select
@@ -491,7 +512,7 @@
         ><span class="sw" style="background:var(--cfg)"></span>config — where the machine is
         wired</span
       >
-      <span>keys: SPACE cycle · I insn · R run · 0 reset — outside the editor</span>
+      <span>keys: SPACE cycle · I insn · R run · 0 reset · 1–4 machine — outside the editor</span>
       <span class="right"
         >engine: verified RTL (verilator→wasm) · oracle: pio_model (CI cross-check) · autosave:
         <b id="savestate">on</b></span

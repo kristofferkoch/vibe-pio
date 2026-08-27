@@ -10,13 +10,13 @@ behavior change.
 
 | Path | What |
 |---|---|
-| `web/engine-driver.js` | the client core (the sandbox driver: overlay→reg-write mapping, pin drives + pattern generator, RX drain + mirrors, the monitor lens, the stored-program serializer) — the same module runs in the browser worker, under the `make web` client gate's five model-oracle legs, and under `node --test` against the fake engine |
+| `web/engine-driver.js` | the client core (the sandbox driver: overlay→reg-write mapping, pin drives + pattern generator, RX drain + mirrors, the monitor lens, the stored-program serializer) — the same module runs in the browser worker, under the `make web` client gate's nine model-oracle legs (five sandbox + four multi-SM), and under `node --test` against the fake engine |
 | `web/engine-worker.js` | the Web Worker transport around the driver |
 | `web/pio-asm.js` | the in-browser assembler/disassembler — a JS port of pio_model's asm/disasm/encoding trio, anchored to that oracle by golden bit-vectors + the 65536-word canonical round-trip (never to itself) |
 | `web/sm-view.js` | the view's DOM glue (**extract-on-touch**: lint/format always; logic migrates into require-able tested modules only as it is touched) — the listing itself is assembler-derived: rows disassemble from the loaded words and committed edits re-assemble through `pio-asm.js` into a live imem patch |
 | `web/sm-view.html` / `web/sm-view.css` | the shipped page and its stylesheet (the `<style>` extracted so css joins the gate) |
 | `web/node_gate.js` / `web/node_client_gate.js` | the headless `make web` runners (wasm engine / client-vs-oracle; the client gate also round-trips the level listing through `pio-asm.js`) |
-| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping) |
+| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface) |
 | `tools/gen_pio_asm_golden.py` | generates `web/tests/pio-asm-golden.json` from pio_model (stdlib-only; `--check` is the drift gate in `make js`) |
 | `biome.json` | the format+lint configuration (waivers documented below) |
 | `package.json` + `package-lock.json` | dev-only dependency: `@biomejs/biome` |
@@ -106,8 +106,15 @@ against the oracle gate. Prefer that route over blanket `--unsafe`.
   and the FIFO-mirror flush on fifo-mode changes, the drive/pattern
   gpio composition (sticky on op clks), the RX drain + count mirror,
   the lens (uart/square verdicts, the replay on pin change), the
-  stored-program round-trip, and the four sandbox defect hooks (rx / lens
-  / pattern / overlay). `drawn-config.test.js` pins the C22 drawn-config
+  stored-program round-trip (v2, plus the v1 flat format parsing as the
+  SM0-authored scope), and the four sandbox defect hooks (rx / lens
+  / pattern / overlay). `multi-sm.test.js` pins the C24 surface: the
+  per-SM load timeline (0x18 window stride, per-SM entry forces and TXF
+  feeds, the CTRL enable mask), per-SM overlay routing and FIFO-mirror
+  flushes, per-SM feeds/drains, the selected-SM aliases + `stepInsn`,
+  the pad-ownership tracking (last writer, CC-7 scan order), and the
+  two C24 defect hooks (smaddr / owner) red/green in process.
+  `drawn-config.test.js` pins the C22 drawn-config
   grammar at its unit-testable core: every drawn control (the
   DESIGN-NOTES table in engine-driver.js — `CFG_CONTROLS` +
   `controlEdit`) maps to real overlay edits with the right encodings

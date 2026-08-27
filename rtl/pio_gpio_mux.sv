@@ -88,7 +88,15 @@ module pio_gpio_mux (
     output logic [3:0][31:0] dbg_sticky_mask,
     output logic [3:0][31:0] dbg_sticky_lvl,
     output logic [3:0][31:0] dbg_sticky_dir,
-    output logic [3:0]       dbg_sticky_isdir
+    output logic [3:0]       dbg_sticky_isdir,
+
+    // Per-SM this-clk pad write mask (C24 pad-ownership view): the pins
+    // SM i writes this clk, level or direction, OUT/SET or side-set —
+    // the same per-SM resolution inputs the CC-7 loop consumes, exported
+    // so the browser client can attribute pad ownership (last writer,
+    // highest-numbered SM on same-clk conflicts — CC-7's per-pin order).
+    // pio_top leaves these dangling.
+    output logic [3:0][31:0] dbg_wr_mask
 );
 
   // -----------------------------------------------------------------------
@@ -274,5 +282,12 @@ module pio_gpio_mux (
   assign dbg_sticky_lvl    = sticky_lvl_r;
   assign dbg_sticky_dir    = sticky_dir_data_r;
   assign dbg_sticky_isdir  = sticky_is_dir_r;
+
+  // C24 pad-ownership view: the per-SM write masks the CC-7 loop below
+  // consumes, one hot pin set per SM.
+  always_comb begin
+    for (int i = 0; i < 4; i++)
+      dbg_wr_mask[i] = os_lvl_mask[i] | os_dir_mask[i] | ss_lvl_mask[i] | ss_dir_mask[i];
+  end
 
 endmodule

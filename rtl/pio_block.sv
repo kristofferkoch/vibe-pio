@@ -88,12 +88,16 @@ module pio_block (
     output logic [3:0]     dbg_sm_en,   // CTRL.SM_ENABLE bank (SPEC-7-2)
     output logic [3:0][4:0] dbg_sm_pc,  // SM PCs — the fetch addrs (CC-33)
     output logic [3:0]     dbg_force,   // per-SM force_tick (CC-35)
+    // Per-SM this-clk pad write masks (C24 pad-ownership view): u_gpio's
+    // per-SM resolution inputs (CC-7) — the client's ownership lens.
+    output logic [3:0][31:0] dbg_sm_wr_mask,
 
-    // SM0 live-state view for the wasm engine's browser client (C18;
-    // SPEC-16-4 single-SM scope): phase, scratch, shifters, FIFO level
-    // and the per-clk strobes the view animates from. SM1..3 stay
-    // dangling (the pio_sm dbg idiom); pio_top leaves all of these
-    // dangling too.
+    // Per-SM live-state view for the wasm engine's browser client (C18
+    // single-SM; C24 grows it to all four SMs): phase, scratch, shifters,
+    // FIFO level and the per-clk strobes the view animates from — one
+    // bundle per SM, pre-edge sampled by pio_shim.cpp (SPEC-16-1: the
+    // view sees the same start-of-clk state the trace comparators do).
+    // pio_top leaves all of these dangling.
     output logic [3:0]  dbg_sm0_state,    // u_exec onehot FSM (ST_*)
     output logic [4:0]  dbg_sm0_delay,    // delay countdown (CC-10)
     output logic [31:0] dbg_sm0_x,        // G2 scratch
@@ -111,7 +115,62 @@ module pio_block (
     output logic        dbg_sm0_complete, // …and completes (effects land)
     output logic        dbg_sm0_pc_wr,    // taken jmp / explicit PC write
     output logic        dbg_sm0_tx_pop,   // PULL consumed a TX word (CC-29)
-    output logic        dbg_sm0_rx_push   // PUSH wrote RX (CC-9)
+    output logic        dbg_sm0_rx_push,  // PUSH wrote RX (CC-9)
+    // SM1..3 view bundles (C24): the same fields, wired like SM0's.
+    output logic [3:0]  dbg_sm1_state,
+    output logic [4:0]  dbg_sm1_delay,
+    output logic [31:0] dbg_sm1_x,
+    output logic [31:0] dbg_sm1_y,
+    output logic [31:0] dbg_sm1_osr,
+    output logic [31:0] dbg_sm1_isr,
+    output logic [5:0]  dbg_sm1_osr_cnt,
+    output logic [5:0]  dbg_sm1_isr_cnt,
+    output logic [3:0]  dbg_sm1_tx_level,
+    output logic [3:0]  dbg_sm1_rx_level,
+    output logic        dbg_sm1_tx_empty,
+    output logic        dbg_sm1_tx_full,
+    output logic        dbg_sm1_tick,
+    output logic        dbg_sm1_exec,
+    output logic        dbg_sm1_complete,
+    output logic        dbg_sm1_pc_wr,
+    output logic        dbg_sm1_tx_pop,
+    output logic        dbg_sm1_rx_push,
+    output logic [3:0]  dbg_sm2_state,
+    output logic [4:0]  dbg_sm2_delay,
+    output logic [31:0] dbg_sm2_x,
+    output logic [31:0] dbg_sm2_y,
+    output logic [31:0] dbg_sm2_osr,
+    output logic [31:0] dbg_sm2_isr,
+    output logic [5:0]  dbg_sm2_osr_cnt,
+    output logic [5:0]  dbg_sm2_isr_cnt,
+    output logic [3:0]  dbg_sm2_tx_level,
+    output logic [3:0]  dbg_sm2_rx_level,
+    output logic        dbg_sm2_tx_empty,
+    output logic        dbg_sm2_tx_full,
+    output logic        dbg_sm2_tick,
+    output logic        dbg_sm2_exec,
+    output logic        dbg_sm2_complete,
+    output logic        dbg_sm2_pc_wr,
+    output logic        dbg_sm2_tx_pop,
+    output logic        dbg_sm2_rx_push,
+    output logic [3:0]  dbg_sm3_state,
+    output logic [4:0]  dbg_sm3_delay,
+    output logic [31:0] dbg_sm3_x,
+    output logic [31:0] dbg_sm3_y,
+    output logic [31:0] dbg_sm3_osr,
+    output logic [31:0] dbg_sm3_isr,
+    output logic [5:0]  dbg_sm3_osr_cnt,
+    output logic [5:0]  dbg_sm3_isr_cnt,
+    output logic [3:0]  dbg_sm3_tx_level,
+    output logic [3:0]  dbg_sm3_rx_level,
+    output logic        dbg_sm3_tx_empty,
+    output logic        dbg_sm3_tx_full,
+    output logic        dbg_sm3_tick,
+    output logic        dbg_sm3_exec,
+    output logic        dbg_sm3_complete,
+    output logic        dbg_sm3_pc_wr,
+    output logic        dbg_sm3_tx_pop,
+    output logic        dbg_sm3_rx_push
 );
 
   // -----------------------------------------------------------------------
@@ -237,6 +296,7 @@ module pio_block (
   logic [7:0]       irq_flags;
   logic [3:0][15:0] imem_rd_c;
   logic [3:0]       sm_dbg_force;
+  logic [3:0][31:0] gm_wr_mask;
 
   // -----------------------------------------------------------------------
   // u_imem (C1): 1 write port from the INSTR_MEM decode (SPEC-7-10),
@@ -334,7 +394,8 @@ module pio_block (
       .cfg_in_count    (sm_in_count[0]),
       .cfg_jmp_pin     (sm_jmp_pin[0]),
       .dbg_force_tick  (sm_dbg_force[0]),
-      // SM0 view bundle (C18, SPEC-16-4): the wasm client's live state.
+      // SM view bundles (C18/C24, SPEC-16-1 start-of-clk view): the
+      // wasm client's live state, one bundle per SM.
       .dbg_sm_tick     (dbg_sm0_tick),
       .dbg_state       (dbg_sm0_state),
       .dbg_delay       (dbg_sm0_delay),
@@ -423,7 +484,23 @@ module pio_block (
       .cfg_in_base     (sm_in_base[1]),
       .cfg_in_count    (sm_in_count[1]),
       .cfg_jmp_pin     (sm_jmp_pin[1]),
-      .dbg_force_tick  (sm_dbg_force[1])
+      .dbg_force_tick  (sm_dbg_force[1]),
+      // SM1 view bundle (C24): wired like SM0's.
+      .dbg_sm_tick     (dbg_sm1_tick),
+      .dbg_state       (dbg_sm1_state),
+      .dbg_delay       (dbg_sm1_delay),
+      .dbg_x           (dbg_sm1_x),
+      .dbg_y           (dbg_sm1_y),
+      .dbg_pc_wr       (dbg_sm1_pc_wr),
+      .dbg_exec        (dbg_sm1_exec),
+      .dbg_complete    (dbg_sm1_complete),
+      .dbg_tx_pop      (dbg_sm1_tx_pop),
+      .dbg_rx_push     (dbg_sm1_rx_push),
+      .dbg_osr         (dbg_sm1_osr),
+      .dbg_isr         (dbg_sm1_isr),
+      .dbg_osr_cnt     (dbg_sm1_osr_cnt),
+      .dbg_isr_cnt     (dbg_sm1_isr_cnt),
+      .dbg_tx_empty    (dbg_sm1_tx_empty)
   );
 
   pio_sm #(.SM_IDX(2'd2)) u_sm2 (
@@ -497,7 +574,23 @@ module pio_block (
       .cfg_in_base     (sm_in_base[2]),
       .cfg_in_count    (sm_in_count[2]),
       .cfg_jmp_pin     (sm_jmp_pin[2]),
-      .dbg_force_tick  (sm_dbg_force[2])
+      .dbg_force_tick  (sm_dbg_force[2]),
+      // SM2 view bundle (C24): wired like SM0's.
+      .dbg_sm_tick     (dbg_sm2_tick),
+      .dbg_state       (dbg_sm2_state),
+      .dbg_delay       (dbg_sm2_delay),
+      .dbg_x           (dbg_sm2_x),
+      .dbg_y           (dbg_sm2_y),
+      .dbg_pc_wr       (dbg_sm2_pc_wr),
+      .dbg_exec        (dbg_sm2_exec),
+      .dbg_complete    (dbg_sm2_complete),
+      .dbg_tx_pop      (dbg_sm2_tx_pop),
+      .dbg_rx_push     (dbg_sm2_rx_push),
+      .dbg_osr         (dbg_sm2_osr),
+      .dbg_isr         (dbg_sm2_isr),
+      .dbg_osr_cnt     (dbg_sm2_osr_cnt),
+      .dbg_isr_cnt     (dbg_sm2_isr_cnt),
+      .dbg_tx_empty    (dbg_sm2_tx_empty)
   );
 
   pio_sm #(.SM_IDX(2'd3)) u_sm3 (
@@ -571,7 +664,23 @@ module pio_block (
       .cfg_in_base     (sm_in_base[3]),
       .cfg_in_count    (sm_in_count[3]),
       .cfg_jmp_pin     (sm_jmp_pin[3]),
-      .dbg_force_tick  (sm_dbg_force[3])
+      .dbg_force_tick  (sm_dbg_force[3]),
+      // SM3 view bundle (C24): wired like SM0's.
+      .dbg_sm_tick     (dbg_sm3_tick),
+      .dbg_state       (dbg_sm3_state),
+      .dbg_delay       (dbg_sm3_delay),
+      .dbg_x           (dbg_sm3_x),
+      .dbg_y           (dbg_sm3_y),
+      .dbg_pc_wr       (dbg_sm3_pc_wr),
+      .dbg_exec        (dbg_sm3_exec),
+      .dbg_complete    (dbg_sm3_complete),
+      .dbg_tx_pop      (dbg_sm3_tx_pop),
+      .dbg_rx_push     (dbg_sm3_rx_push),
+      .dbg_osr         (dbg_sm3_osr),
+      .dbg_isr         (dbg_sm3_isr),
+      .dbg_osr_cnt     (dbg_sm3_osr_cnt),
+      .dbg_isr_cnt     (dbg_sm3_isr_cnt),
+      .dbg_tx_empty    (dbg_sm3_tx_empty)
   );
 
   // -----------------------------------------------------------------------
@@ -639,7 +748,8 @@ module pio_block (
       .dbg_sticky_mask (),
       .dbg_sticky_lvl  (),
       .dbg_sticky_dir  (),
-      .dbg_sticky_isdir()
+      .dbg_sticky_isdir(),
+      .dbg_wr_mask     (gm_wr_mask)   // C24 pad-ownership view
   );
 
   // -----------------------------------------------------------------------
@@ -732,9 +842,19 @@ module pio_block (
   assign dbg_sm_en  = ctrl_r;
   assign dbg_sm_pc  = sm_pc;
   assign dbg_force  = sm_dbg_force;
+  assign dbg_sm_wr_mask = gm_wr_mask;  // C24 pad-ownership view (CC-7)
 
   assign dbg_sm0_tx_level = sm_tx_level[0];  // FLEVEL nibbles (SPEC-6-6)
   assign dbg_sm0_rx_level = sm_rx_level[0];
   assign dbg_sm0_tx_full  = sm_tx_full[0];   // FSTAT bit (SPEC-7-29)
+  assign dbg_sm1_tx_level = sm_tx_level[1];  // SM1..3 view (C24)
+  assign dbg_sm1_rx_level = sm_rx_level[1];
+  assign dbg_sm1_tx_full  = sm_tx_full[1];
+  assign dbg_sm2_tx_level = sm_tx_level[2];
+  assign dbg_sm2_rx_level = sm_rx_level[2];
+  assign dbg_sm2_tx_full  = sm_tx_full[2];
+  assign dbg_sm3_tx_level = sm_tx_level[3];
+  assign dbg_sm3_rx_level = sm_rx_level[3];
+  assign dbg_sm3_tx_full  = sm_tx_full[3];
 
 endmodule

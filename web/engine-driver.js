@@ -1,5 +1,5 @@
 // engine-driver.js — the C18 client core, grown into the C21 sandbox
-// driver (KANBAN C18/C19/C21; C22 adds the drawn-config control table).
+// driver and the C24 multi-SM sandbox (KANBAN C18/C19/C21/C22/C24).
 //
 // Pure logic, no DOM and no Worker API: the same instance runs inside
 // web/engine-worker.js (the browser client) and under node
@@ -13,32 +13,44 @@
 //     post-load overlay edits land the same way (the feed discipline,
 //     the SPEC-6-2 settle clk queued after a FJOIN-changing write);
 //   - decodes the pre-edge PioCycle sample (pio_shim.cpp: the negedge
-//     sample point — CC-40 pin landing, start-of-clk SM state);
-//   - keeps the TX/RX mirrors (display bookkeeping only: TX = the words
-//     this client wrote minus the engine's tx_pop strobes; RX = one
-//     count per rx_push strobe minus the queued RXF0 drains, the words
-//     themselves learned only by draining — level bars always show the
-//     engine's tx_level/rx_level);
+//     sample point — CC-40 pin landing, start-of-clk SM state) — per
+//     SM since C24: all four machines' phase/scratch/shifters/FIFO
+//     levels/strobes plus the per-SM pad write masks (the CC-7
+//     ownership lens);
+//   - keeps the TX/RX mirrors per SM (display bookkeeping only: TX =
+//     the words this client wrote minus the engine's tx_pop strobes;
+//     RX = one count per rx_push strobe minus the queued RXFx drains,
+//     the words themselves learned only by draining — level bars
+//     always show the engine's tx_level/rx_level);
 //   - composes the per-clk gpio_in (drive latches + the pattern
 //     generator; reg-op clks hold the last level — the shim's sticky
 //     input discipline) and runs the monitor lens over the stored gpio
 //     history (off / square / uart on a picked pin, replayed when the
 //     pin changes) plus the per-cycle waveform tags;
-//   - serializes the stored-program format (words + config overlay —
-//     the JSON that seeds level authoring; feeds/lens/drives are
-//     session state and stay out);
+//   - tracks pad ownership: the last SM to write each pin, ties broken
+//     by the CC-7 scan order (ascending — the highest-numbered SM's
+//     write lands last), exactly the resolution the RTL performs;
+//   - serializes the stored-program format (words + the per-SM config
+//     overlay — the JSON that seeds level authoring; feeds/lens/drives
+//     are session state and stay out);
 //   - maps the C22 drawn-config grammar (DESIGN-NOTES: shift-direction
 //     arrows, autopull/autopush toggles + threshold steppers, the FIFO
 //     join cycle, wrap steppers, pin-mapping base·count steppers) onto
-//     overlay edits — every drawn control is a real reg write, nothing
-//     is display-only. controlEdit is the pure gesture→edits table;
-//     setOverlayFields lands a multi-field edit as ONE composed write
-//     per group (the atomic join edit must not pay two SPEC-6-2 settle
-//     clks).
+//     overlay edits of ONE SM — every drawn control is a real reg write
+//     to that SM's window, nothing is display-only. controlEdit is the
+//     pure gesture→edits table; setOverlayFields lands a multi-field
+//     edit as ONE composed write per group (the atomic join edit must
+//     not pay two SPEC-6-2 settle clks).
+//
+// The stored-program format v2 (C24): { v:2, words, sms:[4] } with one
+// {en, clkdiv, pinctrl, execctrl, shiftctrl} overlay per SM (feeds and
+// entry are per-SM session presets like v1's). v1 objects (flat
+// top-level groups) still parse — they are the SM0-authored scope, so
+// SM1..3 load disabled: the legacy programs predate the playground.
 //
 // Red-injection hooks for the mutation demos (never enabled in a real
-// run; web/node_client_gate.js and web/tests/sandbox.test.js turn them
-// on via create()'s `defects` argument):
+// run; web/node_client_gate.js and the unit suites turn them on via
+// create()'s `defects` argument):
 //   {pin: true}     — sample gpio_out bit (lensPin+1) instead of the
 //                     lens pin: the pin series diverges from the oracle;
 //   {mirror: true}  — the TX mirror never pops: it disagrees with the
@@ -55,7 +67,13 @@
 //   {cfgctrl: true} — the drawn fifo-join cycle swaps its bits onto
 //                     FJOIN_RX (bit 31) where the grammar says FJOIN_TX
 //                     (bit 30): the C22 field↔reg-write mapping
-//                     diverges (the drawn-config red case).
+//                     diverges (the drawn-config red case);
+//   {smaddr: true}  — the SM config-window stride is transcribed as
+//                     0x14 instead of 0x18: SM1..3 overlay writes land
+//                     in the previous SM's window (the C24 multi-SM
+//                     red case);
+//   {owner: true}   — the pad-ownership scan runs descending: the
+//                     lowest-numbered SM wins, inverting CC-7.
 
 /* global PioEngine */
 ((global) => {
@@ -67,8 +85,8 @@
     FSTAT: 0x004,
     FDEBUG: 0x008,
     FLEVEL: 0x00c,
-    TXF0: 0x010,
-    RXF0: 0x020,
+    TXF0: 0x010, // + 4*sm (SPEC-7-28)
+    RXF0: 0x020, // + 4*sm
     IRQ: 0x030,
     IRQ_FORCE: 0x034,
     ISB: 0x038,
@@ -76,14 +94,16 @@
     PADOE: 0x040,
     CFGINFO: 0x044,
     IMEM0: 0x048, // + 4*i (SPEC-7-10)
-    SM0: 0x0c8, // + CLKDIV 0 / EXECCTRL 4 / SHIFTCTRL 8 / ADDR 12 / INSTR 16 / PINCTRL 20
-    PUTGET0: 0x128, // + 4*y (SPEC-7-13)
+    SM0: 0x0c8, // SM window: stride 0x18 (SPEC-7 per-SM map), CLKDIV 0 / EXECCTRL 4 / SHIFTCTRL 8 / ADDR 12 / INSTR 16 / PINCTRL 20
+    PUTGET0: 0x128, // + 0x10*sm + 4*y (SPEC-7-13)
   };
+  const SMS = 4;
+  const SM_WIN = 0x18; // per-SM config window stride (SPEC-7-x)
 
   // u_exec onehot FSM (rtl/pio_sm_exec.sv)
   const ST = { FETCH: 1, EXEC: 2, STALL: 4, DELAY: 8 };
 
-  // PioCycle strobe bits (pio_shim.cpp)
+  // PioCycle strobe bits, per SM (pio_shim.cpp)
   const S_TICK = 1,
     S_EXEC = 2,
     S_COMPLETE = 4,
@@ -94,25 +114,28 @@
     S_TX_FULL = 128;
 
   // PioCycle struct offsets in bytes (pio_shim.cpp — little-endian).
+  // The SM fields are per-SM arrays: field `pc` holds SM i at
+  // CYC.pc + 4*i (SM-major layout, one uint32 per SM per field).
   const CYC = {
     clk: 0,
     gpio_out: 8,
     gpio_oe: 12,
     intr: 16,
     pc: 20,
-    state: 24,
-    delay: 28,
-    x: 32,
-    y: 36,
-    osr: 40,
-    isr: 44,
-    osr_cnt: 48,
-    isr_cnt: 52,
-    tx_level: 56,
-    rx_level: 60,
-    strobes: 64,
+    state: 36,
+    delay: 52,
+    x: 68,
+    y: 84,
+    osr: 100,
+    isr: 116,
+    osr_cnt: 132,
+    isr_cnt: 148,
+    tx_level: 164,
+    rx_level: 180,
+    strobes: 196,
+    wr_mask: 212,
   };
-  const CYC_SIZE = 72;
+  const CYC_SIZE = 228;
 
   // ---------------- sandbox state: the config overlay ----------------
   // Field tables (group → field → [hi, lo, max]); bit fields are
@@ -123,10 +146,11 @@
   // reset words (model.py CLKDIV/EXECCTRL/SHIFTCTRL/PINCTRL_RESET).
   const CLKDIV_RESET = 0x00010000; // INT=1 FRAC=0 (SPEC-7-14)
 
+  // SM-window word offsets per group (SPEC-7-14..26).
   const OVERLAY_GROUPS = {
-    clkdiv: { addr: () => REG.SM0 + 0, fields: { intg: [31, 16, 65535], frac: [15, 8, 255] } },
+    clkdiv: { off: 0, fields: { intg: [31, 16, 65535], frac: [15, 8, 255] } },
     execctrl: {
-      addr: () => REG.SM0 + 4,
+      off: 4,
       fields: {
         sideEn: [30, 30, 'b'],
         sidePindirs: [29, 29, 'b'],
@@ -141,7 +165,7 @@
       },
     },
     shiftctrl: {
-      addr: () => REG.SM0 + 8,
+      off: 8,
       fields: {
         fjoinRx: [31, 31, 'b'],
         fjoinTx: [30, 30, 'b'],
@@ -157,7 +181,7 @@
       },
     },
     pinctrl: {
-      addr: () => REG.SM0 + 20,
+      off: 20,
       fields: {
         ssCnt: [31, 29, 5],
         setCnt: [28, 26, 5],
@@ -169,6 +193,15 @@
       },
     },
   };
+
+  // Byte address of SM `sm`'s `group` register (SPEC-7 per-SM map).
+  // The smaddr defect transcribes the stride as 0x14 (the two-word gap
+  // to the next window's CLKDIV forgotten) — SM1..3 writes land in the
+  // previous SM's window.
+  function overlayAddr(sm, group, defects) {
+    const stride = defects?.smaddr ? 0x14 : SM_WIN;
+    return REG.SM0 + stride * (sm & 3) + OVERLAY_GROUPS[group].off;
+  }
 
   function composeOverlay(group, fields, defects) {
     const spec = OVERLAY_GROUPS[group];
@@ -199,13 +232,14 @@
 
   // ---------------- C22: the drawn-config control table ----------------
   // The DESIGN-NOTES grammar as overlay edits — every drawn control is a
-  // real reg write through the sandbox overlay, nothing display-only.
-  // Gestures: 'inc'/'dec' step a stepper through its legal stored values
-  // and WRAP AROUND (the wrap-stepper idiom); 'toggle' flips a drawn
-  // boolean. Kinds: 'toggle' a single boolean field; 'range' a 0..max
-  // field; 'thr' a threshold stored 1..32 (compose encodes 32 as 0,
-  // SPEC-5-7); 'c32' a count stored 0..31 where 0 displays/means 32
-  // (OUT_COUNT/IN_COUNT, SPEC-7-26/21); 'join' the FIFO-join cycle.
+  // real reg write through the selected SM's overlay, nothing
+  // display-only. Gestures: 'inc'/'dec' step a stepper through its legal
+  // stored values and WRAP AROUND (the wrap-stepper idiom); 'toggle'
+  // flips a drawn boolean. Kinds: 'toggle' a single boolean field;
+  // 'range' a 0..max field; 'thr' a threshold stored 1..32 (compose
+  // encodes 32 as 0, SPEC-5-7); 'c32' a count stored 0..31 where 0
+  // displays/means 32 (OUT_COUNT/IN_COUNT, SPEC-7-26/21); 'join' the
+  // FIFO-join cycle.
   const CFG_CONTROLS = {
     'osr-dir': { kind: 'toggle', group: 'shiftctrl', field: 'outRight' }, // SPEC-7-21
     'isr-dir': { kind: 'toggle', group: 'shiftctrl', field: 'inRight' }, // SPEC-7-21
@@ -274,11 +308,11 @@
     return [[c.group, c.field, next]];
   }
 
-  function newState() {
-    // the reset-overlay state: all-zero memory (the jmp-0 park), every
-    // config field at its hardware reset value
+  // One SM's stored overlay: every field explicit so the composed words
+  // are the hardware reset words (feeds/entry are session presets).
+  function newSm() {
     return {
-      words: new Array(32).fill(0),
+      en: true,
       clkdiv: { intg: 1, frac: 0 },
       pinctrl: { ssCnt: 0, setCnt: 5, outCnt: 0, inBase: 0, ssBase: 0, setBase: 0, outBase: 0 },
       execctrl: {
@@ -308,13 +342,25 @@
       },
       feeds: [],
       entry: null,
+    };
+  }
+
+  function newState() {
+    // the reset-overlay state: all-zero memory (the jmp-0 park), every
+    // SM's config at its hardware reset value, all four enabled — the
+    // fresh playground boots with four cursors orbiting slot 00
+    return {
+      v: 2,
+      words: new Array(32).fill(0),
+      sms: [newSm(), newSm(), newSm(), newSm()],
       lens: null, // {mode:'off'|'uart'|'square', pin} — session preset
     };
   }
 
   // The demoted level-02 uart_tx fixture as a sandbox state (the C18
-  // LEVEL): every field explicit so the composed words are bit-for-bit
-  // the C18 load timeline words.
+  // LEVEL; SM0-authored scope — SM1..3 stay disabled so the demo keeps
+  // the C18 timeline bit-for-bit). Every field explicit so the composed
+  // words are bit-for-bit the C18 load timeline words.
   //   0: 0x9FA0  pull block side 1 [7]
   //   1: 0xF727  set x, 7 side 0 [7]
   //   2: 0x6001  out pins, 1
@@ -322,8 +368,9 @@
   function demoUartTx() {
     const st = newState();
     st.words = [0x9fa0, 0xf727, 0x6001, 0x0642].concat(new Array(28).fill(0));
-    st.pinctrl = { ssCnt: 2, setCnt: 0, outCnt: 1, inBase: 0, ssBase: 0, setBase: 0, outBase: 0 };
-    st.execctrl = {
+    const sm0 = st.sms[0];
+    sm0.pinctrl = { ssCnt: 2, setCnt: 0, outCnt: 1, inBase: 0, ssBase: 0, setBase: 0, outBase: 0 };
+    sm0.execctrl = {
       sideEn: true,
       sidePindirs: false,
       jmpPin: 0,
@@ -335,10 +382,34 @@
       statusSel: 0,
       statusN: 0,
     };
-    st.shiftctrl = { ...st.shiftctrl, fjoinTx: true };
-    st.feeds = [0x50, 0x49, 0x4f, 0x21]; // 'P','I','O','!'
+    sm0.shiftctrl = { ...sm0.shiftctrl, fjoinTx: true };
+    sm0.feeds = [0x50, 0x49, 0x4f, 0x21]; // 'P','I','O','!'
+    for (let i = 1; i < SMS; i++) st.sms[i].en = false;
     st.lens = { mode: 'uart', pin: 0 };
     return st;
+  }
+
+  // Overlay fields of one stored SM: validate + merge over the reset
+  // defaults (absent fields read their reset value).
+  function parseSmOverlay(dst, src) {
+    for (const group of ['clkdiv', 'pinctrl', 'execctrl', 'shiftctrl']) {
+      const gs = src?.[group] || {};
+      for (const [name, [, , max]] of Object.entries(OVERLAY_GROUPS[group].fields)) {
+        let v = gs[name];
+        if (v === undefined) continue; // absent → reset default
+        if (max === 'b') {
+          if (typeof v !== 'boolean') throw new Error(`sms.${group}.${name}: not a boolean`);
+          dst[group][name] = v;
+        } else {
+          v = Number(v);
+          const hiV = max === 'thr' ? 32 : max;
+          const loV = name === 'intg' || name === 'frac' ? 0 : max === 'thr' ? 1 : 0;
+          if (!Number.isInteger(v) || v < loV || v > hiV)
+            throw new Error(`${group}.${name}: out of range (${loV}..${hiV})`);
+          dst[group][name] = v;
+        }
+      }
+    }
   }
 
   function parseState(obj) {
@@ -353,36 +424,49 @@
         throw new Error(`state.words[${i}]: not a 16-bit word`);
       st.words[i] = w;
     }
-    for (const group of ['clkdiv', 'pinctrl', 'execctrl', 'shiftctrl']) {
-      const src = obj[group] || {};
-      for (const [name, [, , max]] of Object.entries(OVERLAY_GROUPS[group].fields)) {
-        let v = src[name];
-        if (v === undefined) v = newState()[group][name]; // absent → reset default
-        if (max === 'b') {
-          if (typeof v !== 'boolean') throw new Error(`${group}.${name}: not a boolean`);
-          st[group][name] = v;
-        } else {
-          v = Number(v);
-          const hiV = max === 'thr' ? 32 : max;
-          const loV = name === 'intg' || name === 'frac' ? 0 : max === 'thr' ? 1 : 0;
-          if (!Number.isInteger(v) || v < loV || v > hiV)
-            throw new Error(`${group}.${name}: out of range (${loV}..${hiV})`);
-          st[group][name] = v;
+    if (Array.isArray(obj.sms)) {
+      // v2: the four-machine stored program
+      if (obj.sms.length !== SMS) throw new Error(`state.sms: expected ${SMS} SMs`);
+      for (let i = 0; i < SMS; i++) {
+        const sm = obj.sms[i];
+        if (sm === null || sm === undefined) continue; // absent → defaults
+        if (typeof sm !== 'object') throw new Error('state.sms: not an object');
+        parseSmOverlay(st.sms[i], sm);
+        if (sm.en !== undefined) {
+          if (typeof sm.en !== 'boolean') throw new Error('sms.en: not a boolean');
+          st.sms[i].en = sm.en;
+        }
+        if (sm.feeds !== undefined) {
+          if (!Array.isArray(sm.feeds)) throw new Error('sms.feeds: not an array');
+          st.sms[i].feeds = sm.feeds.map((f) => {
+            if (!Number.isInteger(f) || f < 0 || f > 0xffffffff)
+              throw new Error('sms.feeds: not a word');
+            return f;
+          });
+        }
+        if (sm.entry !== undefined && sm.entry !== null) {
+          if (!Number.isInteger(sm.entry) || sm.entry < 0 || sm.entry > 31)
+            throw new Error('sms.entry: not a pc');
+          st.sms[i].entry = sm.entry;
         }
       }
-    }
-    if (obj.feeds !== undefined) {
-      if (!Array.isArray(obj.feeds)) throw new Error('state.feeds: not an array');
-      st.feeds = obj.feeds.map((f) => {
-        if (!Number.isInteger(f) || f < 0 || f > 0xffffffff)
-          throw new Error('state.feeds: not a word');
-        return f;
-      });
-    }
-    if (obj.entry !== undefined && obj.entry !== null) {
-      if (!Number.isInteger(obj.entry) || obj.entry < 0 || obj.entry > 31)
-        throw new Error('state.entry: not a pc');
-      st.entry = obj.entry;
+    } else {
+      // v1 legacy: the flat SM0-authored scope — SM1..3 stay disabled
+      parseSmOverlay(st.sms[0], obj);
+      for (let i = 1; i < SMS; i++) st.sms[i].en = false;
+      if (obj.feeds !== undefined) {
+        if (!Array.isArray(obj.feeds)) throw new Error('state.feeds: not an array');
+        st.sms[0].feeds = obj.feeds.map((f) => {
+          if (!Number.isInteger(f) || f < 0 || f > 0xffffffff)
+            throw new Error('state.feeds: not a word');
+          return f;
+        });
+      }
+      if (obj.entry !== undefined && obj.entry !== null) {
+        if (!Number.isInteger(obj.entry) || obj.entry < 0 || obj.entry > 31)
+          throw new Error('state.entry: not a pc');
+        st.sms[0].entry = obj.entry;
+      }
     }
     if (obj.lens !== undefined && obj.lens !== null) {
       const { mode, pin } = obj.lens;
@@ -401,27 +485,34 @@
     const DEFECT_PATTERN = !!defects?.pattern;
     const DEFECT_OVERLAY = !!defects?.overlay;
     const DEFECT_CFGCTRL = !!defects?.cfgctrl;
+    const DEFECT_SMADDR = !!defects?.smaddr;
+    const DEFECT_OWNER = !!defects?.owner;
     const cyclePtr = M._pio_last_cycle();
     const dv = new DataView(M.HEAPU8.buffer, cyclePtr, CYC_SIZE);
+    const ADR = { smaddr: DEFECT_SMADDR }; // the stride defect's view
 
     function readCycle() {
+      const sm = (i) => ({
+        pc: dv.getUint32(CYC.pc + 4 * i, true),
+        state: dv.getUint32(CYC.state + 4 * i, true),
+        delay: dv.getUint32(CYC.delay + 4 * i, true),
+        x: dv.getUint32(CYC.x + 4 * i, true),
+        y: dv.getUint32(CYC.y + 4 * i, true),
+        osr: dv.getUint32(CYC.osr + 4 * i, true),
+        isr: dv.getUint32(CYC.isr + 4 * i, true),
+        osrCnt: dv.getUint32(CYC.osr_cnt + 4 * i, true),
+        isrCnt: dv.getUint32(CYC.isr_cnt + 4 * i, true),
+        txLevel: dv.getUint32(CYC.tx_level + 4 * i, true),
+        rxLevel: dv.getUint32(CYC.rx_level + 4 * i, true),
+        strobes: dv.getUint32(CYC.strobes + 4 * i, true),
+        wrMask: dv.getUint32(CYC.wr_mask + 4 * i, true),
+      });
       return {
         clk: dv.getUint32(CYC.clk, true) + dv.getUint32(CYC.clk + 4, true) * 4294967296,
         gpioOut: dv.getUint32(CYC.gpio_out, true),
         gpioOe: dv.getUint32(CYC.gpio_oe, true),
         intr: dv.getUint32(CYC.intr, true),
-        pc: dv.getUint32(CYC.pc, true),
-        state: dv.getUint32(CYC.state, true),
-        delay: dv.getUint32(CYC.delay, true),
-        x: dv.getUint32(CYC.x, true),
-        y: dv.getUint32(CYC.y, true),
-        osr: dv.getUint32(CYC.osr, true),
-        isr: dv.getUint32(CYC.isr, true),
-        osrCnt: dv.getUint32(CYC.osr_cnt, true),
-        isrCnt: dv.getUint32(CYC.isr_cnt, true),
-        txLevel: dv.getUint32(CYC.tx_level, true),
-        rxLevel: dv.getUint32(CYC.rx_level, true),
-        strobes: dv.getUint32(CYC.strobes, true),
+        sms: [sm(0), sm(1), sm(2), sm(3)],
       };
     }
 
@@ -429,29 +520,40 @@
     let gpioWords = []; // raw gpio_out word per rendered clk (the history)
     let pins = []; // lens-pin bit per cycle (the waveform truth)
     let tags = []; // lens-derived meaning per cycle
-    let txWords = []; // TX FIFO contents mirror (display bookkeeping)
     let pendingOps = []; // queued reg-bus ops, one rendered clk each
     let memWords = new Array(32).fill(0); // imem image this client wrote
     let last = null; // decoded PioCycle of the most recent clk
-    let flashes = {};
     let refused = 0;
-    // the config overlay (the driver's mirror of what it last wrote)
-    let ov = {
-      clkdiv: { ...newState().clkdiv },
-      pinctrl: { ...newState().pinctrl },
-      execctrl: { ...newState().execctrl },
-      shiftctrl: { ...newState().shiftctrl },
-    };
+    let selSm = 0; // the selected SM (detail panes, stepInsn)
+    // the per-SM overlay mirrors (the driver's copy of what it wrote)
+    let ovs = [0, 1, 2, 3].map(() => {
+      const s = newSm();
+      return {
+        clkdiv: { ...s.clkdiv },
+        pinctrl: { ...s.pinctrl },
+        execctrl: { ...s.execctrl },
+        shiftctrl: { ...s.shiftctrl },
+      };
+    });
     // stimulus wiring: per-pin drive latches + the pattern generator
     const drives = new Array(32).fill(null); // null | 0 | 1 (mutated in place)
     let pattern = { mode: 'off', pin: 0, period: 16, bits: [0], startIdx: 0 }; // reassigned by setPattern
     // the monitor lens
     let lens = { mode: 'off', pin: 0 };
-    // the RX mirror: one count per rx_push strobe, minus the drains
-    let rxPushes = 0;
-    let rxDrains = 0;
-    let rxWords = []; // drained words (the only way contents are learned)
+    // the per-SM TX/RX mirrors (display bookkeeping; the engine's
+    // tx_level/rx_level are always the truth)
+    let txWords = [[], [], [], []];
+    let rxPushes = [0, 0, 0, 0];
+    let rxDrains = [0, 0, 0, 0];
+    let rxWords = [[], [], [], []]; // drained words (the only way contents are learned)
+    let lastExecPc = [0, 0, 0, 0]; // latched at record time (the C20 lesson)
+    let flashes = [{}, {}, {}, {}];
+    // pad ownership: the last SM to write each pin (CC-7 scan order)
+    let pinOwner = new Array(32).fill(-1);
     let readLog = []; // recent queued-read results {addr, rdata}
+    // the enable mask last loaded (serialize carries it so a round
+    // trip reloads the same machines)
+    let serializedEn = [true, true, true, true];
     let mon = monInit();
     let sq = sqInit();
 
@@ -544,27 +646,56 @@
       for (let k = 0; k < pins.length; k++) tags[k] = lensStep(k);
     }
 
+    // Which SM a reg address belongs to, where the driver can tell: the
+    // SM config window and the TXF/RXF/PUTGET strides. Addresses outside
+    // any per-SM window return -1 (block-scope).
+    function smOfAddr(addr) {
+      const off = addr >>> 0;
+      if (off >= REG.TXF0 && off < REG.TXF0 + 4 * SMS) return (off - REG.TXF0) >> 2;
+      if (off >= REG.RXF0 && off < REG.RXF0 + 4 * SMS) return (off - REG.RXF0) >> 2;
+      if (off >= REG.PUTGET0) return Math.floor((off - REG.PUTGET0) / 0x10) & 3;
+      const stride = ADR.smaddr ? 0x14 : SM_WIN;
+      for (let i = 0; i < SMS; i++) {
+        const base = REG.SM0 + stride * i;
+        if (off >= base && off < base + 24) return i;
+      }
+      return -1;
+    }
+
     function record(cycle) {
       gpioWords.push(cycle.gpioOut);
       pins.push(lensBitOf(cycle.gpioOut));
       tags.push(lensStep(pins.length - 1));
-      if (cycle.strobes & S_TX_POP && !DEFECT_MIRROR) txWords.shift(); // defect: never pops
-      if (cycle.strobes & S_RX_PUSH && !DEFECT_RX) rxPushes++; // defect: never counts
-      flashes = {
-        pull: !!(cycle.strobes & S_TX_POP),
-        push: !!(cycle.strobes & S_RX_PUSH),
-        jmp: !!(cycle.strobes & S_PC_WR),
-        wrap:
-          !!(cycle.strobes & S_COMPLETE) &&
-          !(cycle.strobes & S_PC_WR) &&
-          cycle.pc === ov.execctrl.wrapTop,
-        execInsn: !!(cycle.strobes & S_EXEC),
-      };
-      // Latch the executing pc at record time, not lazily at read time:
-      // a batch that spans EXEC->DELAY (worker {cmd:'run',cycles:N}, the
-      // ?t= URL pre-run) must still display the delaying instruction —
-      // found by the C20 unit suite (displayedPc latches... red/green).
-      if (cycle.strobes & S_EXEC) lastExecPc = cycle.pc;
+      // pad ownership: ascending scan, last write wins — the highest
+      // SM lands last, exactly the RTL's per-pin CC-7 order. The defect
+      // scans descending (lowest wins).
+      const order = DEFECT_OWNER ? [3, 2, 1, 0] : [0, 1, 2, 3];
+      for (const i of order) {
+        const m = cycle.sms[i].wrMask;
+        if (!m) continue;
+        for (let p = 0; p < 32; p++) if ((m >>> p) & 1) pinOwner[p] = i;
+      }
+      for (let i = 0; i < SMS; i++) {
+        const s = cycle.sms[i];
+        if (s.strobes & S_TX_POP && !DEFECT_MIRROR) txWords[i].shift(); // defect: never pops
+        if (s.strobes & S_RX_PUSH && !DEFECT_RX) rxPushes[i]++; // defect: never counts
+        flashes[i] = {
+          pull: !!(s.strobes & S_TX_POP),
+          push: !!(s.strobes & S_RX_PUSH),
+          jmp: !!(s.strobes & S_PC_WR),
+          wrap:
+            !!(s.strobes & S_COMPLETE) &&
+            !(s.strobes & S_PC_WR) &&
+            s.pc === ovs[i].execctrl.wrapTop,
+          execInsn: !!(s.strobes & S_EXEC),
+        };
+        // Latch the executing pc at record time, not lazily at read
+        // time: a batch that spans EXEC->DELAY (worker {cmd:'run',cycles:N},
+        // the ?t= URL pre-run) must still display the delaying
+        // instruction — found by the C20 unit suite (displayedPc
+        // latches... red/green).
+        if (s.strobes & S_EXEC) lastExecPc[i] = s.pc;
+      }
       last = cycle;
     }
 
@@ -589,12 +720,16 @@
     function doWrite(addr, data, fjoinFlush) {
       M._pio_reg_write(addr, data | 0);
       if (fjoinFlush) {
-        // SPEC-6-2: the FJOIN change flushes both FIFOs (the engine
-        // retires the discard on the following clk) — the mirrors reset
-        // with it or they disagree with tx_level/rx_level forever after
-        txWords = [];
-        rxPushes = 0;
-        rxDrains = 0; // rxWords (the drained log) is history and stays
+        // SPEC-6-2: the FJOIN change flushes that SM's FIFOs (the
+        // engine retires the discard on the following clk) — the
+        // mirrors reset with it or they disagree with tx_level/rx_level
+        // forever after
+        const i = smOfAddr(addr);
+        if (i >= 0) {
+          txWords[i] = [];
+          rxPushes[i] = 0;
+          rxDrains[i] = 0; // rxWords (the drained log) is history and stays
+        }
       }
       record(readCycle());
     }
@@ -603,14 +738,18 @@
       record(readCycle());
       readLog.push({ addr, rdata: v >>> 0 });
       if (readLog.length > 16) readLog.shift();
-      if (addr === REG.RXF0) {
-        rxWords.push(v >>> 0);
-        rxDrains++;
+      if (addr >= REG.RXF0 && addr < REG.RXF0 + 4 * SMS) {
+        const i = (addr - REG.RXF0) >> 2;
+        rxWords[i].push(v >>> 0);
+        rxDrains[i]++;
       }
       return v;
     }
     function doStep() {
-      M._pio_step(composedGpio(), 0, 0); // irq neighbours idle (SM0-only, C24 later)
+      // irq_prev/next are the NEIGHBOUR BLOCKS' relay views (pio_top's,
+      // CC-38) — inter-SM IRQ inside this block runs on the shared flag
+      // register, so the sandbox steps with both idles.
+      M._pio_step(composedGpio(), 0, 0);
       record(readCycle());
     }
 
@@ -631,58 +770,74 @@
       gpioWords = [];
       pins = [];
       tags = [];
-      txWords = [];
+      txWords = [[], [], [], []];
       pendingOps = [];
       mon = monInit();
       sq = sqInit();
-      rxPushes = 0;
-      rxDrains = 0;
-      rxWords = [];
+      rxPushes = [0, 0, 0, 0];
+      rxDrains = [0, 0, 0, 0];
+      rxWords = [[], [], [], []];
+      lastExecPc = [0, 0, 0, 0];
+      flashes = [{}, {}, {}, {}];
+      pinOwner = new Array(32).fill(-1);
       readLog = [];
       refused = 0;
-      flashes = {};
       last = null;
     }
 
     // The load timeline mirrors tools/pio_model stim._sched_basic
-    // exactly (the CI gate compares the resulting pin series against
-    // pio_model): nonzero imem words, PINCTRL, EXECCTRL, SHIFTCTRL, one
-    // idle clk so a FJOIN-changing SHIFTCTRL write flushes before the
-    // feeds land (SPEC-6-2), CLKDIV while it differs from the reset
-    // word, the optional entry force (SM0_INSTR jmp — the set_pc
-    // idiom), seed feeds, enable. Every load clk is a rendered clk —
-    // run(N) counts only clks after load.
+    // exactly, grown per SM (the CI gate compares the resulting pin
+    // series against pio_model): nonzero imem words, then per SM
+    // PINCTRL, EXECCTRL, SHIFTCTRL, one idle clk so any FJOIN-changing
+    // SHIFTCTRL write flushes before the feeds land (SPEC-6-2), CLKDIV
+    // per SM while it differs from the reset word, the per-SM entry
+    // force (SMx_INSTR jmp — the set_pc idiom), per-SM seed feeds
+    // (TXFx), and one CTRL write enabling the enabled SMs. Every load
+    // clk is a rendered clk — run(N) counts only clks after load.
     function load(state) {
       const st = parseState(state);
       M._pio_engine_reset();
       clearRunState();
-      ov = {
-        clkdiv: { ...st.clkdiv },
-        pinctrl: { ...st.pinctrl },
-        execctrl: { ...st.execctrl },
-        shiftctrl: { ...st.shiftctrl },
-      };
+      ovs = st.sms.map((s) => ({
+        clkdiv: { ...s.clkdiv },
+        pinctrl: { ...s.pinctrl },
+        execctrl: { ...s.execctrl },
+        shiftctrl: { ...s.shiftctrl },
+      }));
       memWords = st.words.slice();
       memWords.forEach((w, i) => {
         if (w) pendingOps.push({ addr: REG.IMEM0 + 4 * i, data: w });
       });
-      pendingOps.push({ addr: REG.SM0 + 20, data: compose('pinctrl') });
-      pendingOps.push({ addr: REG.SM0 + 4, data: compose('execctrl') });
-      pendingOps.push({ addr: REG.SM0 + 8, data: compose('shiftctrl') });
+      for (let i = 0; i < SMS; i++) {
+        pendingOps.push({ addr: overlayAddr(i, 'pinctrl', ADR), data: compose(i, 'pinctrl') });
+        pendingOps.push({ addr: overlayAddr(i, 'execctrl', ADR), data: compose(i, 'execctrl') });
+        pendingOps.push({ addr: overlayAddr(i, 'shiftctrl', ADR), data: compose(i, 'shiftctrl') });
+      }
       pendingOps.push(null); // the idle clk (SPEC-6-2)
-      const cd = compose('clkdiv');
-      if (cd !== CLKDIV_RESET) pendingOps.push({ addr: REG.SM0 + 0, data: cd });
-      if (st.entry !== null) pendingOps.push({ addr: REG.SM0 + 16, data: st.entry & 31 });
-      for (const f of st.feeds) pendingOps.push({ addr: REG.TXF0, data: f });
-      pendingOps.push({ addr: REG.CTRL, data: 1 }); // SM0 enable (SPEC-7-2)
+      for (let i = 0; i < SMS; i++) {
+        const cd = compose(i, 'clkdiv');
+        if (cd !== CLKDIV_RESET) pendingOps.push({ addr: overlayAddr(i, 'clkdiv', ADR), data: cd });
+      }
+      for (let i = 0; i < SMS; i++)
+        if (st.sms[i].entry !== null)
+          pendingOps.push({
+            addr: overlayAddr(i, 'execctrl', ADR) + 12,
+            data: st.sms[i].entry & 31,
+          }); // SMx_INSTR (window +16): jmp entry (set_pc idiom)
+      for (let i = 0; i < SMS; i++)
+        for (const f of st.sms[i].feeds) pendingOps.push({ addr: REG.TXF0 + 4 * i, data: f });
+      let mask = 0;
+      for (let i = 0; i < SMS; i++) if (st.sms[i].en) mask |= 1 << i;
+      serializedEn = [0, 1, 2, 3].map((i) => !!((mask >> i) & 1));
+      pendingOps.push({ addr: REG.CTRL, data: mask }); // SPEC-7-2
       lens = st.lens ? { ...st.lens } : { mode: 'off', pin: 0 };
       rebuildLensSeries();
       while (pendingOps.length) step();
-      txWords = st.feeds.slice();
+      txWords = st.sms.map((s) => s.feeds.slice());
     }
 
-    function compose(group) {
-      return composeOverlay(group, ov[group], { overlay: DEFECT_OVERLAY });
+    function compose(sm, group) {
+      return composeOverlay(group, ovs[sm][group], { overlay: DEFECT_OVERLAY });
     }
 
     function run(n) {
@@ -692,32 +847,40 @@
       while (pendingOps.length) step();
     }
 
-    // Enqueue bytes into the TX FIFO as queued reg writes; refuse at the
-    // first word that would overflow (tx_full from the last true sample —
-    // nothing else writes between cycles, so the cached flag is exact).
-    function enqueue(bytes) {
+    // The selected SM (the detail panes', stepInsn's SM).
+    function select(sm) {
+      const s = Number(sm);
+      if (!Number.isInteger(s) || s < 0 || s >= SMS) throw new Error('select: bad SM');
+      selSm = s;
+    }
+
+    // Enqueue bytes into SM `sm`'s TX FIFO as queued reg writes; refuse
+    // at the first word that would overflow (tx_full from the last true
+    // sample — nothing else writes between cycles, so the cached flag
+    // is exact).
+    function enqueue(bytes, sm = 0) {
       refused = 0;
       for (const b of bytes) {
-        if (last && last.strobes & S_TX_FULL) {
+        if (last && last.sms[sm].strobes & S_TX_FULL) {
           refused++;
           break;
         }
-        pendingOps.push({ addr: REG.TXF0, data: b & 0xff });
-        txWords.push(b & 0xff);
+        pendingOps.push({ addr: REG.TXF0 + 4 * sm, data: b & 0xff });
+        txWords[sm].push(b & 0xff);
       }
       return refused;
     }
 
-    // The inspector's TXF0 row: a full 32-bit word, the same mirror
+    // The inspector's TXFx row: a full 32-bit word, the same mirror
     // discipline (the feed bar's enqueue is the byte flavor).
-    function enqueueWord(word) {
+    function enqueueWord(word, sm = 0) {
       refused = 0;
-      if (last && last.strobes & S_TX_FULL) {
+      if (last && last.sms[sm].strobes & S_TX_FULL) {
         refused = 1;
         return 0;
       }
-      pendingOps.push({ addr: REG.TXF0, data: word >>> 0 });
-      txWords.push(word >>> 0);
+      pendingOps.push({ addr: REG.TXF0 + 4 * sm, data: word >>> 0 });
+      txWords[sm].push(word >>> 0);
       return 1;
     }
 
@@ -732,11 +895,11 @@
       return 'txrx';
     }
 
-    // A config-field edit: update the overlay mirror and queue the
-    // composed reg write (one rendered clk, SPEC-7-x). A fifo-mode-
-    // changing SHIFTCTRL edit flushes the FIFOs (SPEC-6-2): the write
-    // carries the mirror reset and the settle clk follows so a feeding
-    // write cannot land on the flush edge.
+    // A config-field edit of SM `sm`: update the overlay mirror and
+    // queue the composed reg write (one rendered clk, SPEC-7-x). A
+    // fifo-mode-changing SHIFTCTRL edit flushes the FIFOs (SPEC-6-2):
+    // the write carries the mirror reset and the settle clk follows so
+    // a feeding write cannot land on the flush edge.
     function validateOverlayValue(group, field, value) {
       const spec = OVERLAY_GROUPS[group].fields[field];
       if (!spec) throw new Error(`overlay: no field ${group}.${field}`);
@@ -752,36 +915,36 @@
         throw new Error(`${group}.${field}: out of range (${loV}..${hiV})`);
     }
 
-    function setOverlayField(group, field, value) {
+    function setOverlayField(sm, group, field, value) {
       validateOverlayValue(group, field, value);
-      const modeBefore = fifoModeOf(ov.shiftctrl);
-      ov[group][field] = value;
-      pendingOps.push({ addr: OVERLAY_GROUPS[group].addr(), data: compose(group) });
-      if (group === 'shiftctrl' && modeBefore !== fifoModeOf(ov.shiftctrl)) {
+      const modeBefore = fifoModeOf(ovs[sm].shiftctrl);
+      ovs[sm][group][field] = value;
+      pendingOps.push({ addr: overlayAddr(sm, group, ADR), data: compose(sm, group) });
+      if (group === 'shiftctrl' && modeBefore !== fifoModeOf(ovs[sm].shiftctrl)) {
         pendingOps[pendingOps.length - 1].fjoinFlush = true;
         pendingOps.push(null);
       }
     }
 
-    // A multi-field config edit (the C22 drawn controls): validate every
-    // edit first, then apply all and queue ONE composed write per
-    // touched group — an atomic join edit must not pay two SHIFTCTRL
-    // writes or two SPEC-6-2 settle clks.
-    function setOverlayFields(edits) {
+    // A multi-field config edit of SM `sm` (the C22 drawn controls):
+    // validate every edit first, then apply all and queue ONE composed
+    // write per touched group — an atomic join edit must not pay two
+    // SHIFTCTRL writes or two SPEC-6-2 settle clks.
+    function setOverlayFields(sm, edits) {
       if (!Array.isArray(edits) || edits.length === 0) throw new Error('overlay edits: none');
-      for (const [group, field, value] of edits) {
+      for (const [group] of edits) {
         if (!OVERLAY_GROUPS[group]) throw new Error(`overlay: no group ${group}`);
-        validateOverlayValue(group, field, value);
       }
-      const modeBefore = fifoModeOf(ov.shiftctrl);
-      for (const [group, field, value] of edits) ov[group][field] = value;
+      for (const [group, field, value] of edits) validateOverlayValue(group, field, value);
+      const modeBefore = fifoModeOf(ovs[sm].shiftctrl);
+      for (const [group, field, value] of edits) ovs[sm][group][field] = value;
       let shiftOp = null;
       for (const group of [...new Set(edits.map(([g]) => g))]) {
-        const op = { addr: OVERLAY_GROUPS[group].addr(), data: compose(group) };
+        const op = { addr: overlayAddr(sm, group, ADR), data: compose(sm, group) };
         if (group === 'shiftctrl') shiftOp = op;
         pendingOps.push(op);
       }
-      if (shiftOp && modeBefore !== fifoModeOf(ov.shiftctrl)) {
+      if (shiftOp && modeBefore !== fifoModeOf(ovs[sm].shiftctrl)) {
         shiftOp.fjoinFlush = true;
         pendingOps.push(null);
       }
@@ -789,9 +952,10 @@
 
     // The drawn-control entry point (the worker's {cmd:'control'}): the
     // shared controlEdit table decides the edits, setOverlayFields lands
-    // them. The defect hook re-injects the FJOIN TX/RX swap here.
-    function applyControl(id, gesture) {
-      setOverlayFields(controlEdit(ov, id, gesture, { cfgctrl: DEFECT_CFGCTRL }));
+    // them on SM `sm`. The defect hook re-injects the FJOIN TX/RX swap
+    // here.
+    function applyControl(sm, id, gesture) {
+      setOverlayFields(sm, controlEdit(ovs[sm], id, gesture, { cfgctrl: DEFECT_CFGCTRL }));
     }
 
     // Hold-latch a manual pin drive (null releases the pin). The level
@@ -844,13 +1008,14 @@
       rebuildLensSeries();
     }
 
-    // Queue RXF0 reads (the RX drain): one rendered clk each, the words
-    // learned only by draining (the R-line discipline). Never queues
-    // past the mirrored level — read-on-empty is the model's RXUNDER.
-    function drainRx(n) {
-      const avail = Math.max(0, rxPushes - rxDrains);
+    // Queue RXFx reads of SM `sm` (the RX drain): one rendered clk
+    // each, the words learned only by draining (the R-line
+    // discipline). Never queues past the mirrored level — read-on-empty
+    // is the model's RXUNDER.
+    function drainRx(n, sm = 0) {
+      const avail = Math.max(0, rxPushes[sm] - rxDrains[sm]);
       const k = Math.max(0, Math.min(Math.floor(n) || 0, avail));
-      for (let i = 0; i < k; i++) pendingOps.push({ rd: REG.RXF0 });
+      for (let i = 0; i < k; i++) pendingOps.push({ rd: REG.RXF0 + 4 * sm });
       return k;
     }
 
@@ -865,8 +1030,8 @@
 
     // A generic reg write, flushed (the inspector's non-overlay rows:
     // CTRL pulses, IRQ W1C/force, INPUT_SYNC_BYPASS, FDEBUG W1C, the
-    // SM0_INSTR force — config regs go through setOverlayField so the
-    // overlay mirror stays the truth, TXF0 through enqueue so the TX
+    // SMx_INSTR force — config regs go through setOverlayField so the
+    // overlay mirror stays the truth, TXFx through enqueue so the TX
     // mirror stays exact).
     function writeRegNow(addr, data) {
       pendingOps.push({ addr: addr >>> 0, data: data | 0 });
@@ -889,36 +1054,34 @@
       }
     }
 
-    // "⏭ INSN": step until the displayed instruction changes (or the SM
-    // stalls) — the mock-up's do/while over true engine samples.
+    // pc of SM i's most recent S_EXEC clk — latched eagerly in record()
+    // so unobserved batches still display the delaying instruction
+    function displayedPcOf(i) {
+      if (!last) return 0;
+      return last.sms[i].state === ST.DELAY ? lastExecPc[i] : last.sms[i].pc;
+    }
+    function phaseOf(s) {
+      if (!s) return 'OFF';
+      if (s.state === ST.STALL) return 'STALL';
+      if (s.state === ST.DELAY) return 'DELAY';
+      if (s.state === ST.FETCH || s.state === ST.EXEC) return s.strobes & S_TICK ? 'EXEC' : 'OFF';
+      return 'OFF';
+    }
+
+    // "⏭ INSN": step until the SELECTED SM's displayed instruction
+    // changes (or that SM stalls) — the mock-up's do/while over true
+    // engine samples.
     function stepInsn() {
-      const p0 = displayedPc();
+      const p0 = displayedPcOf(selSm);
       let n = 0;
       do {
         step();
         n++;
-      } while (displayedPc() === p0 && phaseOf() !== 'STALL' && n < 200);
+      } while (displayedPcOf(selSm) === p0 && phaseOf(last?.sms[selSm]) !== 'STALL' && n < 200);
     }
 
-    // pc of the most recent S_EXEC clk — latched eagerly in record() so
-    // unobserved batches still display the delaying instruction
-    let lastExecPc = 0;
-    function displayedPc() {
-      if (!last) return 0;
-      return last.state === ST.DELAY ? lastExecPc : last.pc;
-    }
-    function phaseOf() {
-      if (!last) return 'OFF';
-      if (last.state === ST.STALL) return 'STALL';
-      if (last.state === ST.DELAY) return 'DELAY';
-      if (last.state === ST.FETCH || last.state === ST.EXEC)
-        return last.strobes & S_TICK ? 'EXEC' : 'OFF';
-      return 'OFF';
-    }
-
-    // FIFO depths implied by the join/aux overlay (SPEC-6-2/3/4).
-    function fifoDepths() {
-      const sc = ov.shiftctrl;
+    // FIFO depths implied by one SM's join/aux overlay (SPEC-6-2/3/4).
+    function fifoDepthsOf(sc) {
       if (sc.fjoinRxPut || sc.fjoinRxGet) return { tx: 4, rx: 0 };
       if (sc.fjoinRx && sc.fjoinTx) return { tx: 0, rx: 0 };
       if (sc.fjoinRx) return { tx: 0, rx: 8 };
@@ -926,53 +1089,92 @@
       return { tx: 4, rx: 4 };
     }
 
-    // The stored-program format: words + the config overlay (feeds,
-    // lens, drives are session state — the same JSON seeds level
-    // authoring, and levels do not carry a FIFO's worth of stimulus).
+    // One SM's decoded view (the getState sms[] element).
+    function smView(i) {
+      const s = last ? last.sms[i] : null;
+      return {
+        pc: s ? s.pc : 0,
+        displayPc: displayedPcOf(i),
+        phase: phaseOf(s),
+        delay: s ? s.delay : 0,
+        x: s ? s.x : 0,
+        y: s ? s.y : 0,
+        osr: s ? s.osr : 0,
+        isr: s ? s.isr : 0,
+        osrCnt: s ? s.osrCnt : 0,
+        isrCnt: s ? s.isrCnt : 0,
+        txLevel: s ? s.txLevel : 0,
+        txEmpty: s ? !!(s.strobes & S_TX_EMPTY) : true,
+        txFull: s ? !!(s.strobes & S_TX_FULL) : false,
+        txWords: txWords[i].slice(),
+        rxLevel: s ? s.rxLevel : 0,
+        rxWords: rxWords[i].slice(),
+        rxMirror: {
+          pushes: rxPushes[i],
+          drains: rxDrains[i],
+          ok: rxPushes[i] - rxDrains[i] === (s ? s.rxLevel : 0),
+        },
+        fifoDepths: fifoDepthsOf(ovs[i].shiftctrl),
+        flashes: flashes[i],
+        overlay: {
+          clkdiv: { ...ovs[i].clkdiv },
+          pinctrl: { ...ovs[i].pinctrl },
+          execctrl: { ...ovs[i].execctrl },
+          shiftctrl: { ...ovs[i].shiftctrl },
+        },
+      };
+    }
+
+    // The stored-program format: words + the per-SM config overlay
+    // (feeds, entry, lens, drives are session state — the same JSON
+    // seeds level authoring, and levels do not carry a FIFO's worth of
+    // stimulus). The per-SM enable rides along so a round trip reloads
+    // the same machines.
     function serialize() {
       return {
-        v: 1,
+        v: 2,
         words: memWords.slice(),
-        clkdiv: { ...ov.clkdiv },
-        pinctrl: { ...ov.pinctrl },
-        execctrl: { ...ov.execctrl },
-        shiftctrl: { ...ov.shiftctrl },
+        sms: ovs.map((ov, i) => ({
+          clkdiv: { ...ov.clkdiv },
+          pinctrl: { ...ov.pinctrl },
+          execctrl: { ...ov.execctrl },
+          shiftctrl: { ...ov.shiftctrl },
+          en: serializedEn[i],
+        })),
       };
     }
 
     const WAVE_WIN = 128;
     function getState() {
-      const n = pins.length;
-      const from = Math.max(0, n - WAVE_WIN);
-      const depths = fifoDepths();
+      const sel = smView(selSm);
       return {
         cycle: last ? last.clk : 0,
-        pin: n ? pins[n - 1] : 0,
-        pc: last ? last.pc : 0,
-        displayPc: displayedPc(),
-        phase: phaseOf(),
-        delay: last ? last.delay : 0,
-        x: last ? last.x : 0,
-        y: last ? last.y : 0,
-        osr: last ? last.osr : 0,
-        isr: last ? last.isr : 0,
-        osrCnt: last ? last.osrCnt : 0,
-        isrCnt: last ? last.isrCnt : 0,
+        pin: pins.length ? pins[pins.length - 1] : 0,
+        sm: selSm,
+        sms: [smView(0), smView(1), smView(2), smView(3)],
+        owners: pinOwner.slice(),
+        // selected-SM aliases (the detail panes' view — the C21 shape)
+        pc: sel.pc,
+        displayPc: sel.displayPc,
+        phase: sel.phase,
+        delay: sel.delay,
+        x: sel.x,
+        y: sel.y,
+        osr: sel.osr,
+        isr: sel.isr,
+        osrCnt: sel.osrCnt,
+        isrCnt: sel.isrCnt,
         gpioOut: last ? last.gpioOut : 0,
         gpioOe: last ? last.gpioOe : 0,
-        intr: last ? last.intr : 0,
-        txLevel: last ? last.txLevel : 0,
-        txEmpty: last ? !!(last.strobes & S_TX_EMPTY) : true,
-        txFull: last ? !!(last.strobes & S_TX_FULL) : false,
-        txWords: txWords.slice(),
-        rxLevel: last ? last.rxLevel : 0,
-        rxWords: rxWords.slice(),
-        rxMirror: {
-          pushes: rxPushes,
-          drains: rxDrains,
-          ok: rxPushes - rxDrains === (last ? last.rxLevel : 0),
-        },
-        fifoDepths: depths,
+        intr: last ? last.intr : 0x00f0,
+        txLevel: sel.txLevel,
+        txEmpty: sel.txEmpty,
+        txFull: sel.txFull,
+        txWords: sel.txWords,
+        rxLevel: sel.rxLevel,
+        rxWords: sel.rxWords,
+        rxMirror: sel.rxMirror,
+        fifoDepths: sel.fifoDepths,
         monitor: {
           decoded: mon.decoded,
           frameOff: mon.armed ? mon.frameOff : null,
@@ -981,16 +1183,15 @@
               ? { period: sq.period, dutyPct: sq.dutyPct, edges: sq.edges }
               : null,
         },
-        wave: { pins: pins.slice(from), tags: tags.slice(from), startCycle: from },
-        flashes,
+        wave: {
+          pins: pins.slice(-WAVE_WIN),
+          tags: tags.slice(-WAVE_WIN),
+          startCycle: Math.max(0, pins.length - WAVE_WIN),
+        },
+        flashes: sel.flashes,
         refused,
         lens: { ...lens },
-        overlay: {
-          clkdiv: { ...ov.clkdiv },
-          pinctrl: { ...ov.pinctrl },
-          execctrl: { ...ov.execctrl },
-          shiftctrl: { ...ov.shiftctrl },
-        },
+        overlay: sel.overlay,
         drives: drives.slice(),
         pattern: { ...pattern, bits: pattern.bits.slice() },
         readLog: readLog.slice(),
@@ -1002,6 +1203,7 @@
       step,
       run,
       flushOps,
+      select,
       stepInsn,
       enqueue,
       enqueueWord,
@@ -1039,11 +1241,14 @@
     controlEdit,
     // the inspector's field table (bit ranges + max/kind for its inputs)
     OVERLAY_GROUP_FIELDS: (group) => Object.entries(OVERLAY_GROUPS[group].fields),
+    // the per-SM window address of one overlay group (SPEC-7 per-SM map)
+    overlayAddr,
     EMPTY,
     DEMO_UART_TX,
     REG,
     ST,
     CYC,
+    SMS,
   };
   global.VibeDriver = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

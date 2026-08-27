@@ -30,10 +30,10 @@
 //       assertion can catch it (proves the self-check path fires);
 //   PIO_DEFECT_SAMPLE_LATE lives in pio_shim.cpp (C++ side).
 //
-// The dbg_sm0_* ports (C18) are pio_block's SM0 live-state view for the
-// browser client — read by pio_shim.cpp's PioCycle sample, not asserted
-// here (their content is certified by the model-cross-checked client
-// gate, not an invariant).
+// The dbg_sm0..3_* ports (C18, grown to four SMs by C24) are
+// pio_block's per-SM live-state view for the browser client — read by
+// pio_shim.cpp's PioCycle sample, not asserted here (their content is
+// certified by the model-cross-checked client gate, not an invariant).
 
 module pio_shim_top (
     input  logic clk,
@@ -64,10 +64,16 @@ module pio_shim_top (
     output logic [3:0]     dbg_sm_en,    // snapshot: enable bank (SPEC-7-2)
     output logic [3:0][4:0] dbg_sm_pc,   // snapshot: fetch addrs (CC-33)
     output logic [3:0]     dbg_force,    // snapshot: force ticks (CC-35)
+    // snapshot: per-SM this-clk pad write masks (CC-7 inputs — the C24
+    // ownership lens), split into scalar ports for the C++ sample.
+    output logic [31:0]    dbg_sm0_wr_mask,
+    output logic [31:0]    dbg_sm1_wr_mask,
+    output logic [31:0]    dbg_sm2_wr_mask,
+    output logic [31:0]    dbg_sm3_wr_mask,
 
-    // SM0 live-state view (C18 client; SPEC-16-4 single-SM scope) —
-    // pio_block's dbg_sm0_* bundle, wired straight through to the shim's
-    // per-clk PioCycle sample.
+    // Per-SM live-state view (C18 client, grown to four SMs by C24) —
+    // pio_block's dbg_sm0..3_* bundles, wired straight through to the
+    // shim's per-clk PioCycle sample.
     output logic [3:0]  dbg_sm0_state,
     output logic [4:0]  dbg_sm0_delay,
     output logic [31:0] dbg_sm0_x,
@@ -85,7 +91,61 @@ module pio_shim_top (
     output logic        dbg_sm0_complete,
     output logic        dbg_sm0_pc_wr,
     output logic        dbg_sm0_tx_pop,
-    output logic        dbg_sm0_rx_push
+    output logic        dbg_sm0_rx_push,
+    output logic [3:0]  dbg_sm1_state,
+    output logic [4:0]  dbg_sm1_delay,
+    output logic [31:0] dbg_sm1_x,
+    output logic [31:0] dbg_sm1_y,
+    output logic [31:0] dbg_sm1_osr,
+    output logic [31:0] dbg_sm1_isr,
+    output logic [5:0]  dbg_sm1_osr_cnt,
+    output logic [5:0]  dbg_sm1_isr_cnt,
+    output logic [3:0]  dbg_sm1_tx_level,
+    output logic [3:0]  dbg_sm1_rx_level,
+    output logic        dbg_sm1_tx_empty,
+    output logic        dbg_sm1_tx_full,
+    output logic        dbg_sm1_tick,
+    output logic        dbg_sm1_exec,
+    output logic        dbg_sm1_complete,
+    output logic        dbg_sm1_pc_wr,
+    output logic        dbg_sm1_tx_pop,
+    output logic        dbg_sm1_rx_push,
+    output logic [3:0]  dbg_sm2_state,
+    output logic [4:0]  dbg_sm2_delay,
+    output logic [31:0] dbg_sm2_x,
+    output logic [31:0] dbg_sm2_y,
+    output logic [31:0] dbg_sm2_osr,
+    output logic [31:0] dbg_sm2_isr,
+    output logic [5:0]  dbg_sm2_osr_cnt,
+    output logic [5:0]  dbg_sm2_isr_cnt,
+    output logic [3:0]  dbg_sm2_tx_level,
+    output logic [3:0]  dbg_sm2_rx_level,
+    output logic        dbg_sm2_tx_empty,
+    output logic        dbg_sm2_tx_full,
+    output logic        dbg_sm2_tick,
+    output logic        dbg_sm2_exec,
+    output logic        dbg_sm2_complete,
+    output logic        dbg_sm2_pc_wr,
+    output logic        dbg_sm2_tx_pop,
+    output logic        dbg_sm2_rx_push,
+    output logic [3:0]  dbg_sm3_state,
+    output logic [4:0]  dbg_sm3_delay,
+    output logic [31:0] dbg_sm3_x,
+    output logic [31:0] dbg_sm3_y,
+    output logic [31:0] dbg_sm3_osr,
+    output logic [31:0] dbg_sm3_isr,
+    output logic [5:0]  dbg_sm3_osr_cnt,
+    output logic [5:0]  dbg_sm3_isr_cnt,
+    output logic [3:0]  dbg_sm3_tx_level,
+    output logic [3:0]  dbg_sm3_rx_level,
+    output logic        dbg_sm3_tx_empty,
+    output logic        dbg_sm3_tx_full,
+    output logic        dbg_sm3_tick,
+    output logic        dbg_sm3_exec,
+    output logic        dbg_sm3_complete,
+    output logic        dbg_sm3_pc_wr,
+    output logic        dbg_sm3_tx_pop,
+    output logic        dbg_sm3_rx_push
 );
 
   pio_block u_dut (
@@ -113,6 +173,7 @@ module pio_shim_top (
       .dbg_sm_en      (dbg_sm_en),
       .dbg_sm_pc      (dbg_sm_pc),
       .dbg_force      (dbg_force),
+      .dbg_sm_wr_mask (gm_wr_mask_c),
       .dbg_sm0_state    (dbg_sm0_state),
       .dbg_sm0_delay    (dbg_sm0_delay),
       .dbg_sm0_x        (dbg_sm0_x),
@@ -130,8 +191,68 @@ module pio_shim_top (
       .dbg_sm0_complete (dbg_sm0_complete),
       .dbg_sm0_pc_wr    (dbg_sm0_pc_wr),
       .dbg_sm0_tx_pop   (dbg_sm0_tx_pop),
-      .dbg_sm0_rx_push  (dbg_sm0_rx_push)
+      .dbg_sm0_rx_push  (dbg_sm0_rx_push),
+      .dbg_sm1_state    (dbg_sm1_state),
+      .dbg_sm1_delay    (dbg_sm1_delay),
+      .dbg_sm1_x        (dbg_sm1_x),
+      .dbg_sm1_y        (dbg_sm1_y),
+      .dbg_sm1_osr      (dbg_sm1_osr),
+      .dbg_sm1_isr      (dbg_sm1_isr),
+      .dbg_sm1_osr_cnt  (dbg_sm1_osr_cnt),
+      .dbg_sm1_isr_cnt  (dbg_sm1_isr_cnt),
+      .dbg_sm1_tx_level (dbg_sm1_tx_level),
+      .dbg_sm1_rx_level (dbg_sm1_rx_level),
+      .dbg_sm1_tx_empty (dbg_sm1_tx_empty),
+      .dbg_sm1_tx_full  (dbg_sm1_tx_full),
+      .dbg_sm1_tick     (dbg_sm1_tick),
+      .dbg_sm1_exec     (dbg_sm1_exec),
+      .dbg_sm1_complete (dbg_sm1_complete),
+      .dbg_sm1_pc_wr    (dbg_sm1_pc_wr),
+      .dbg_sm1_tx_pop   (dbg_sm1_tx_pop),
+      .dbg_sm1_rx_push  (dbg_sm1_rx_push),
+      .dbg_sm2_state    (dbg_sm2_state),
+      .dbg_sm2_delay    (dbg_sm2_delay),
+      .dbg_sm2_x        (dbg_sm2_x),
+      .dbg_sm2_y        (dbg_sm2_y),
+      .dbg_sm2_osr      (dbg_sm2_osr),
+      .dbg_sm2_isr      (dbg_sm2_isr),
+      .dbg_sm2_osr_cnt  (dbg_sm2_osr_cnt),
+      .dbg_sm2_isr_cnt  (dbg_sm2_isr_cnt),
+      .dbg_sm2_tx_level (dbg_sm2_tx_level),
+      .dbg_sm2_rx_level (dbg_sm2_rx_level),
+      .dbg_sm2_tx_empty (dbg_sm2_tx_empty),
+      .dbg_sm2_tx_full  (dbg_sm2_tx_full),
+      .dbg_sm2_tick     (dbg_sm2_tick),
+      .dbg_sm2_exec     (dbg_sm2_exec),
+      .dbg_sm2_complete (dbg_sm2_complete),
+      .dbg_sm2_pc_wr    (dbg_sm2_pc_wr),
+      .dbg_sm2_tx_pop   (dbg_sm2_tx_pop),
+      .dbg_sm2_rx_push  (dbg_sm2_rx_push),
+      .dbg_sm3_state    (dbg_sm3_state),
+      .dbg_sm3_delay    (dbg_sm3_delay),
+      .dbg_sm3_x        (dbg_sm3_x),
+      .dbg_sm3_y        (dbg_sm3_y),
+      .dbg_sm3_osr      (dbg_sm3_osr),
+      .dbg_sm3_isr      (dbg_sm3_isr),
+      .dbg_sm3_osr_cnt  (dbg_sm3_osr_cnt),
+      .dbg_sm3_isr_cnt  (dbg_sm3_isr_cnt),
+      .dbg_sm3_tx_level (dbg_sm3_tx_level),
+      .dbg_sm3_rx_level (dbg_sm3_rx_level),
+      .dbg_sm3_tx_empty (dbg_sm3_tx_empty),
+      .dbg_sm3_tx_full  (dbg_sm3_tx_full),
+      .dbg_sm3_tick     (dbg_sm3_tick),
+      .dbg_sm3_exec     (dbg_sm3_exec),
+      .dbg_sm3_complete (dbg_sm3_complete),
+      .dbg_sm3_pc_wr    (dbg_sm3_pc_wr),
+      .dbg_sm3_tx_pop   (dbg_sm3_tx_pop),
+      .dbg_sm3_rx_push  (dbg_sm3_rx_push)
   );
+
+  logic [3:0][31:0] gm_wr_mask_c;  // pio_block per-SM pad writes (CC-7)
+  assign dbg_sm0_wr_mask = gm_wr_mask_c[0];
+  assign dbg_sm1_wr_mask = gm_wr_mask_c[1];
+  assign dbg_sm2_wr_mask = gm_wr_mask_c[2];
+  assign dbg_sm3_wr_mask = gm_wr_mask_c[3];
 
   // -----------------------------------------------------------------------
   // Shadow state (the fv_a reference-model idiom): one always_ff, every

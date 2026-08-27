@@ -26,21 +26,27 @@ Gates (KANBAN C17/C18 done-when):
                   drops word-0 writes — the DUT is untouched, only the
                   compiled-in asserts can catch it, leg 2: proves the
                   binary's self-check path fires).
-  --client        (5) the C18/C21 client gate: web/engine-driver.js (the
+  --client        (5) the C18/C21/C24 client gate: web/engine-driver.js (the
                   exact client core the browser worker runs) drives the
                   wasm engine's game face through five sandbox legs
                   (the uart demo / pin drives + the pattern generator /
-                  clkdiv!=1 / join overlay + RXF0 drains / aux put-get);
-                  pio_model mirrors each leg's timeline (the
-                  _SandboxMirror of the driver's clocking rules) and
-                  the node gate requires gpio-word-identical samples
-                  plus identical reg-read rdata, the lens decodes, and
-                  the TX/RX mirror agreements. Plus the two client-side
-                  mutation demos (red, then green): CLIENT_DEFECT_PIN
-                  (pin sampled off gpio_out bit 1 — caught by the model
-                  gpio diff) and CLIENT_DEFECT_MIRROR (TX contents
-                  mirror never pops — caught by the mirror-vs-engine
-                  level check).
+                  clkdiv!=1 / join overlay + RXF0 drains / aux put-get)
+                  plus the four C24 multi-SM legs (per-SM load with
+                  feeds + entry forces, parallel SMs on the shared imem,
+                  inter-SM IRQ handoff, cross-SM pin arbitration with a
+                  mid-run per-SM overlay edit); pio_model mirrors each
+                  leg's timeline (the _SandboxMirror of the driver's
+                  clocking rules) and the node gate requires
+                  gpio-word-identical samples plus identical reg-read
+                  rdata, the lens decodes, and the TX/RX mirror
+                  agreements. Plus the three client-side mutation demos
+                  (red, then green): CLIENT_DEFECT_PIN (pin sampled off
+                  gpio_out bit 1 — caught by the model gpio diff),
+                  CLIENT_DEFECT_MIRROR (TX contents mirror never pops —
+                  caught by the mirror-vs-engine level check) and the
+                  C24 CLIENT_DEFECT_SMADDR (SM config-window stride
+                  transcribed as 0x14 — caught by the arbitration leg's
+                  gpio diff).
   --self-test     all five (the `make web` target).
 
 Runs with native verilator+em++/node when present, else one vibe-pio
@@ -59,6 +65,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 TOOLS = str(Path(__file__).resolve().parent.parent)
 if TOOLS not in sys.path:
@@ -420,12 +427,13 @@ CLIENT_RUN_CLKS = 360
 class _SandboxMirror:
     """The python twin of web/engine-driver.js's clocking rules, driving a
     stim.Schedule the model replays: every driver action appends the same
-    rendered clks — the load timeline, queued reg ops (one clk each), and
-    the composed gpio_in per step clk (drive latches + the pattern
-    generator; op clks hold the last level — the shim's sticky-input
-    discipline). Each _leg_* below mirrors its JS twin in
-    web/node_client_gate.js call for call; the gate is the lockstep check
-    between them."""
+    rendered clks — the per-SM load timeline (C24: config windows at the
+    0x18 stride, per-SM CLKDIV/entry/feeds, one CTRL enable), queued reg
+    ops (one clk each), and the composed gpio_in per step clk (drive
+    latches + the pattern generator; op clks hold the last level — the
+    shim's sticky-input discipline). Each _leg_* below mirrors its JS
+    twin in web/node_client_gate.js call for call; the gate is the
+    lockstep check between them."""
 
     def __init__(self) -> None:
         self.s = stim.Schedule()
@@ -475,47 +483,75 @@ class _SandboxMirror:
         self.start_idx = len(self.s.cycles)
 
     # -- the load timeline (engine-driver.js load): nonzero imem words,
-    #    PINCTRL, EXECCTRL, SHIFTCTRL, the SPEC-6-2 settle clk, CLKDIV
-    #    while non-default, the optional entry force, feeds, enable.
-    def load(
-        self,
-        words: list[int],
-        pinctrl_w: int,
-        exec_w: int,
-        shift_w: int,
-        clkdiv_w: int | None = None,
-        feeds: tuple[int, ...] = (),
-        entry: int | None = None,
-    ) -> None:
+    #    then per SM PINCTRL, EXECCTRL, SHIFTCTRL, the one SPEC-6-2 settle
+    #    clk, per-SM CLKDIV while non-default, the per-SM entry force,
+    #    per-SM seed feeds (TXFx), one CTRL write enabling the mask.
+    def load(self, words: list[int], cfgs: list[dict[str, Any]]) -> None:
         for i, w in enumerate(words):
             if w:
                 self.s.w(stim.A_IMEM0 + 4 * i, w)
-        self.s.w(stim.A_SM0 + 4 * 5, pinctrl_w)
-        self.s.w(stim.A_SM0 + 4 * 1, exec_w)
-        self.s.w(stim.A_SM0 + 4 * 2, shift_w)
+        for i, c in enumerate(cfgs):
+            self.s.w(stim.sm_addr(i, 5), c["pinctrl"])
+            self.s.w(stim.sm_addr(i, 1), c["execctrl"])
+            self.s.w(stim.sm_addr(i, 2), c["shiftctrl"])
         self._step_clk()  # the SPEC-6-2 settle clk
-        if clkdiv_w is not None and clkdiv_w != stim.clkdiv():
-            self.s.w(stim.A_SM0 + 4 * 0, clkdiv_w)
-        if entry is not None:
-            self.s.w(stim.A_SM0 + 4 * 4, entry)  # jmp entry (set_pc idiom)
-        for f in feeds:
-            self.s.feed(f)
-        self.s.enable()
+        for i, c in enumerate(cfgs):
+            cw = c.get("clkdiv")
+            if cw is not None and cw != stim.clkdiv():
+                self.s.w(stim.sm_addr(i, 0), cw)
+        for i, c in enumerate(cfgs):
+            entry = c.get("entry")
+            if entry is not None:
+                self.s.set_pc(entry, sm=i)  # jmp entry (set_pc idiom)
+        for i, c in enumerate(cfgs):
+            for f in c.get("feeds", ()):  # type: ignore[union-attr]
+                self.s.feed(f, sm=i)
+        mask = 0
+        for i, c in enumerate(cfgs):
+            if c.get("en", True):
+                mask |= 1 << i
+        self.s.enable(mask)
 
-    def set_shiftctrl(self, word: int, *, fjoin_changed: bool) -> None:
-        self.s.w(stim.A_SM0 + 4 * 2, word)
+    def set_shiftctrl(self, sm: int, word: int, *, fjoin_changed: bool) -> None:
+        self.s.w(stim.sm_addr(sm, 2), word)
         if fjoin_changed:
             self._step_clk()  # the SPEC-6-2 settle clk
 
-    def drain(self, n: int) -> None:
+    def set_pinctrl(self, sm: int, word: int) -> None:
+        self.s.w(stim.sm_addr(sm, 5), word)
+
+    def drain(self, n: int, sm: int = 0) -> None:
         for _ in range(n):
-            self.s.r(stim.A_RXF0)
+            self.s.r(stim.A_RXF0 + 4 * sm)
 
     def read(self, addr: int) -> None:
         self.s.r(addr)
 
     def flevel(self) -> None:
         self.read(stim.A_FLEVEL)
+
+
+def _sm_cfg(
+    pinctrl_w: int | None = None,
+    exec_w: int | None = None,
+    shift_w: int | None = None,
+    clkdiv_w: int | None = None,
+    feeds: tuple[int, ...] = (),
+    entry: int | None = None,
+    en: bool = True,
+) -> dict[str, Any]:
+    """One SM's load config — the reset overlay by default (the stored
+    program's reset words, model.py CLKDIV/EXECCTRL/SHIFTCTRL/PINCTRL
+    _RESET)."""
+    return {
+        "pinctrl": pinctrl_w if pinctrl_w is not None else stim.pctrl(set_cnt=5),
+        "execctrl": exec_w if exec_w is not None else stim.execctrl(1, 31, status_sel=3, status_n=31),
+        "shiftctrl": shift_w if shift_w is not None else stim.shiftctrl(),
+        "clkdiv": clkdiv_w,
+        "feeds": feeds,
+        "entry": entry,
+        "en": en,
+    }
 
 
 def _leg_trace(m: _SandboxMirror, **extra: object) -> dict[str, object]:
@@ -544,15 +580,23 @@ def _client_legs() -> list[tuple[str, dict[str, object]]]:
     """(name, expected) per leg — the python twins of LEGS in
     web/node_client_gate.js, call for call."""
     legs: list[tuple[str, dict[str, object]]] = []
+    off = _sm_cfg(en=False)  # the single-SM legs' SM1..3: disabled, reset overlay
 
     # uart_demo — the demoted level-02 fixture (the C18 leg)
     m = _SandboxMirror()
     m.load(
         [0x9FA0, 0xF727, 0x6001, 0x0642],
-        stim.pctrl(ss_cnt=2, out_cnt=1),
-        stim.execctrl(3, 0, side_en=True),
-        stim.shiftctrl(fjoin_tx=True),
-        feeds=(0x50, 0x49, 0x4F, 0x21),  # 'P','I','O','!'
+        [
+            _sm_cfg(
+                stim.pctrl(ss_cnt=2, out_cnt=1),
+                stim.execctrl(3, 0, side_en=True),
+                stim.shiftctrl(fjoin_tx=True),
+                feeds=(0x50, 0x49, 0x4F, 0x21),  # 'P','I','O','!'
+            ),
+            off,
+            off,
+            off,
+        ],
     )
     m.run(CLIENT_RUN_CLKS)
     m.flevel()
@@ -564,10 +608,13 @@ def _client_legs() -> list[tuple[str, dict[str, object]]]:
     # pattern); the square lens verdict is read off the echoed wave.
     m = _SandboxMirror()
     m.load(
-        [E.encode_set("pindirs", 1), E.encode_mov("pins", "pins", 0), E.encode_jmp(None, 1)],
-        stim.pctrl(set_cnt=1, in_base=3),
-        stim.execctrl(2, 1),
-        stim.shiftctrl(),
+        [E.encode_set("pindirs", 1), E.encode_mov("pins", "pins", E.MOP_NONE), E.encode_jmp(None, 1)],
+        [
+            _sm_cfg(stim.pctrl(set_cnt=1, in_base=3), stim.execctrl(2, 1)),
+            off,
+            off,
+            off,
+        ],
     )
     m.set_drive(3, 1)
     m.run(12)
@@ -584,10 +631,12 @@ def _client_legs() -> list[tuple[str, dict[str, object]]]:
     m = _SandboxMirror()
     m.load(
         [E.encode_set("pins", 1, 3), E.encode_set("pins", 0, 3), E.encode_jmp(None, 0)],
-        stim.pctrl(set_cnt=1),
-        stim.execctrl(2, 0),
-        stim.shiftctrl(),
-        clkdiv_w=stim.clkdiv(2, 128),
+        [
+            _sm_cfg(stim.pctrl(set_cnt=1), stim.execctrl(2, 0), clkdiv_w=stim.clkdiv(2, 128)),
+            off,
+            off,
+            off,
+        ],
     )
     m.run(150)
     m.flevel()
@@ -599,19 +648,22 @@ def _client_legs() -> list[tuple[str, dict[str, object]]]:
     m = _SandboxMirror()
     m.load(
         [E.encode_in("pins", 1, 7), E.encode_jmp(None, 0)],
-        stim.pctrl(in_base=5),
-        stim.execctrl(1, 0),
-        stim.shiftctrl(push_thr=8, autopush=True),
+        [
+            _sm_cfg(stim.pctrl(in_base=5), stim.execctrl(1, 0), stim.shiftctrl(push_thr=8, autopush=True)),
+            off,
+            off,
+            off,
+        ],
     )
     m.set_pattern(mode="bits", pin=5, bits=_frame_bits(0x55))  # 'U'
     m.run(208)  # ~3 sample groups land in the 4-deep RX
-    m.drain(2)  # the JS twin's drainRx(2) + run(2): two read clks
+    m.drain(2)  # the JS twin's drainRx(2, 0) + run(2): two read clks
     m.flevel()  # 1 word remains
     # the JS twin's setOverlayField(...) + run(2): the write clk (sticky
     # gpio_in) + the SPEC-6-2 settle clk, appended here directly
-    m.set_shiftctrl(stim.shiftctrl(fjoin_rx=True, push_thr=8, autopush=True), fjoin_changed=True)
+    m.set_shiftctrl(0, stim.shiftctrl(fjoin_rx=True, push_thr=8, autopush=True), fjoin_changed=True)
     m.run(520)  # ~8 sample groups into the 8-deep RX
-    m.drain(6)  # the JS twin's drainRx(6) + run(6): six read clks
+    m.drain(6)  # the JS twin's drainRx(6, 0) + run(6): six read clks
     m.flevel()
     legs.append(("join_rx_drain", _leg_trace(m, rxMirror=True)))
 
@@ -621,9 +673,12 @@ def _client_legs() -> list[tuple[str, dict[str, object]]]:
     m = _SandboxMirror()
     m.load(
         [E.encode_set("y", 0), E.encode_in("pins", 8, 1), E.encode_put(None), E.encode_jmp(None, 1)],
-        stim.pctrl(in_base=5),
-        stim.execctrl(3, 1),
-        stim.shiftctrl(fjoin_rx_put=True),
+        [
+            _sm_cfg(stim.pctrl(in_base=5), stim.execctrl(3, 1), stim.shiftctrl(fjoin_rx_put=True)),
+            off,
+            off,
+            off,
+        ],
     )
     for pin, lvl in {5: 1, 6: 0, 7: 1, 8: 1, 9: 0, 10: 1, 11: 0, 12: 1}.items():
         m.set_drive(pin, lvl)
@@ -635,6 +690,120 @@ def _client_legs() -> list[tuple[str, dict[str, object]]]:
     m.run(16)
     m.read(stim.A_PUTGET0)  # 0x2C000000 after the flip
     legs.append(("aux_putget", _leg_trace(m)))
+
+    # ---- the C24 multi-SM legs: load / parallel / IRQ / arbitration ----
+
+    # multi_load — the per-SM windows end to end: SM1 squares pin 1 while
+    # SM2 echoes TXF2 -> RXF2 (pull/mov/push at slots 8..11 behind an
+    # entry force), the drains read RXF2 back, FLEVEL shows the per-SM
+    # nibbles. SM0/SM3 stay disabled.
+    echo = [
+        E.encode_pull(False, True, 0),  # pull block
+        E.encode_mov("isr", "osr", E.MOP_NONE, 0),
+        E.encode_push(False, True, 0),  # push block
+        E.encode_jmp(None, 8, 0),
+    ]
+    m = _SandboxMirror()
+    m.load(
+        [E.encode_set("pins", 1, 1), E.encode_set("pins", 0, 1)] + [0] * 6 + echo,
+        [
+            off,
+            _sm_cfg(stim.pctrl(set_cnt=1, set_base=1), stim.execctrl(1, 0)),
+            _sm_cfg(exec_w=stim.execctrl(11, 8), feeds=(0xCAFEBABE, 0x13579BDF, 2), entry=8),
+            off,
+        ],
+    )
+    m.run(120)
+    m.flevel()
+    m.drain(3, sm=2)  # the JS twin's drainRx(3, 2)
+    m.flevel()
+    m.run(40)
+    legs.append(("multi_load", _leg_trace(m, rxMirror=True)))
+
+    # multi_parallel — four SMs on one shared imem, per-SM SET_BASE pins
+    # (SM i squares pin i), SM2 behind its own divider (CC-26 is per SM).
+    m = _SandboxMirror()
+    m.load(
+        [E.encode_set("pins", 1, 1), E.encode_set("pins", 0, 1)],
+        [
+            _sm_cfg(stim.pctrl(set_cnt=1, set_base=0), stim.execctrl(1, 0)),
+            _sm_cfg(stim.pctrl(set_cnt=1, set_base=1), stim.execctrl(1, 0)),
+            _sm_cfg(stim.pctrl(set_cnt=1, set_base=2), stim.execctrl(1, 0), clkdiv_w=stim.clkdiv(2)),
+            _sm_cfg(stim.pctrl(set_cnt=1, set_base=3), stim.execctrl(1, 0)),
+        ],
+    )
+    m.run(120)
+    m.read(stim.A_FSTAT)
+    m.flevel()
+    m.read(stim.A_PADOUT)
+    m.run(40)
+    legs.append(("multi_parallel", _leg_trace(m)))
+
+    # multi_irq — inter-SM IRQ handoff (the multi_irq_handoff corpus
+    # program through the sandbox): SM1 `irq 0 rel` sets flag 1, SM3
+    # `irq 0 rel` flag 3 (SPEC-3.8-6); SM0/SM2 wait on their flags, set
+    # their pin, and jump home — the completing WAIT-1 clears (CC-15),
+    # so the flags chatter while the two setters loop.
+    words = [0] * 32
+    words[0] = E.encode_wait(1, E.WSRC_IRQ, 1, 0)  # SM0 @0
+    words[1] = E.encode_set("pins", 1, 0)
+    words[2] = E.encode_jmp(None, 0, 0)
+    words[8] = E.encode_irq(False, False, 2, 0, 0)  # SM1 @8: irq 0 rel
+    words[9] = E.encode_jmp(None, 8, 0)
+    words[16] = E.encode_wait(1, E.WSRC_IRQ, 3, 0)  # SM2 @16
+    words[17] = E.encode_set("pins", 1, 1)
+    words[18] = E.encode_jmp(None, 16, 0)
+    words[26] = E.encode_irq(False, False, 2, 0, 0)  # SM3 @26: irq 0 rel
+    words[27] = E.encode_jmp(None, 26, 0)
+    m = _SandboxMirror()
+    m.load(
+        words,
+        [
+            _sm_cfg(stim.pctrl(set_cnt=1, set_base=0), stim.execctrl(2, 0)),
+            _sm_cfg(exec_w=stim.execctrl(9, 8), entry=8),
+            _sm_cfg(stim.pctrl(set_cnt=1, set_base=2), stim.execctrl(17, 16), entry=16),
+            _sm_cfg(exec_w=stim.execctrl(27, 26), entry=26),
+        ],
+    )
+    m.run(80)
+    m.read(stim.A_IRQ)
+    m.run(20)
+    m.read(stim.A_IRQ)
+    m.run(40)
+    legs.append(("multi_irq", _leg_trace(m)))
+
+    # multi_arb — cross-SM pin priority (CC-7): SM0 writes 0 and SM3
+    # writes 1 to pin 0 every clk (mov pins), SM1 toggles pin 1 in
+    # parallel; mid-run SM3's OUT_BASE moves to pin 2 (the overlay edit
+    # the --defect=smaddr mutation demo must misaddress).
+    m = _SandboxMirror()
+    arb_words = [0] * 32
+    arb_words[0] = E.encode_mov("pins", "null", E.MOP_NONE)
+    arb_words[1] = E.encode_mov("pins", "null", E.MOP_NONE)
+    arb_words[8] = E.encode_set("pins", 1, 3)
+    arb_words[9] = E.encode_set("pins", 0, 3)
+    arb_words[16] = E.encode_mov("pins", "null", E.MOP_INV)
+    arb_words[17] = E.encode_mov("pins", "null", E.MOP_INV)
+    m.load(
+        arb_words,
+        [
+            _sm_cfg(stim.pctrl(out_cnt=1), stim.execctrl(1, 0)),
+            _sm_cfg(stim.pctrl(set_cnt=1, set_base=1), stim.execctrl(9, 8), entry=8),
+            off,
+            _sm_cfg(stim.pctrl(out_cnt=1), stim.execctrl(17, 16), entry=16),
+        ],
+    )
+    m.run(90)
+    m.read(stim.A_PADOUT)
+    m.read(stim.A_PADOE)
+    # the JS twin's setOverlayField(3, 'pinctrl', 'outBase', 2): SM3's
+    # window takes the write, pin 2 becomes SM3's — the queued write
+    # retires inside the twin's run(16), so the mirror counts it here
+    m.set_pinctrl(3, stim.pctrl(out_cnt=1, out_base=2))
+    m.run(15)
+    m.read(stim.A_PADOUT)
+    m.run(14)
+    legs.append(("multi_arb", _leg_trace(m)))
 
     return legs
 
@@ -663,7 +832,7 @@ def cmd_client(engine: Path | None = None) -> int:
         return [ln for ln in (r.stdout + r.stderr).splitlines() if ln.startswith(("PASS", "FAIL"))]
 
     # Green: the clean client core against the model oracle.
-    print("--- client gate: driver vs pio_model oracle (5 sandbox legs)")
+    print("--- client gate: driver vs pio_model oracle (5 sandbox + 4 multi-SM legs)")
     r = run_client_gate(engine, exp_path)
     for ln in report(r):
         print(f"  {ln}")
@@ -691,6 +860,18 @@ def cmd_client(engine: Path | None = None) -> int:
         print("FAIL defect_mirror: NOT caught (the mirror never disagrees?)")
     else:
         print(f"PASS defect_mirror: red ({mir_fail.split(' — ', 1)[-1]})")
+
+    # C24 — the SM-window stride transcription defect: the mid-run SM3
+    # OUT_BASE edit on the arbitration leg lands outside SM3's window,
+    # so the machine keeps writing pin 0 and the gpio series diverges.
+    print("--- client mutation demo 3: --defect=smaddr (model gpio diff catches)")
+    r = run_client_gate(engine, exp_path, defect="smaddr")
+    adr_fail = next((ln for ln in report(r) if ln.startswith("FAIL multi_arb gpio series")), "")
+    if r.returncode == 0 or not adr_fail:
+        fails += 1
+        print("FAIL defect_smaddr: NOT caught (the window stride never bites?)")
+    else:
+        print(f"PASS defect_smaddr: red ({adr_fail.split(' — ', 1)[-1]})")
     return 1 if fails else 0
 
 

@@ -1,7 +1,9 @@
-// sandbox.test.js — the C21 sandbox unit suite (KANBAN C21).
+// sandbox.test.js — the C21 sandbox unit suite (KANBAN C21; the load
+// timeline and mirrors grew per-SM with C24 — the multi-SM surface
+// itself has its own suite in multi-sm.test.js).
 //
 // The C18 level fixture is retired: the driver loads sandbox state
-// objects (words + config overlay) and grows the full single-SM surface —
+// objects (words + config overlay) and grows the full register surface —
 // the overlay→reg-write mapping (bit-exact with stim.py's builders, the
 // oracle the make web legs run against), per-pin drive latches + the
 // deterministic pattern generator (composed into gpio_in on step clks;
@@ -90,48 +92,55 @@ test('overlay compose is bit-exact with the stim.py builders', () => {
 });
 
 test('EMPTY composes to the reset words; DEMO_UART_TX to the C18 words', () => {
+  const e = VibeDriver.EMPTY.sms[0];
   // reset values (model.py CLKDIV/EXECCTRL/SHIFTCTRL/PINCTRL_RESET)
-  assert.equal(VibeDriver.composeOverlay('clkdiv', VibeDriver.EMPTY.clkdiv), 0x00010000);
-  assert.equal(VibeDriver.composeOverlay('execctrl', VibeDriver.EMPTY.execctrl), 0x00001fff);
-  assert.equal(VibeDriver.composeOverlay('shiftctrl', VibeDriver.EMPTY.shiftctrl), 0x000c0000);
-  assert.equal(VibeDriver.composeOverlay('pinctrl', VibeDriver.EMPTY.pinctrl), 0x14000000);
+  assert.equal(VibeDriver.composeOverlay('clkdiv', e.clkdiv), 0x00010000);
+  assert.equal(VibeDriver.composeOverlay('execctrl', e.execctrl), 0x00001fff);
+  assert.equal(VibeDriver.composeOverlay('shiftctrl', e.shiftctrl), 0x000c0000);
+  assert.equal(VibeDriver.composeOverlay('pinctrl', e.pinctrl), 0x14000000);
   // the demoted level-02 fixture stays bit-for-bit the C18 overlay
-  assert.equal(VibeDriver.composeOverlay('pinctrl', VibeDriver.DEMO_UART_TX.pinctrl), 0x40100000);
-  assert.equal(VibeDriver.composeOverlay('execctrl', VibeDriver.DEMO_UART_TX.execctrl), 0x40003000);
+  const d = VibeDriver.DEMO_UART_TX.sms[0];
+  assert.equal(VibeDriver.composeOverlay('pinctrl', d.pinctrl), 0x40100000);
+  assert.equal(VibeDriver.composeOverlay('execctrl', d.execctrl), 0x40003000);
   // fjoinTx over the right/right reset defaults = stim.shiftctrl(fjoin_tx)
   // exactly (the C18 driver literal 0x40080000 omitted IN_SHIFTDIR — no
   // IN in uart_tx, so the old pin series is unchanged)
-  assert.equal(
-    VibeDriver.composeOverlay('shiftctrl', VibeDriver.DEMO_UART_TX.shiftctrl),
-    0x400c0000,
-  );
+  assert.equal(VibeDriver.composeOverlay('shiftctrl', d.shiftctrl), 0x400c0000);
   assert.deepEqual(VibeDriver.DEMO_UART_TX.words.slice(0, 4), [0x9fa0, 0xf727, 0x6001, 0x0642]);
   assert.ok(VibeDriver.DEMO_UART_TX.words.slice(4).every((w) => w === 0));
-  assert.deepEqual(VibeDriver.DEMO_UART_TX.feeds, [0x50, 0x49, 0x4f, 0x21]); // 'PIO!'
+  assert.deepEqual(VibeDriver.DEMO_UART_TX.sms[0].feeds, [0x50, 0x49, 0x4f, 0x21]); // 'PIO!'
   assert.deepEqual(VibeDriver.DEMO_UART_TX.lens, { mode: 'uart', pin: 0 });
 });
 
 // ---- load(state): the sandbox timelines -------------------------------
-test('load(EMPTY): 3 config writes + settle clk + enable, no imem/clkdiv', () => {
+test('load(EMPTY): per-SM config writes + settle clk + enable 0xF', () => {
   const { M, drv } = freshDriver();
   drv.load(VibeDriver.EMPTY);
   // only nonzero imem words are written (all-zero memory is the reset
-  // state — the jmp-0 park); CLKDIV is skipped while it equals the reset
-  // word (the _sched_basic rule the web mirror follows)
-  assert.deepEqual(M.writes, [
-    { addr: REG.SM0 + 20, data: 0x14000000 }, // PINCTRL (SET_COUNT=5, SPEC-7-26)
-    { addr: REG.SM0 + 4, data: 0x00001fff }, // EXECCTRL (reset overlay)
-    { addr: REG.SM0 + 8, data: 0x000c0000 }, // SHIFTCTRL (reset overlay)
-    { addr: REG.CTRL, data: 1 }, // SM0 enable (SPEC-7-2)
-  ]);
+  // state — the jmp-0 park, now on four cursors); CLKDIV is skipped
+  // while it equals the reset word (the _sched_basic rule the web
+  // mirror follows); every SM's PINCTRL/EXECCTRL/SHIFTCTRL land (the
+  // C24 per-SM overlay), then the one SPEC-6-2 settle clk, then CTRL
+  // enables all four machines
+  const exp = [];
+  for (let i = 0; i < 4; i++) {
+    const base = REG.SM0 + 0x18 * i;
+    exp.push(
+      { addr: base + 20, data: 0x14000000 }, // PINCTRL (SET_COUNT=5, SPEC-7-26)
+      { addr: base + 4, data: 0x00001fff }, // EXECCTRL (reset overlay)
+      { addr: base + 8, data: 0x000c0000 }, // SHIFTCTRL (reset overlay)
+    );
+  }
+  exp.push({ addr: REG.CTRL, data: 0xf }); // all four SMs (SPEC-7-2)
+  assert.deepEqual(M.writes, exp);
   assert.equal(M.stepsCount(), 1); // the SPEC-6-2 settle clk
-  assert.equal(drv.allPins().length, 5); // every load clk is rendered
+  assert.equal(drv.allPins().length, 14); // every load clk is rendered
 });
 
 test('load(DEMO_UART_TX) drives the exact C18 reg-bus timeline', () => {
   const { M, drv } = freshDriver();
   drv.load(VibeDriver.DEMO_UART_TX);
-  assert.deepEqual(M.writes, [
+  const exp = [
     { addr: 0x048, data: 0x9fa0 },
     { addr: 0x04c, data: 0xf727 },
     { addr: 0x050, data: 0x6001 },
@@ -139,14 +148,25 @@ test('load(DEMO_UART_TX) drives the exact C18 reg-bus timeline', () => {
     { addr: REG.SM0 + 20, data: 0x40100000 }, // PINCTRL
     { addr: REG.SM0 + 4, data: 0x40003000 }, // EXECCTRL
     { addr: REG.SM0 + 8, data: 0x400c0000 }, // SHIFTCTRL (join TX, SPEC-6-2)
+  ];
+  for (let i = 1; i < 4; i++) {
+    const base = REG.SM0 + 0x18 * i;
+    exp.push(
+      { addr: base + 20, data: 0x14000000 },
+      { addr: base + 4, data: 0x00001fff },
+      { addr: base + 8, data: 0x000c0000 },
+    );
+  }
+  exp.push(
     { addr: REG.TXF0, data: 0x50 },
     { addr: REG.TXF0, data: 0x49 },
     { addr: REG.TXF0, data: 0x4f },
     { addr: REG.TXF0, data: 0x21 },
-    { addr: REG.CTRL, data: 1 },
-  ]);
+    { addr: REG.CTRL, data: 1 }, // the demo's SM0-authored scope
+  );
+  assert.deepEqual(M.writes, exp);
   assert.equal(M.stepsCount(), 1);
-  assert.equal(drv.allPins().length, 13);
+  assert.equal(drv.allPins().length, 22);
   assert.deepEqual(drv.getState().txWords, [0x50, 0x49, 0x4f, 0x21]);
   // the demo presets its lens (uart on the tx pin)
   assert.deepEqual(drv.getState().lens, { mode: 'uart', pin: 0 });
@@ -155,19 +175,25 @@ test('load(DEMO_UART_TX) drives the exact C18 reg-bus timeline', () => {
 test('load writes CLKDIV and the entry-point force when the state sets them', () => {
   const { M, drv } = freshDriver();
   const st = VibeDriver.newState();
-  st.clkdiv = { intg: 2, frac: 128 };
-  st.entry = 2;
+  st.sms[0].clkdiv = { intg: 2, frac: 128 };
+  st.sms[0].entry = 2;
   st.words[0] = 0xa042; // one nop: the only imem write
   drv.load(st);
-  assert.deepEqual(M.writes, [
-    { addr: REG.IMEM0, data: 0xa042 },
-    { addr: REG.SM0 + 20, data: 0x14000000 },
-    { addr: REG.SM0 + 4, data: 0x00001fff },
-    { addr: REG.SM0 + 8, data: 0x000c0000 },
+  const exp = [{ addr: REG.IMEM0, data: 0xa042 }];
+  for (let i = 0; i < 4; i++) {
+    const base = REG.SM0 + 0x18 * i;
+    exp.push(
+      { addr: base + 20, data: 0x14000000 },
+      { addr: base + 4, data: 0x00001fff },
+      { addr: base + 8, data: 0x000c0000 },
+    );
+  }
+  exp.push(
     { addr: REG.SM0 + 0, data: 0x00028000 }, // CLKDIV INT=2 FRAC=128 (SPEC-7-14)
     { addr: REG.SM0 + 16, data: 0x0002 }, // SM0_INSTR: jmp 2 (set_pc idiom)
-    { addr: REG.CTRL, data: 1 },
-  ]);
+    { addr: REG.CTRL, data: 0xf },
+  );
+  assert.deepEqual(M.writes, exp);
 });
 
 // ---- overlay edits: queued reg writes, the feed discipline -----------
@@ -175,11 +201,11 @@ test('setOverlayField queues the composed write (feed discipline)', () => {
   const { M, drv } = freshDriver();
   drv.load(VibeDriver.EMPTY);
   const n0 = M.writes.length;
-  drv.setOverlayField('shiftctrl', 'autopull', true);
-  drv.setOverlayField('shiftctrl', 'pullThr', 8);
-  drv.setOverlayField('clkdiv', 'intg', 3);
-  drv.setOverlayField('pinctrl', 'ssCnt', 2);
-  drv.setOverlayField('execctrl', 'wrapTop', 5);
+  drv.setOverlayField(0, 'shiftctrl', 'autopull', true);
+  drv.setOverlayField(0, 'shiftctrl', 'pullThr', 8);
+  drv.setOverlayField(0, 'clkdiv', 'intg', 3);
+  drv.setOverlayField(0, 'pinctrl', 'ssCnt', 2);
+  drv.setOverlayField(0, 'execctrl', 'wrapTop', 5);
   drv.run(5);
   assert.deepEqual(M.writes.slice(n0), [
     { addr: REG.SM0 + 8, data: 0x000e0000 }, // autopull over the right/right base
@@ -199,14 +225,14 @@ test('a FJOIN-changing overlay edit queues the SPEC-6-2 settle clk', () => {
   drv.load(VibeDriver.DEMO_UART_TX);
   const n0 = M.writes.length;
   const steps0 = M.stepsCount();
-  drv.setOverlayField('shiftctrl', 'fjoinTx', false); // join change → flush
+  drv.setOverlayField(0, 'shiftctrl', 'fjoinTx', false); // join change → flush
   drv.run(2); // the write clk + the settle clk
   assert.deepEqual(M.writes.slice(n0), [
     { addr: REG.SM0 + 8, data: 0x000c0000 }, // join off, both SHIFTDIR right
   ]);
   assert.equal(M.stepsCount(), steps0 + 1); // the settle clk is a step
   // a non-join edit adds no settle clk
-  drv.setOverlayField('shiftctrl', 'autopull', true);
+  drv.setOverlayField(0, 'shiftctrl', 'autopull', true);
   drv.run(1);
   assert.equal(M.stepsCount(), steps0 + 1);
 });
@@ -214,9 +240,9 @@ test('a FJOIN-changing overlay edit queues the SPEC-6-2 settle clk', () => {
 test('a fifo-mode-changing edit flushes the FIFO mirrors (SPEC-6-2)', () => {
   const { M, drv } = freshDriver();
   drv.load(VibeDriver.DEMO_UART_TX); // 4 feeds sit in the joined TX FIFO
-  M.script([{ strobes: S.S_RX_PUSH }, { strobes: S.S_RX_PUSH }]);
+  M.script([{ strobes0: S.S_RX_PUSH }, { strobes0: S.S_RX_PUSH }]);
   drv.run(2);
-  drv.setOverlayField('shiftctrl', 'fjoinTx', false); // mode change → flush
+  drv.setOverlayField(0, 'shiftctrl', 'fjoinTx', false); // mode change → flush
   drv.run(2); // the write + settle retire
   const st = drv.getState();
   assert.deepEqual(st.txWords, []); // the TX mirror emptied with the FIFO
@@ -225,7 +251,7 @@ test('a fifo-mode-changing edit flushes the FIFO mirrors (SPEC-6-2)', () => {
   // an aux-mode edit is a mode change too (FM_TXRX -> FM_TXPUT)
   const { M: M2, drv: drv2 } = freshDriver();
   drv2.load(VibeDriver.EMPTY);
-  drv2.setOverlayField('shiftctrl', 'fjoinRxPut', true);
+  drv2.setOverlayField(0, 'shiftctrl', 'fjoinRxPut', true);
   const n0 = M2.writes.length;
   const steps0 = M2.stepsCount();
   drv2.run(2);
@@ -253,7 +279,7 @@ test('drive latches compose gpio_in on step clks; op clks hold it sticky', () =>
   drv.run(2);
   drv.setDrive(3, 0);
   drv.setDrive(5, 1);
-  drv.setOverlayField('clkdiv', 'intg', 2); // queues a write clk between steps
+  drv.setOverlayField(0, 'clkdiv', 'intg', 2); // queues a write clk between steps
   drv.run(3); // write clk (no _pio_step: gpio_in holds), then two steps
   assert.deepEqual(M.gpioLog.slice(-4), [8, 8, 0x20, 0x20]);
   assert.ok(M.gpioLog.length >= 4);
@@ -315,7 +341,7 @@ test('drainRx queues one rendered clk per read and mirrors the rdata', () => {
   const { M, drv } = freshDriver();
   drv.load(VibeDriver.EMPTY);
   M.rxFeed([0x111, 0x222]);
-  M.script([{ strobes: S.S_RX_PUSH }, { strobes: S.S_RX_PUSH }]);
+  M.script([{ strobes0: S.S_RX_PUSH }, { strobes0: S.S_RX_PUSH }]);
   drv.run(2); // the two pushes land
   const pins0 = drv.allPins().length;
   const queued = drv.drainRx(2);
@@ -333,7 +359,7 @@ test('drainRx queues one rendered clk per read and mirrors the rdata', () => {
 test('drainRx refuses to queue past the mirrored level (no RXUNDER)', () => {
   const { M, drv } = freshDriver();
   drv.load(VibeDriver.EMPTY);
-  M.script([{ strobes: S.S_RX_PUSH }]);
+  M.script([{ strobes0: S.S_RX_PUSH }]);
   drv.run(1);
   assert.equal(drv.drainRx(3), 1); // only the pushed word is queued
 });
@@ -369,9 +395,9 @@ test('the square lens reports period and duty of the observed wave', () => {
   const sq = drv.getState().monitor.square;
   assert.equal(sq.period, 16);
   assert.equal(sq.dutyPct, 50);
-  // the series is 5 idle-low load clks (bit2 of the reset word is 0)
-  // then the square: rising edges at clks 13/29/45/61/77 — five complete
-  // periods inside the 85 rendered clks
+  // the series is 14 idle-low load clks (bit2 of the reset word is 0)
+  // then the square: rising edges at clks 22/38/54/70/86 — five complete
+  // periods inside the 94 rendered clks
   assert.equal(sq.edges, 5);
 });
 
@@ -389,19 +415,19 @@ test('changing the lens pin replays the decode over the stored history', () => {
   drv.setLens({ mode: 'uart', pin: 4 });
   const st = drv.getState();
   assert.equal(st.monitor.decoded, 'B'); // replayed, not re-run
-  assert.equal(st.wave.pins.length, 5 + both.length);
-  // the replayed pin4 series: frame armed at clk 37 (5 load clks + the 4
-  // idle cells = 32 clks), start cell low at clk 38, D1 of 'B' at 54
+  assert.equal(st.wave.pins.length, 14 + both.length);
+  // the replayed pin4 series: frame armed at clk 46 (14 load clks + the 4
+  // idle cells = 32 clks), start cell low at clk 47, D1 of 'B' at 63
   assert.equal(st.wave.startCycle, 0);
-  assert.equal(st.wave.pins[38], 0);
-  assert.equal(st.wave.pins[54], 1);
+  assert.equal(st.wave.pins[47], 0);
+  assert.equal(st.wave.pins[63], 1);
 });
 
 // ---- IRQ flags + INTR readback ----------------------------------------
 test('getState exposes the composed INTR and the rx level', () => {
   const { M, drv } = freshDriver();
   drv.load(VibeDriver.EMPTY);
-  M.script([{ intr: 0x0150, strobes: S.S_RX_PUSH }]);
+  M.script([{ intr: 0x0150, strobes0: S.S_RX_PUSH }]);
   drv.run(1);
   const st = drv.getState();
   assert.equal(st.intr, 0x0150); // the SPEC-7-12 composition, per-clk
@@ -409,10 +435,10 @@ test('getState exposes the composed INTR and the rx level', () => {
 });
 
 // ---- the stored-program format ----------------------------------------
-test('serialize/parse round-trips words + the config overlay', () => {
+test('serialize/parse round-trips words + the per-SM config overlay', () => {
   const { drv } = freshDriver();
   drv.load(VibeDriver.DEMO_UART_TX);
-  drv.setOverlayField('clkdiv', 'frac', 96);
+  drv.setOverlayField(0, 'clkdiv', 'frac', 96);
   const words = new Array(32).fill(0);
   words[0] = 0x9fa0;
   words[1] = 0xf727;
@@ -423,21 +449,51 @@ test('serialize/parse round-trips words + the config overlay', () => {
   const json = JSON.parse(JSON.stringify(drv.serialize()));
   const st = VibeDriver.parseState(json);
   assert.deepEqual(st.words, words);
-  assert.equal(st.clkdiv.frac, 96);
-  assert.equal(st.clkdiv.intg, 1);
-  assert.deepEqual(st.pinctrl, VibeDriver.DEMO_UART_TX.pinctrl);
-  assert.deepEqual(st.execctrl, VibeDriver.DEMO_UART_TX.execctrl);
-  assert.deepEqual(st.shiftctrl, VibeDriver.DEMO_UART_TX.shiftctrl);
+  assert.equal(st.sms[0].clkdiv.frac, 96);
+  assert.equal(st.sms[0].clkdiv.intg, 1);
+  assert.deepEqual(st.sms[0].pinctrl, VibeDriver.DEMO_UART_TX.sms[0].pinctrl);
+  assert.deepEqual(st.sms[0].execctrl, VibeDriver.DEMO_UART_TX.sms[0].execctrl);
+  assert.deepEqual(st.sms[0].shiftctrl, VibeDriver.DEMO_UART_TX.sms[0].shiftctrl);
+  // the demo's SM0-only enable rides the round trip
+  assert.deepEqual(
+    st.sms.map((s) => s.en),
+    [true, false, false, false],
+  );
   // feeds/lens/drives are session state, not the stored program
   assert.equal(json.feeds, undefined);
   assert.equal(json.lens, undefined);
-  assert.deepEqual(st.feeds, []);
+  assert.deepEqual(st.sms[0].feeds, []);
 });
 
 test('parseState rejects malformed stored programs', () => {
-  assert.throws(() => VibeDriver.parseState({ v: 1, words: 'nope' }));
+  assert.throws(() => VibeDriver.parseState({ v: 2, words: 'nope' }));
   assert.throws(() =>
-    VibeDriver.parseState({ v: 1, words: new Array(32).fill(0), pinctrl: { ssCnt: 8 } }),
+    VibeDriver.parseState({ v: 2, words: new Array(32).fill(0), sms: [{ pinctrl: { ssCnt: 8 } }] }),
+  );
+  assert.throws(() =>
+    VibeDriver.parseState({ v: 2, words: new Array(32).fill(0), sms: [{}, {}, {}, 5] }),
+  );
+});
+
+// a v1 stored program (the C21 flat SM0 scope) still parses — SM1..3
+// load disabled, the authored scope
+test('parseState accepts the v1 flat format as the SM0-authored scope', () => {
+  const v1 = {
+    v: 1,
+    words: [0xa042].concat(new Array(31).fill(0)),
+    clkdiv: { intg: 2, frac: 0 },
+    shiftctrl: { autopull: true },
+    feeds: [0x55],
+    entry: 3,
+  };
+  const st = VibeDriver.parseState(v1);
+  assert.equal(st.sms[0].clkdiv.intg, 2);
+  assert.equal(st.sms[0].shiftctrl.autopull, true);
+  assert.deepEqual(st.sms[0].feeds, [0x55]);
+  assert.equal(st.sms[0].entry, 3);
+  assert.deepEqual(
+    st.sms.map((s) => s.en),
+    [true, false, false, false],
   );
 });
 
@@ -447,7 +503,7 @@ test('defect=rx: the mirror-vs-engine invariant is green clean, red defective', 
     const { M, drv } = freshDriver(defects);
     drv.load(VibeDriver.EMPTY);
     M.rxFeed([0x55]);
-    M.script([{ strobes: S.S_RX_PUSH }]);
+    M.script([{ strobes0: S.S_RX_PUSH }]);
     drv.run(1);
     return drv.getState().rxMirror;
   };
@@ -506,7 +562,7 @@ test('defect=overlay: the shiftctrl mapping is green clean, red defective', () =
     const { M, drv } = freshDriver(defects);
     drv.load(VibeDriver.EMPTY);
     const n0 = M.writes.length;
-    drv.setOverlayField('shiftctrl', 'pullThr', 8);
+    drv.setOverlayField(0, 'shiftctrl', 'pullThr', 8);
     drv.run(1);
     return M.writes[n0].data;
   };

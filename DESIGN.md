@@ -247,9 +247,10 @@ flowchart TB
   - SMx_EXECCTRL reads overlay EXEC_STALLED on bit 31 ([SPEC-7-15]);
     the stored bit is not readable. FSTAT/FDEBUG/FLEVEL use the RP2350
     nibble layouts ([SPEC-7-29]).
-  - The SM0-only view bundle (`dbg_sm0_*`, [SPEC-16-4] scoping)
-    exports the wasm client's live state (see §SM view client);
-    SM1..3's equivalents stay dangling (the pio_sm dbg idiom).
+  - The per-SM live-state view bundles (`dbg_sm0..3_*`, the C18
+    SM0 bundle grown to all four SMs by C24) export the wasm client's
+    machine state (see §SM view client) — one bundle per SM,
+    pre-edge-sampled by the shim ([SPEC-16-1] start-of-clk view).
 
 #### `pio_instr_mem`
 
@@ -319,9 +320,9 @@ flowchart TB
     exec/complete/class strobes, shifter state, autop decision/output
     signals, FIFO mode + raw FJOIN bits). yosys cannot probe instance
     internals from a formal wrapper, so the integration properties
-    live on these ports; pio_block leaves them dangling except SM0's
-    view bundle (dbg_sm0_*, above) and the delay/X/Y/pc_wr
-    forwards pio_block consumes from it.
+    live on these ports; pio_block leaves them dangling except the
+    per-SM view bundles (dbg_sm0..3_*, above) and the delay/X/Y/pc_wr
+    forwards pio_block consumes from them.
 
 ##### `pio_sm_decoder`
 
@@ -426,6 +427,10 @@ flowchart TB
   the sticky state holds unboundedly, so it is ported out like the DBG
   pads to keep formal properties input/output equations that
   k-induction can close; `pio_block` leaves these dangling.
+  `dbg_wr_mask[3:0][31:0]` (C24) exports each SM's this-clk pad write
+  mask — the same per-SM resolution inputs the CC-7 loop consumes — so
+  the browser client can attribute pad ownership (last writer,
+  highest-numbered SM on same-clk conflicts).
 - **Cycle contract.** CC-23 (2-FF latency / bypass = k+2 / k+1), CC-24
   (sampling at start of tick), CC-5 (OUT_STICKY re-assert — sticky state
   lives here or in exec; placed here so the pin registers have a single
@@ -627,18 +632,22 @@ flowchart TB
   **sm-view.js** (rendering, the register inspector, the modeless
   listing editor, keyboard, persistence). The node gate runs the exact
   driver the worker runs — the CI checks what the view shows.
-- Every machine value the view renders — pins, PC, phase
-  (EXEC/DELAY/STALL), delay countdown, X/Y, OSR/ISR + counters, TX
-  level, strobes — comes from the wasm engine's `PioCycle`, a
-  **pre-edge** per-clk sample filled by every cycle-closing entry
-  point of the game face (`pio_last_cycle`, the negedge point the
-  trace face samples at — CC-40), so the view shows the machine as it
-  stands *during* the cycle whose pin it draws. SM0-only view state is
-  the `dbg_sm0_*` pio_block export (SPEC-16-4 single-SM scope).
-- Loading is honest reg-bus traffic: imem words + PINCTRL/EXECCTRL/
-  SHIFTCTRL + feeds + CTRL enable, one retired clk each — every load
-  clk is a rendered clk, mirroring stim._sched_basic (including the
-  SPEC-6-2 settle clk before feeds). Client feeds and overlay edits
+- Every machine value the view renders — pins, the four PC cursors,
+  phases (EXEC/DELAY/STALL), delay countdowns, X/Y, OSR/ISR +
+  counters, TX/RX levels, strobes, pad ownership — comes from the wasm
+  engine's `PioCycle`, a **pre-edge** per-clk sample filled by every
+  cycle-closing entry point of the game face (`pio_last_cycle`, the
+  negedge point the trace face samples at — CC-40), so the view shows
+  the machine as it stands *during* the cycle whose pin it draws. The
+  SM fields are per-SM arrays since C24 (`pc[4] .. strobes[4]` plus
+  the per-SM `wr_mask[4]` pad-write masks — the CC-7 resolution
+  inputs), fed by pio_block's `dbg_sm0..3_*` view bundles.
+- Loading is honest reg-bus traffic: imem words + per-SM PINCTRL/
+  EXECCTRL/SHIFTCTRL (one settle clk after the config batch) + per-SM
+  CLKDIV/entry forces/TXF feeds + one CTRL enable-mask write, one
+  retired clk each — every load clk is a rendered clk, mirroring
+  stim._sched_basic grown per SM (including the SPEC-6-2 settle clk
+  before feeds). Client feeds and overlay edits
   enqueue as *queued* reg writes consumed by the next stepped clk, so
   a paused machine stays frozen and an enqueue's cost is one visible
   cycle — the same discipline as the trace's R lines. Overflow is
@@ -655,6 +664,18 @@ flowchart TB
   The ds-field allocator is real: moving it re-writes
   PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, so the machine genuinely
   re-decodes the same stored bits within two clks.
+- **C24, four machines one playground**: the stored-program format is
+  v2 (`words` + `sms:[4]` overlays with per-SM enable, feeds and
+  entry as session presets; the v1 flat format still parses as the
+  SM0-authored scope with SM1..3 disabled). The listing is shared —
+  one memory, four PC cursors in the gutter — and re-decodes under
+  the **selected** machine's ds split; the machines bar (PC · phase ·
+  per-SM FIFO columns, keys 1–4) selects the SM every detail pane
+  follows (exec, registers, inspector, drawn config, feed/drain, the
+  wrap arc). Pad ownership is a lens over the engine's per-SM
+  `wr_mask` samples: the last SM to write each pin, same-clk ties
+  resolved by the ascending CC-7 scan — the pin strip names the owner
+  in that SM's color.
 - The listing is *derived*, not authored: rows are the canonical
   disassembly of the loaded words under the authored `.side_set`, via
   `web/pio-asm.js` (the pio_model assembler/disassembler port,
@@ -666,8 +687,10 @@ flowchart TB
   the row error while the machine keeps the last good build.
 - **Gates**: `make web`'s client legs check the driver against the
   pio_model oracle over the sandbox surface (pin-identical samples,
-  mirror↔tx_level agreement, the asm round-trip of the listing, the
-  five model-oracle legs) with red-injection defect hooks; `make js`
+  mirror↔tx_level agreement, the asm round-trip of the listing, five
+  sandbox + four multi-SM model-oracle legs — per-SM load, parallel
+  SMs, inter-SM IRQ, cross-SM pin arbitration) with red-injection
+  defect hooks (pin / mirror / smaddr); `make js`
   unit-pins the driver and assembler (the discipline is
   `docs/js-tooling.md`). **The fun gate**: the owner plays it at
   `http://localhost:8138/web/sm-view.html` (`python3 web/serve.py`

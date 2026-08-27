@@ -1,4 +1,5 @@
-// node_client_gate.js — headless C18/C21 client gate (KANBAN C18/C21).
+// node_client_gate.js — headless C18/C21/C24 client gate (KANBAN
+// C18/C21/C24).
 //
 // Runs the shipped client core (web/engine-driver.js — the same module
 // the browser worker uses) against the wasm engine and checks it against
@@ -24,13 +25,26 @@
 //                   SPEC-6-2 settle clk), more drains into the 8-deep;
 //   aux_putget      FJOIN_RX_PUT: the SM PUTs ISR into the RX storage
 //                   (mov rxfifo[y], isr), the system reads it back
-//                   through the RXF0_PUTGET window (SPEC-7-13).
+//                   through the RXF0_PUTGET window (SPEC-7-13);
+//   multi_load      the C24 per-SM windows end to end: SM1 squares pin 1
+//                   while SM2 echoes TXF2 -> RXF2 behind an entry force,
+//                   the drains read RXF2 back (the multi_txf_sm2 corpus
+//                   shape through the sandbox state);
+//   multi_parallel  four SMs on the shared imem, per-SM SET_BASE pins,
+//                   SM2 behind its own divider (CC-26);
+//   multi_irq       inter-SM IRQ handoff: SM1/SM3 `irq 0 rel` (flag 1/3,
+//                   SPEC-3.8-6), SM0/SM2 wait on their flags (the
+//                   multi_irq_handoff corpus program);
+//   multi_arb       cross-SM pin priority (CC-7): SM0 writes 0 and SM3
+//                   writes 1 to pin 0 every clk, SM1 toggles pin 1, and
+//                   a mid-run SM3 OUT_BASE edit moves the winner to pin
+//                   2 — the leg the --defect=smaddr demo must catch.
 //
 // Exit nonzero on the first failing check — the C18 mutation demos
-// (--defect=pin / --defect=mirror, the driver's red-injection hooks)
-// rely on that.
+// (--defect=pin / --defect=mirror / --defect=smaddr, the driver's
+// red-injection hooks) rely on that.
 //
-// Usage: node node_client_gate.js <pio_engine.js> <expected.json> [--defect=pin|mirror]
+// Usage: node node_client_gate.js <pio_engine.js> <expected.json> [--defect=pin|mirror|smaddr]
 
 'use strict';
 
@@ -44,7 +58,7 @@ const engineJs = argv[0];
 const expPath = argv[1];
 if (!engineJs || !expPath) {
   console.error(
-    'usage: node node_client_gate.js <pio_engine.js> <expected.json> [--defect=pin|mirror]',
+    'usage: node node_client_gate.js <pio_engine.js> <expected.json> [--defect=pin|mirror|smaddr]',
   );
   process.exit(2);
 }
@@ -66,19 +80,36 @@ function check(name, ok, detail) {
 // ---- leg helpers (the python twins: webbuild.py _leg_*/_SandboxMirror)
 function asmWords(lines) {
   const prog = PioAsm.createProgram('gate');
-  return lines.map((t) => PioAsm.assembleInstruction(t, prog, {}, 'gate'));
+  return lines.map((t) =>
+    typeof t === 'number' ? t : PioAsm.assembleInstruction(t, prog, {}, 'gate'),
+  );
 }
 
 function legState(lines, over) {
+  // the single-SM legs: the SM0-authored scope (SM1..3 disabled, reset
+  // overlay — the mirror's `off` cfg)
+  const st = smState(lines, { 0: over });
+  for (let i = 1; i < 4; i++) st.sms[i].en = false;
+  return st;
+}
+
+// A v2 multi-SM state: per-SM overlays (absent fields keep the reset
+// default), per-SM feeds/entry, SM1..3 disabled unless configured — the
+// _sm_cfg twin (webbuild.py).
+function smState(lines, cfgs) {
   const st = VibeDriver.newState();
   st.words = asmWords(lines).concat(new Array(32 - lines.length).fill(0));
-  Object.assign(st.pinctrl, over.pinctrl || {});
-  Object.assign(st.execctrl, over.execctrl || {});
-  Object.assign(st.shiftctrl, over.shiftctrl || {});
-  Object.assign(st.clkdiv, over.clkdiv || {});
-  if (over.feeds) st.feeds = over.feeds.slice();
-  if (over.entry != null) st.entry = over.entry;
-  if (over.lens) st.lens = { ...over.lens };
+  for (const [i, c] of Object.entries(cfgs || {})) {
+    const sm = st.sms[+i];
+    Object.assign(sm.pinctrl, c.pinctrl || {});
+    Object.assign(sm.execctrl, c.execctrl || {});
+    Object.assign(sm.shiftctrl, c.shiftctrl || {});
+    Object.assign(sm.clkdiv, c.clkdiv || {});
+    if (c.feeds) sm.feeds = c.feeds.slice();
+    if (c.entry != null) sm.entry = c.entry;
+    if (c.en === false) sm.en = false;
+  }
+  if (cfgs?.[0]?.lens) st.lens = { ...cfgs[0].lens };
   return st;
 }
 
@@ -164,13 +195,13 @@ const LEGS = {
     drv.load(st);
     drv.setPattern({ mode: 'bits', pin: 5, bits: frameBits(0x55) }); // 'U'
     drv.run(208); // ~3 sample groups land in the 4-deep RX
-    drv.drainRx(2);
+    drv.drainRx(2, 0);
     drv.run(2);
     drv.readFlevel(); // 1 word remains
-    drv.setOverlayField('shiftctrl', 'fjoinRx', true); // flush + settle
+    drv.setOverlayField(0, 'shiftctrl', 'fjoinRx', true); // flush + settle
     drv.run(2); // the SHIFTCTRL write clk + the SPEC-6-2 settle clk
     drv.run(520); // ~8 sample groups into the 8-deep RX
-    drv.drainRx(6);
+    drv.drainRx(6, 0);
     drv.run(6);
     drv.readFlevel();
     const s = drv.getState();
@@ -198,6 +229,178 @@ const LEGS = {
     drv.setDrive(12, 0); // flip both end pins
     drv.run(16);
     drv.readRegNow(VibeDriver.REG.PUTGET0); // 0x2C000000 after the flip
+    const s = drv.getState();
+    return {
+      gpio: drv.allGpio(),
+      pins: drv.allPins(),
+      reads: s.readLog.map(({ addr, rdata }) => [addr, rdata]),
+    };
+  },
+
+  // ---- the C24 multi-SM legs (python twins in webbuild.py) -----------
+
+  multi_load(drv) {
+    // SM1 squares pin 1 while SM2 echoes TXF2 -> RXF2 behind an entry
+    // force; drains read RXF2 back, FLEVEL shows the per-SM nibbles
+    const st = smState(
+      [
+        'set pins, 1 [1]',
+        'set pins, 0 [1]',
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        'pull block',
+        'mov isr, osr',
+        'push block',
+        'jmp 8',
+      ],
+      {
+        0: { en: false },
+        1: {
+          pinctrl: { setCnt: 1, setBase: 1 },
+          execctrl: { wrapTop: 1, wrapBot: 0, statusSel: 0, statusN: 0 },
+        },
+        2: {
+          execctrl: { wrapTop: 11, wrapBot: 8, statusSel: 0, statusN: 0 },
+          feeds: [0xcafebabe, 0x13579bdf, 2],
+          entry: 8,
+        },
+        3: { en: false },
+      },
+    );
+    drv.load(st);
+    drv.run(120);
+    drv.readFlevel();
+    drv.drainRx(3, 2); // RXF2 drains
+    drv.readFlevel();
+    drv.run(40);
+    const s = drv.getState();
+    return {
+      gpio: drv.allGpio(),
+      pins: drv.allPins(),
+      reads: s.readLog.map(({ addr, rdata }) => [addr, rdata]),
+      rxMirror: s.sms[2].rxMirror.ok,
+    };
+  },
+
+  multi_parallel(drv) {
+    // four SMs on the shared imem, per-SM SET_BASE pins, SM2 divided
+    const cfg = (base, clkdiv) => ({
+      pinctrl: { setCnt: 1, setBase: base },
+      execctrl: { wrapTop: 1, wrapBot: 0, statusSel: 0, statusN: 0 },
+      ...(clkdiv ? { clkdiv } : {}),
+    });
+    const st = smState(['set pins, 1 [1]', 'set pins, 0 [1]'], {
+      0: cfg(0),
+      1: cfg(1),
+      2: cfg(2, { intg: 2, frac: 0 }),
+      3: cfg(3),
+    });
+    drv.load(st);
+    drv.run(120);
+    drv.readRegNow(VibeDriver.REG.FSTAT);
+    drv.readFlevel();
+    drv.readRegNow(VibeDriver.REG.PADOUT);
+    drv.run(40);
+    const s = drv.getState();
+    return {
+      gpio: drv.allGpio(),
+      pins: drv.allPins(),
+      reads: s.readLog.map(({ addr, rdata }) => [addr, rdata]),
+    };
+  },
+
+  multi_irq(drv) {
+    // inter-SM IRQ handoff: SM1/SM3 `irq 0 rel`, SM0/SM2 wait + set pin
+    const z = (n) => new Array(n).fill(0);
+    const st = smState(
+      [
+        'wait 1 irq 1',
+        'set pins, 1',
+        'jmp 0',
+        ...z(5),
+        'irq 0 rel',
+        'jmp 8',
+        ...z(6),
+        'wait 1 irq 3',
+        'set pins, 1 [1]',
+        'jmp 16',
+        ...z(7),
+        'irq 0 rel',
+        'jmp 26',
+      ],
+      {
+        0: {
+          pinctrl: { setCnt: 1, setBase: 0 },
+          execctrl: { wrapTop: 2, wrapBot: 0, statusSel: 0, statusN: 0 },
+        },
+        1: { execctrl: { wrapTop: 9, wrapBot: 8, statusSel: 0, statusN: 0 }, entry: 8 },
+        2: {
+          pinctrl: { setCnt: 1, setBase: 2 },
+          execctrl: { wrapTop: 17, wrapBot: 16, statusSel: 0, statusN: 0 },
+          entry: 16,
+        },
+        3: { execctrl: { wrapTop: 27, wrapBot: 26, statusSel: 0, statusN: 0 }, entry: 26 },
+      },
+    );
+    drv.load(st);
+    drv.run(80);
+    drv.readRegNow(VibeDriver.REG.IRQ);
+    drv.run(20);
+    drv.readRegNow(VibeDriver.REG.IRQ);
+    drv.run(40);
+    const s = drv.getState();
+    return {
+      gpio: drv.allGpio(),
+      pins: drv.allPins(),
+      reads: s.readLog.map(({ addr, rdata }) => [addr, rdata]),
+    };
+  },
+
+  multi_arb(drv) {
+    // CC-7 pin priority: SM0 writes 0 / SM3 writes 1 to pin 0 every clk,
+    // SM1 toggles pin 1; mid-run SM3's OUT_BASE moves the winner to pin 2
+    const z = (n) => new Array(n).fill(0);
+    const st = smState(
+      [
+        'mov pins, null',
+        'mov pins, null',
+        ...z(6),
+        'set pins, 1 [3]',
+        'set pins, 0 [3]',
+        ...z(6),
+        'mov pins, ~null',
+        'mov pins, ~null',
+      ],
+      {
+        0: {
+          pinctrl: { setCnt: 0, outCnt: 1 },
+          execctrl: { wrapTop: 1, wrapBot: 0, statusSel: 0, statusN: 0 },
+        },
+        1: {
+          pinctrl: { setCnt: 1, setBase: 1 },
+          execctrl: { wrapTop: 9, wrapBot: 8, statusSel: 0, statusN: 0 },
+          entry: 8,
+        },
+        2: { en: false },
+        3: {
+          pinctrl: { setCnt: 0, outCnt: 1 },
+          execctrl: { wrapTop: 17, wrapBot: 16, statusSel: 0, statusN: 0 },
+          entry: 16,
+        },
+      },
+    );
+    drv.load(st);
+    drv.run(90);
+    drv.readRegNow(VibeDriver.REG.PADOUT);
+    drv.readRegNow(VibeDriver.REG.PADOE);
+    drv.setOverlayField(3, 'pinctrl', 'outBase', 2); // SM3 -> pin 2
+    drv.run(16);
+    drv.readRegNow(VibeDriver.REG.PADOUT);
+    drv.run(14);
     const s = drv.getState();
     return {
       gpio: drv.allGpio(),

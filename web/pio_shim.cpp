@@ -180,9 +180,11 @@ std::string replay_stim(const std::vector<uint32_t> &w) {
 // machine now". PioCycle is the PRE-edge observable view of one clk —
 // the negedge sample point the trace face uses (CC-40: pin levels land
 // on the pad from T+1), i.e. exactly what the C18 view renders for a
-// cycle: the pins, the SM state that the closing edge will act on, and
-// the per-clk strobes (sm_tick/exec/complete/pc_wr/tx_pop/rx_push +
-// tx_empty/tx_full flags packed into `strobes`).
+// cycle: the pins, the per-SM state that the closing edge will act on,
+// and the per-clk strobes (sm_tick/exec/complete/pc_wr/tx_pop/rx_push +
+// tx_empty/tx_full flags packed into `strobes`). C24 grows the SM
+// fields to per-SM arrays (pc[4]..strobes[4], SM-major layout, one
+// uint32 per SM per field) — the CC-40 sampling point is unchanged.
 // ---------------------------------------------------------------------------
 struct PioSnapshot {
     uint64_t clk;      // 0:  clks since reset release
@@ -203,23 +205,27 @@ struct PioSnapshot {
 };  // size 84
 
 struct PioCycle {
-    uint64_t clk;       // 0:  the clk this sample belongs to
-    uint32_t gpio_out;  // 8
-    uint32_t gpio_oe;   // 12
-    uint32_t intr;      // 16
-    uint32_t pc;        // 20: SM0 fetch addr (CC-33)
-    uint32_t state;     // 24: SM0 onehot FSM (ST_FETCH/EXEC/STALL/DELAY)
-    uint32_t delay;     // 28: SM0 delay countdown (CC-10)
-    uint32_t x, y;      // 32, 36
-    uint32_t osr, isr;  // 40, 44
-    uint32_t osr_cnt;   // 48
-    uint32_t isr_cnt;   // 52
-    uint32_t tx_level;  // 56
-    uint32_t rx_level;  // 60
-    uint32_t strobes;   // 64: b0 sm_tick · b1 exec · b2 complete ·
-                        //     b3 pc_wr · b4 tx_pop · b5 rx_push ·
-                        //     b6 tx_empty · b7 tx_full
-};  // size 72
+    uint64_t clk;        // 0:  the clk this sample belongs to
+    uint32_t gpio_out;   // 8
+    uint32_t gpio_oe;    // 12
+    uint32_t intr;       // 16
+    uint32_t pc[4];      // 20..35:  per-SM fetch addrs (CC-33)
+    uint32_t state[4];   // 36..51:  per-SM onehot FSM (ST_FETCH/EXEC/STALL/DELAY)
+    uint32_t delay[4];   // 52..67:  per-SM delay countdown (CC-10)
+    uint32_t x[4];       // 68..83:  per-SM scratch (G2)
+    uint32_t y[4];       // 84..99
+    uint32_t osr[4];     // 100..115: per-SM shifters (SPEC-5-1)
+    uint32_t isr[4];     // 116..131
+    uint32_t osr_cnt[4]; // 132..147
+    uint32_t isr_cnt[4]; // 148..163
+    uint32_t tx_level[4];  // 164..179: FLEVEL TX nibble (SPEC-6-6)
+    uint32_t rx_level[4];  // 180..195
+    uint32_t strobes[4];   // 196..211: per SM — b0 sm_tick · b1 exec ·
+                           // b2 complete · b3 pc_wr · b4 tx_pop ·
+                           // b5 rx_push · b6 tx_empty · b7 tx_full
+    uint32_t wr_mask[4];  // 212..227: per-SM this-clk pad write masks
+                          //     (CC-7 inputs — the ownership lens, C24)
+};  // size 228
 
 namespace {
 PioCycle g_cycle;  // the last clk's pre-edge sample (pio_last_cycle)
@@ -229,25 +235,66 @@ void sample_cycle() {
     g_cycle.gpio_out  = top->gpio_out;
     g_cycle.gpio_oe   = top->gpio_oe;
     g_cycle.intr      = top->intr;
-    g_cycle.pc        = (top->dbg_sm_pc >> 0) & 0x1f;
-    g_cycle.state     = top->dbg_sm0_state;
-    g_cycle.delay     = top->dbg_sm0_delay;
-    g_cycle.x         = top->dbg_sm0_x;
-    g_cycle.y         = top->dbg_sm0_y;
-    g_cycle.osr       = top->dbg_sm0_osr;
-    g_cycle.isr       = top->dbg_sm0_isr;
-    g_cycle.osr_cnt   = top->dbg_sm0_osr_cnt;
-    g_cycle.isr_cnt   = top->dbg_sm0_isr_cnt;
-    g_cycle.tx_level  = top->dbg_sm0_tx_level;
-    g_cycle.rx_level  = top->dbg_sm0_rx_level;
-    g_cycle.strobes   = (uint32_t)(top->dbg_sm0_tick & 1u)
-                      | ((uint32_t)(top->dbg_sm0_exec & 1u) << 1)
-                      | ((uint32_t)(top->dbg_sm0_complete & 1u) << 2)
-                      | ((uint32_t)(top->dbg_sm0_pc_wr & 1u) << 3)
-                      | ((uint32_t)(top->dbg_sm0_tx_pop & 1u) << 4)
-                      | ((uint32_t)(top->dbg_sm0_rx_push & 1u) << 5)
-                      | ((uint32_t)(top->dbg_sm0_tx_empty & 1u) << 6)
-                      | ((uint32_t)(top->dbg_sm0_tx_full & 1u) << 7);
+    g_cycle.pc[0]     = (top->dbg_sm_pc >> 0) & 0x1f;
+    g_cycle.state[0]  = top->dbg_sm0_state;
+    g_cycle.delay[0]  = top->dbg_sm0_delay;
+    g_cycle.x[0]      = top->dbg_sm0_x;
+    g_cycle.y[0]      = top->dbg_sm0_y;
+    g_cycle.osr[0]    = top->dbg_sm0_osr;
+    g_cycle.isr[0]    = top->dbg_sm0_isr;
+    g_cycle.osr_cnt[0] = top->dbg_sm0_osr_cnt;
+    g_cycle.isr_cnt[0] = top->dbg_sm0_isr_cnt;
+    g_cycle.tx_level[0] = top->dbg_sm0_tx_level;
+    g_cycle.rx_level[0] = top->dbg_sm0_rx_level;
+    g_cycle.pc[1]     = (top->dbg_sm_pc >> 5) & 0x1f;
+    g_cycle.state[1]  = top->dbg_sm1_state;
+    g_cycle.delay[1]  = top->dbg_sm1_delay;
+    g_cycle.x[1]      = top->dbg_sm1_x;
+    g_cycle.y[1]      = top->dbg_sm1_y;
+    g_cycle.osr[1]    = top->dbg_sm1_osr;
+    g_cycle.isr[1]    = top->dbg_sm1_isr;
+    g_cycle.osr_cnt[1] = top->dbg_sm1_osr_cnt;
+    g_cycle.isr_cnt[1] = top->dbg_sm1_isr_cnt;
+    g_cycle.tx_level[1] = top->dbg_sm1_tx_level;
+    g_cycle.rx_level[1] = top->dbg_sm1_rx_level;
+    g_cycle.pc[2]     = (top->dbg_sm_pc >> 10) & 0x1f;
+    g_cycle.state[2]  = top->dbg_sm2_state;
+    g_cycle.delay[2]  = top->dbg_sm2_delay;
+    g_cycle.x[2]      = top->dbg_sm2_x;
+    g_cycle.y[2]      = top->dbg_sm2_y;
+    g_cycle.osr[2]    = top->dbg_sm2_osr;
+    g_cycle.isr[2]    = top->dbg_sm2_isr;
+    g_cycle.osr_cnt[2] = top->dbg_sm2_osr_cnt;
+    g_cycle.isr_cnt[2] = top->dbg_sm2_isr_cnt;
+    g_cycle.tx_level[2] = top->dbg_sm2_tx_level;
+    g_cycle.rx_level[2] = top->dbg_sm2_rx_level;
+    g_cycle.pc[3]     = (top->dbg_sm_pc >> 15) & 0x1f;
+    g_cycle.state[3]  = top->dbg_sm3_state;
+    g_cycle.delay[3]  = top->dbg_sm3_delay;
+    g_cycle.x[3]      = top->dbg_sm3_x;
+    g_cycle.y[3]      = top->dbg_sm3_y;
+    g_cycle.osr[3]    = top->dbg_sm3_osr;
+    g_cycle.isr[3]    = top->dbg_sm3_isr;
+    g_cycle.osr_cnt[3] = top->dbg_sm3_osr_cnt;
+    g_cycle.isr_cnt[3] = top->dbg_sm3_isr_cnt;
+    g_cycle.tx_level[3] = top->dbg_sm3_tx_level;
+    g_cycle.rx_level[3] = top->dbg_sm3_rx_level;
+    const uint32_t tick[4]    = {top->dbg_sm0_tick, top->dbg_sm1_tick, top->dbg_sm2_tick, top->dbg_sm3_tick};
+    const uint32_t exec[4]    = {top->dbg_sm0_exec, top->dbg_sm1_exec, top->dbg_sm2_exec, top->dbg_sm3_exec};
+    const uint32_t compl4[4]  = {top->dbg_sm0_complete, top->dbg_sm1_complete, top->dbg_sm2_complete, top->dbg_sm3_complete};
+    const uint32_t pcwr[4]    = {top->dbg_sm0_pc_wr, top->dbg_sm1_pc_wr, top->dbg_sm2_pc_wr, top->dbg_sm3_pc_wr};
+    const uint32_t pop[4]     = {top->dbg_sm0_tx_pop, top->dbg_sm1_tx_pop, top->dbg_sm2_tx_pop, top->dbg_sm3_tx_pop};
+    const uint32_t push[4]    = {top->dbg_sm0_rx_push, top->dbg_sm1_rx_push, top->dbg_sm2_rx_push, top->dbg_sm3_rx_push};
+    const uint32_t txe[4]     = {top->dbg_sm0_tx_empty, top->dbg_sm1_tx_empty, top->dbg_sm2_tx_empty, top->dbg_sm3_tx_empty};
+    const uint32_t txf[4]     = {top->dbg_sm0_tx_full, top->dbg_sm1_tx_full, top->dbg_sm2_tx_full, top->dbg_sm3_tx_full};
+    for (int i = 0; i < 4; i++) {
+        g_cycle.strobes[i] = (tick[i] & 1u) | ((exec[i] & 1u) << 1) | ((compl4[i] & 1u) << 2)
+                           | ((pcwr[i] & 1u) << 3) | ((pop[i] & 1u) << 4) | ((push[i] & 1u) << 5)
+                           | ((txe[i] & 1u) << 6) | ((txf[i] & 1u) << 7);
+    }
+    const uint32_t wrm[4] = {top->dbg_sm0_wr_mask, top->dbg_sm1_wr_mask,
+                             top->dbg_sm2_wr_mask, top->dbg_sm3_wr_mask};
+    for (int i = 0; i < 4; i++) g_cycle.wr_mask[i] = wrm[i];
 }
 }  // namespace
 

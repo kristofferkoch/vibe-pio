@@ -30,10 +30,10 @@ function freshDriver(defects) {
 }
 
 const resetOverlay = () => ({
-  clkdiv: { ...VibeDriver.EMPTY.clkdiv },
-  pinctrl: { ...VibeDriver.EMPTY.pinctrl },
-  execctrl: { ...VibeDriver.EMPTY.execctrl },
-  shiftctrl: { ...VibeDriver.EMPTY.shiftctrl },
+  clkdiv: { ...VibeDriver.EMPTY.sms[0].clkdiv },
+  pinctrl: { ...VibeDriver.EMPTY.sms[0].pinctrl },
+  execctrl: { ...VibeDriver.EMPTY.sms[0].execctrl },
+  shiftctrl: { ...VibeDriver.EMPTY.sms[0].shiftctrl },
 });
 
 // ---- every drawn control names its fields; nothing display-only -------
@@ -156,7 +156,7 @@ test('setOverlayFields composes ONE write per touched group', () => {
   const { M, drv } = freshDriver();
   drv.load(VibeDriver.EMPTY);
   const n0 = M.writes.length;
-  drv.setOverlayFields([
+  drv.setOverlayFields(0, [
     ['shiftctrl', 'fjoinTx', false],
     ['shiftctrl', 'fjoinRx', true],
   ]);
@@ -164,7 +164,7 @@ test('setOverlayFields composes ONE write per touched group', () => {
   // one SHIFTCTRL write: join RX over the right/right reset base
   assert.deepEqual(M.writes.slice(n0), [{ addr: REG.SM0 + 8, data: 0x800c0000 }]);
   // a same-group pair in the pinctrl range too
-  drv.setOverlayFields([
+  drv.setOverlayFields(0, [
     ['pinctrl', 'outBase', 2],
     ['pinctrl', 'outCnt', 4],
   ]);
@@ -179,7 +179,7 @@ test('the atomic join edit pays ONE flush + settle clk (SPEC-6-2)', () => {
   drv.load(VibeDriver.EMPTY);
   const steps0 = M.stepsCount();
   const n0 = M.writes.length;
-  drv.setOverlayFields([
+  drv.setOverlayFields(0, [
     ['shiftctrl', 'fjoinTx', false],
     ['shiftctrl', 'fjoinRx', true],
     ['shiftctrl', 'fjoinRxPut', false],
@@ -196,7 +196,7 @@ test('setOverlayFields validates before mutating (atomic throw)', () => {
   const { drv } = freshDriver();
   drv.load(VibeDriver.EMPTY);
   assert.throws(() =>
-    drv.setOverlayFields([
+    drv.setOverlayFields(0, [
       ['pinctrl', 'outBase', 3],
       ['pinctrl', 'outCnt', 33], // out of range — nothing lands
     ]),
@@ -210,9 +210,9 @@ test('applyControl lands the drawn gesture as the composed reg write', () => {
   const { M, drv } = freshDriver();
   drv.load(VibeDriver.EMPTY);
   const n0 = M.writes.length;
-  drv.applyControl('wrap-top', 'inc'); // 1 → 2 over the EMPTY reset wrap
-  drv.applyControl('osr-dir', 'toggle'); // OUT_SHIFTDIR right → left
-  drv.applyControl('pull-thr', 'inc'); // thr 32 → 1 (stored 1)
+  drv.applyControl(0, 'wrap-top', 'inc'); // 1 → 2 over the EMPTY reset wrap
+  drv.applyControl(0, 'osr-dir', 'toggle'); // OUT_SHIFTDIR right → left
+  drv.applyControl(0, 'pull-thr', 'inc'); // thr 32 → 1 (stored 1)
   drv.run(3);
   assert.deepEqual(M.writes.slice(n0), [
     { addr: REG.SM0 + 4, data: 0x00002fff }, // WRAP_TOP 2 (SPEC-7-19)
@@ -227,7 +227,7 @@ test('defect=cfgctrl: the join cycle is green clean, red defective', () => {
     const { M, drv } = freshDriver(defects);
     drv.load(VibeDriver.EMPTY);
     const n0 = M.writes.length;
-    drv.applyControl('fifo-join', 'inc');
+    drv.applyControl(0, 'fifo-join', 'inc');
     drv.run(1);
     return M.writes[n0].data;
   };

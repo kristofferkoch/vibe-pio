@@ -19,50 +19,11 @@ Card conventions (all RTL cards):
 - Full port lists live in DESIGN.md §Module descriptions — not duplicated
   here.
 
-## Game track (C22, C24)
+## Game track — COMPLETE (C21–C24)
 
 Promoted from the IDEAS game entry after the 2026-08-27 game-loop
-grilling (round 1: sandbox). The sandbox card of that promotion and
-the multi-SM oracle card (C23) have landed; the remaining cards
-extend them. Owner decisions: **sandbox
-first, SM0-only** — "all features unlocked" means the complete per-SM
-surface (FIFO join/aux modes, real CLKDIV, shift/autopush/autopull
-config, pin mapping in both directions, IRQ flags, RX drain); the
-other three SMs are their own later cards. The **multi-SM gate
-oracle is pio_model extended to multi-SM** — the Python referee
-grows, no iverilog-oracle detour (C23 lands before any multi-SM
-client work). Config UI is an **inspector-first hybrid**: a full
-datasheet register-inspector panel guarantees 100 % field coverage
-from day one, and the DESIGN-NOTES drawn grammar (shift arrows, join
-ghosts, wrap steppers, pin tags) lands incrementally on top (C22).
-**Real CLKDIV is exposed** even in sandbox (levels may still
-abstract it per level). Input stimulus is **manual pin drives + hold
-latches + a tiny pattern generator** (square / pasted bitstream on
-one pin — deliberately short of level-stimulus machinery). The
-receiver monitor is a **selectable lens** (off by default / square /
-uart, target pin picked — a lens, never a judge, until levels).
-**No game shell yet** — sm-view stays the entry page; the menu lands
-with the first level card. Persistence is **localStorage autosave +
-JSON export/import** of the stored-program format (32 words + config
-overlay — the same JSON seeds level authoring) plus
-copy-as-canonical-listing via pio-asm. Sandbox boots to **empty
-memory** (all-zero = the jmp-0 park, the DESIGN-NOTES lesson), the
-old uart_tx demo demoted to a loadable promotion default (kept at
-kickoff). Dependency order: C24 alone remains (C22/C23 landed;
-the C22 drawn-config grammar rides the sandbox overlay). Tooling/web
-cards state their own done-when gates below; the RTL-card template
-does not apply (the RTL is already multi-SM complete).
-
-### C24 — sandbox multi-SM (four machines, one playground)
-
-- The shim's pre-edge sample extends per-SM (PioCycle grows the
-  SM1..3 fields or becomes an array — the CC-40 sampling point
-  unchanged); the view shows the shared listing with four PC
-  cursors, per-SM register/FIFO columns, and pad ownership
-  (highest-numbered SM wins, CC-7) on the pin strip; inspector and
-  detail panes select the SM. Client-gate legs run multi-SM
-  timelines against the C23-extended model.
-- Done when: `make js` and the `make web` client gate are green on
-  multi-SM timelines vs pio_model (load, parallel run, inter-SM
-  IRQ, pin-arbitration legs) with red/green defect hooks; browser
-  session; fun-gate re-read on four machines.
+grilling; all four cards have landed — C21 (single-SM sandbox surface),
+C22 (the DESIGN-NOTES drawn-config grammar), C23 (pio_model multi-SM
+oracle), C24 (the four-machine playground). No cards remain; the next
+game-track work (the level/menu shell, level stimulus) starts from
+IDEAS.md after its own grilling.
