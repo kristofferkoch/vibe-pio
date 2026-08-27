@@ -1,0 +1,440 @@
+{
+  "generator": "tools/gen_pio_asm_golden.py \u2014 pio_model C12 asm/disasm (bit-equal to pioasm 2.3.0 per difftest --asm-check); regenerate after deliberate pio_model changes, never hand-edit",
+  "programs": [
+    {
+      "name": "squarewave",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program squarewave\n    set pindirs, 1   ; Set pin to output\nagain:\n    set pins, 1 [1]  ; Drive pin high and then delay for one cycle\n    set pins, 0      ; Drive pin low\n    jmp again        ; Set PC to label `again`\n\n",
+      "sideset": {
+        "bits": null,
+        "opt": false
+      },
+      "words": [57473, 57601, 57344, 1],
+      "disasm": ["set pindirs, 1", "set pins, 1 [1]", "set pins, 0", "jmp 1"]
+    },
+    {
+      "name": "addition",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n.program addition\n\n; Pop two 32 bit integers from the TX FIFO, add them together, and push the\n; result to the TX FIFO. Autopush/pull should be disabled as we're using\n; explicit push and pull instructions.\n;\n; This program uses the two's complement identity x + y == ~(~x - y)\n\n\tpull\n\tmov x, ~osr\n\tpull\n\tmov y, osr\n\tjmp test        ; this loop is equivalent to the following C code:\nincr:               ; while (y--)\n\tjmp x-- test    ;     x--;\ntest:               ; This has the effect of subtracting y from x, eventually.\n\tjmp y-- incr\n\tmov isr, ~x\n\tpush\n\n% c-sdk {\nstatic inline void addition_program_init(PIO pio, uint sm, uint offset) {\n\tpio_sm_config c = addition_program_get_default_config(offset);\n\tpio_sm_init(pio, sm, offset, &c);\n\tpio_sm_set_enabled(pio, sm, true);\n}\n%}\n",
+      "sideset": {
+        "bits": null,
+        "opt": false
+      },
+      "words": [32928, 41007, 32928, 41031, 6, 70, 133, 41161, 32800],
+      "disasm": [
+        "pull block",
+        "mov x, ~osr",
+        "pull block",
+        "mov y, osr",
+        "jmp 6",
+        "jmp x--, 6",
+        "jmp y--, 5",
+        "mov isr, ~x",
+        "push block"
+      ]
+    },
+    {
+      "name": "ws2812",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program ws2812\n.side_set 1\n\n; The following constants are selected for broad compatibility with WS2812,\n; WS2812B, and SK6812 LEDs. Other constants may support higher bandwidths for\n; specific LEDs, such as (7,10,8) for WS2812B LEDs.\n\n.define public T1 3\n.define public T2 3\n.define public T3 4\n\n.lang_opt python sideset_init = pico.PIO.OUT_HIGH\n.lang_opt python out_init     = pico.PIO.OUT_HIGH\n.lang_opt python out_shiftdir = 1\n\n.wrap_target\nbitloop:\n    out x, 1       side 0 [T3 - 1] ; Side-set still takes place when instruction stalls\n    jmp !x do_zero side 1 [T1 - 1] ; Branch on the bit we shifted out. Positive pulse\ndo_one:\n    jmp  bitloop   side 1 [T2 - 1] ; Continue driving high, for a long pulse\ndo_zero:\n    nop            side 0 [T2 - 1] ; Or drive low, for a short pulse\n.wrap\n\n% c-sdk {\n#include \"hardware/clocks.h\"\n\nstatic inline void ws2812_program_init(PIO pio, uint sm, uint offset, uint pin, float freq, bool rgbw) {\n\n    pio_gpio_init(pio, pin);\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);\n\n    pio_sm_config c = ws2812_program_get_default_config(offset);\n    sm_config_set_sideset_pins(&c, pin);\n    sm_config_set_out_shift(&c, false, true, rgbw ? 32 : 24);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);\n\n    int cycles_per_bit = ws2812_T1 + ws2812_T2 + ws2812_T3;\n    float div = clock_get_hz(clk_sys) / (freq * cycles_per_bit);\n    sm_config_set_clkdiv(&c, div);\n\n    pio_sm_init(pio, sm, offset, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n\n.program ws2812_parallel\n\n.define public T1 3\n.define public T2 3\n.define public T3 4\n\n.wrap_target\n    out x, 32\n    mov pins, !null [T1-1]\n    mov pins, x     [T2-1]\n    mov pins, null  [T3-2]\n.wrap\n\n% c-sdk {\n#include \"hardware/clocks.h\"\n\nstatic inline void ws2812_parallel_program_init(PIO pio, uint sm, uint offset, uint pin_base, uint pin_count, float freq) {\n    for(uint i=pin_base; i<pin_base+pin_count; i++) {\n        pio_gpio_init(pio, i);\n    }\n    pio_sm_set_consecutive_pindirs(pio, sm, pin_base, pin_count, true);\n\n    pio_sm_config c = ws2812_parallel_program_get_default_config(offset);\n    sm_config_set_out_shift(&c, true, true, 32);\n    sm_config_set_out_pins(&c, pin_base, pin_count);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);\n\n    int cycles_per_bit = ws2812_parallel_T1 + ws2812_parallel_T2 + ws2812_parallel_T3;\n    float div = clock_get_hz(clk_sys) / (freq * cycles_per_bit);\n    sm_config_set_clkdiv(&c, div);\n\n    pio_sm_init(pio, sm, offset, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n",
+      "sideset": {
+        "bits": 1,
+        "opt": false
+      },
+      "words": [25377, 4643, 4608, 41538],
+      "disasm": [
+        "out x, 1 side 0 [3]",
+        "jmp !x, 3 side 1 [2]",
+        "jmp 0 side 1 [2]",
+        "mov y, y side 0 [2]"
+      ]
+    },
+    {
+      "name": "uart_tx",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program uart_tx\n.side_set 1 opt\n\n; An 8n1 UART transmit program.\n; OUT pin 0 and side-set pin 0 are both mapped to UART TX pin.\n\n    pull       side 1 [7]  ; Assert stop bit, or stall with line in idle state\n    set x, 7   side 0 [7]  ; Preload bit counter, assert start bit for 8 clocks\nbitloop:                   ; This loop will run 8 times (8n1 UART)\n    out pins, 1            ; Shift 1 bit from OSR to the first OUT pin\n    jmp x-- bitloop   [6]  ; Each loop iteration is 8 cycles.\n\n\n% c-sdk {\n#include \"hardware/clocks.h\"\n\nstatic inline void uart_tx_program_init(PIO pio, uint sm, uint offset, uint pin_tx, uint baud) {\n    // Tell PIO to initially drive output-high on the selected pin, then map PIO\n    // onto that pin with the IO muxes.\n    pio_sm_set_pins_with_mask64(pio, sm, 1ull << pin_tx, 1ull << pin_tx);\n    pio_sm_set_pindirs_with_mask64(pio, sm, 1ull << pin_tx, 1ull << pin_tx);\n    pio_gpio_init(pio, pin_tx);\n\n    pio_sm_config c = uart_tx_program_get_default_config(offset);\n\n    // OUT shifts to right, no autopull\n    sm_config_set_out_shift(&c, true, false, 32);\n\n    // We are mapping both OUT and side-set to the same pin, because sometimes\n    // we need to assert user data onto the pin (with OUT) and sometimes\n    // assert constant values (start/stop bit)\n    sm_config_set_out_pins(&c, pin_tx, 1);\n    sm_config_set_sideset_pins(&c, pin_tx);\n\n    // We only need TX, so get an 8-deep FIFO!\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);\n\n    // SM transmits 1 bit per 8 execution cycles.\n    float div = (float)clock_get_hz(clk_sys) / (8 * baud);\n    sm_config_set_clkdiv(&c, div);\n\n    pio_sm_init(pio, sm, offset, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n\nstatic inline void uart_tx_program_putc(PIO pio, uint sm, char c) {\n    pio_sm_put_blocking(pio, sm, (uint32_t)c);\n}\n\nstatic inline void uart_tx_program_puts(PIO pio, uint sm, const char *s) {\n    while (*s)\n        uart_tx_program_putc(pio, sm, *s++);\n}\n\n%}\n",
+      "sideset": {
+        "bits": 1,
+        "opt": true
+      },
+      "words": [40864, 63271, 24577, 1602],
+      "disasm": ["pull block side 1 [7]", "set x, 7 side 0 [7]", "out pins, 1", "jmp x--, 2 [6]"]
+    },
+    {
+      "name": "spi_cpha0",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n\n; These programs implement full-duplex SPI, with a SCK period of 4 clock\n; cycles. A different program is provided for each value of CPHA, and CPOL is\n; achieved using the hardware GPIO inversion available in the IO controls.\n;\n; Transmit-only SPI can go twice as fast -- see the ST7789 example!\n.pio_version 0 // only requires PIO version 0\n\n.program spi_cpha0\n.side_set 1\n\n; Pin assignments:\n; - SCK is side-set pin 0\n; - MOSI is OUT pin 0\n; - MISO is IN pin 0\n;\n; Autopush and autopull must be enabled, and the serial frame size is set by\n; configuring the push/pull threshold. Shift left/right is fine, but you must\n; justify the data yourself. This is done most conveniently for frame sizes of\n; 8 or 16 bits by using the narrow store replication and narrow load byte\n; picking behaviour of RP2040's IO fabric.\n\n; Clock phase = 0: data is captured on the leading edge of each SCK pulse, and\n; transitions on the trailing edge, or some time before the first leading edge.\n\n    out pins, 1 side 0 [1] ; Stall here on empty (sideset proceeds even if\n    in pins, 1  side 1 [1] ; instruction stalls, so we stall with SCK low)\n\n.program spi_cpha1\n.side_set 1\n\n; Clock phase = 1: data transitions on the leading edge of each SCK pulse, and\n; is captured on the trailing edge.\n\n    out x, 1    side 0     ; Stall here on empty (keep SCK deasserted)\n    mov pins, x side 1 [1] ; Output data, assert SCK (mov pins uses OUT mapping)\n    in pins, 1  side 0     ; Input data, deassert SCK\n\n% c-sdk {\n#include \"hardware/gpio.h\"\nstatic inline void pio_spi_init(PIO pio, uint sm, uint prog_offs, uint n_bits,\n        float clkdiv, bool cpha, bool cpol, uint pin_sck, uint pin_mosi, uint pin_miso) {\n    pio_sm_config c = cpha ? spi_cpha1_program_get_default_config(prog_offs) : spi_cpha0_program_get_default_config(prog_offs);\n    sm_config_set_out_pins(&c, pin_mosi, 1);\n    sm_config_set_in_pins(&c, pin_miso);\n    sm_config_set_sideset_pins(&c, pin_sck);\n    // Only support MSB-first in this example code (shift to left, auto push/pull, threshold=nbits)\n    sm_config_set_out_shift(&c, false, true, n_bits);\n    sm_config_set_in_shift(&c, false, true, n_bits);\n    sm_config_set_clkdiv(&c, clkdiv);\n\n    // MOSI, SCK output are low, MISO is input\n    pio_sm_set_pins_with_mask64(pio, sm, 0, (1ull << pin_sck) | (1ull << pin_mosi));\n    pio_sm_set_pindirs_with_mask64(pio, sm, (1ull << pin_sck) | (1ull << pin_mosi), (1ull << pin_sck) | (1ull << pin_mosi) | (1ull << pin_miso));\n    pio_gpio_init(pio, pin_mosi);\n    pio_gpio_init(pio, pin_miso);\n    pio_gpio_init(pio, pin_sck);\n\n    // The pin muxes can be configured to invert the output (among other things\n    // and this is a cheesy way to get CPOL=1\n    gpio_set_outover(pin_sck, cpol ? GPIO_OVERRIDE_INVERT : GPIO_OVERRIDE_NORMAL);\n    // SPI is synchronous, so bypass input synchroniser to reduce input delay.\n    pio_set_input_sync_bypass_with_mask64(pio, 1ull << pin_miso, 1ull << pin_miso);\n\n    pio_sm_init(pio, sm, prog_offs, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n\n; SPI with Chip Select\n; -----------------------------------------------------------------------------\n;\n; For your amusement, here are some SPI programs with an automatic chip select\n; (asserted once data appears in TX FIFO, deasserts when FIFO bottoms out, has\n; a nice front/back porch).\n;\n; The number of bits per FIFO entry is configured via the Y register\n; and the autopush/pull threshold. From 2 to 32 bits.\n;\n; Pin assignments:\n; - SCK is side-set bit 0\n; - CSn is side-set bit 1\n; - MOSI is OUT bit 0 (host-to-device)\n; - MISO is IN bit 0 (device-to-host)\n;\n; This program only supports one chip select -- use GPIO if more are needed\n;\n; Provide a variation for each possibility of CPHA; for CPOL we can just\n; invert SCK in the IO muxing controls (downstream from PIO)\n\n\n; CPHA=0: data is captured on the leading edge of each SCK pulse (including\n; the first pulse), and transitions on the trailing edge\n\n.program spi_cpha0_cs\n.side_set 2\n\n.wrap_target\nbitloop:\n    out pins, 1        side 0x0 [1]\n    in pins, 1         side 0x1\n    jmp x-- bitloop    side 0x1\n\n    out pins, 1        side 0x0\n    mov x, y           side 0x0     ; Reload bit counter from Y\n    in pins, 1         side 0x1\n    jmp !osre bitloop  side 0x1     ; Fall-through if TXF empties\n\n    nop                side 0x0 [1] ; CSn back porch\npublic entry_point:                 ; Must set X,Y to n-2 before starting!\n    pull ifempty       side 0x2 [1] ; Block with CSn high (minimum 2 cycles)\n.wrap                               ; Note ifempty to avoid time-of-check race\n\n; CPHA=1: data transitions on the leading edge of each SCK pulse, and is\n; captured on the trailing edge\n\n.program spi_cpha1_cs\n.side_set 2\n\n.wrap_target\nbitloop:\n    out pins, 1        side 0x1 [1]\n    in pins, 1         side 0x0\n    jmp x-- bitloop    side 0x0\n\n    out pins, 1        side 0x1\n    mov x, y           side 0x1\n    in pins, 1         side 0x0\n    jmp !osre bitloop  side 0x0\n\npublic entry_point:                 ; Must set X,Y to n-2 before starting!\n    pull ifempty       side 0x2 [1] ; Block with CSn high (minimum 2 cycles)\n    nop                side 0x0 [1]; CSn front porch\n.wrap\n\n% c-sdk {\n#include \"hardware/gpio.h\"\nstatic inline void pio_spi_cs_init(PIO pio, uint sm, uint prog_offs, uint n_bits, float clkdiv, bool cpha, bool cpol,\n        uint pin_sck, uint pin_mosi, uint pin_miso) {\n    pio_sm_config c = cpha ? spi_cpha1_cs_program_get_default_config(prog_offs) : spi_cpha0_cs_program_get_default_config(prog_offs);\n    sm_config_set_out_pins(&c, pin_mosi, 1);\n    sm_config_set_in_pins(&c, pin_miso);\n    sm_config_set_sideset_pins(&c, pin_sck);\n    sm_config_set_out_shift(&c, false, true, n_bits);\n    sm_config_set_in_shift(&c, false, true, n_bits);\n    sm_config_set_clkdiv(&c, clkdiv);\n\n    pio_sm_set_pins_with_mask64(pio, sm, (2ull << pin_sck), (3ull << pin_sck) | (1ull << pin_mosi));\n    pio_sm_set_pindirs_with_mask64(pio, sm, (3ull << pin_sck) | (1ull << pin_mosi), (3ull << pin_sck) | (1ull << pin_mosi) | (1ull << pin_miso));\n    pio_gpio_init(pio, pin_mosi);\n    pio_gpio_init(pio, pin_miso);\n    pio_gpio_init(pio, pin_sck);\n    pio_gpio_init(pio, pin_sck + 1);\n    gpio_set_outover(pin_sck, cpol ? GPIO_OVERRIDE_INVERT : GPIO_OVERRIDE_NORMAL);\n    pio_set_input_sync_bypass_with_mask64(pio, 1ull << pin_miso, 1ull << pin_miso);\n\n    uint entry_point = prog_offs + (cpha ? spi_cpha1_cs_offset_entry_point : spi_cpha0_cs_offset_entry_point);\n    pio_sm_init(pio, sm, entry_point, &c);\n    pio_sm_exec(pio, sm, pio_encode_set(pio_x, n_bits - 2));\n    pio_sm_exec(pio, sm, pio_encode_set(pio_y, n_bits - 2));\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n",
+      "sideset": {
+        "bits": 1,
+        "opt": false
+      },
+      "words": [24833, 20737],
+      "disasm": ["out pins, 1 side 0 [1]", "in pins, 1 side 1 [1]"]
+    },
+    {
+      "name": "spi_cpha1",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n\n; These programs implement full-duplex SPI, with a SCK period of 4 clock\n; cycles. A different program is provided for each value of CPHA, and CPOL is\n; achieved using the hardware GPIO inversion available in the IO controls.\n;\n; Transmit-only SPI can go twice as fast -- see the ST7789 example!\n.pio_version 0 // only requires PIO version 0\n\n.program spi_cpha0\n.side_set 1\n\n; Pin assignments:\n; - SCK is side-set pin 0\n; - MOSI is OUT pin 0\n; - MISO is IN pin 0\n;\n; Autopush and autopull must be enabled, and the serial frame size is set by\n; configuring the push/pull threshold. Shift left/right is fine, but you must\n; justify the data yourself. This is done most conveniently for frame sizes of\n; 8 or 16 bits by using the narrow store replication and narrow load byte\n; picking behaviour of RP2040's IO fabric.\n\n; Clock phase = 0: data is captured on the leading edge of each SCK pulse, and\n; transitions on the trailing edge, or some time before the first leading edge.\n\n    out pins, 1 side 0 [1] ; Stall here on empty (sideset proceeds even if\n    in pins, 1  side 1 [1] ; instruction stalls, so we stall with SCK low)\n\n.program spi_cpha1\n.side_set 1\n\n; Clock phase = 1: data transitions on the leading edge of each SCK pulse, and\n; is captured on the trailing edge.\n\n    out x, 1    side 0     ; Stall here on empty (keep SCK deasserted)\n    mov pins, x side 1 [1] ; Output data, assert SCK (mov pins uses OUT mapping)\n    in pins, 1  side 0     ; Input data, deassert SCK\n\n% c-sdk {\n#include \"hardware/gpio.h\"\nstatic inline void pio_spi_init(PIO pio, uint sm, uint prog_offs, uint n_bits,\n        float clkdiv, bool cpha, bool cpol, uint pin_sck, uint pin_mosi, uint pin_miso) {\n    pio_sm_config c = cpha ? spi_cpha1_program_get_default_config(prog_offs) : spi_cpha0_program_get_default_config(prog_offs);\n    sm_config_set_out_pins(&c, pin_mosi, 1);\n    sm_config_set_in_pins(&c, pin_miso);\n    sm_config_set_sideset_pins(&c, pin_sck);\n    // Only support MSB-first in this example code (shift to left, auto push/pull, threshold=nbits)\n    sm_config_set_out_shift(&c, false, true, n_bits);\n    sm_config_set_in_shift(&c, false, true, n_bits);\n    sm_config_set_clkdiv(&c, clkdiv);\n\n    // MOSI, SCK output are low, MISO is input\n    pio_sm_set_pins_with_mask64(pio, sm, 0, (1ull << pin_sck) | (1ull << pin_mosi));\n    pio_sm_set_pindirs_with_mask64(pio, sm, (1ull << pin_sck) | (1ull << pin_mosi), (1ull << pin_sck) | (1ull << pin_mosi) | (1ull << pin_miso));\n    pio_gpio_init(pio, pin_mosi);\n    pio_gpio_init(pio, pin_miso);\n    pio_gpio_init(pio, pin_sck);\n\n    // The pin muxes can be configured to invert the output (among other things\n    // and this is a cheesy way to get CPOL=1\n    gpio_set_outover(pin_sck, cpol ? GPIO_OVERRIDE_INVERT : GPIO_OVERRIDE_NORMAL);\n    // SPI is synchronous, so bypass input synchroniser to reduce input delay.\n    pio_set_input_sync_bypass_with_mask64(pio, 1ull << pin_miso, 1ull << pin_miso);\n\n    pio_sm_init(pio, sm, prog_offs, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n\n; SPI with Chip Select\n; -----------------------------------------------------------------------------\n;\n; For your amusement, here are some SPI programs with an automatic chip select\n; (asserted once data appears in TX FIFO, deasserts when FIFO bottoms out, has\n; a nice front/back porch).\n;\n; The number of bits per FIFO entry is configured via the Y register\n; and the autopush/pull threshold. From 2 to 32 bits.\n;\n; Pin assignments:\n; - SCK is side-set bit 0\n; - CSn is side-set bit 1\n; - MOSI is OUT bit 0 (host-to-device)\n; - MISO is IN bit 0 (device-to-host)\n;\n; This program only supports one chip select -- use GPIO if more are needed\n;\n; Provide a variation for each possibility of CPHA; for CPOL we can just\n; invert SCK in the IO muxing controls (downstream from PIO)\n\n\n; CPHA=0: data is captured on the leading edge of each SCK pulse (including\n; the first pulse), and transitions on the trailing edge\n\n.program spi_cpha0_cs\n.side_set 2\n\n.wrap_target\nbitloop:\n    out pins, 1        side 0x0 [1]\n    in pins, 1         side 0x1\n    jmp x-- bitloop    side 0x1\n\n    out pins, 1        side 0x0\n    mov x, y           side 0x0     ; Reload bit counter from Y\n    in pins, 1         side 0x1\n    jmp !osre bitloop  side 0x1     ; Fall-through if TXF empties\n\n    nop                side 0x0 [1] ; CSn back porch\npublic entry_point:                 ; Must set X,Y to n-2 before starting!\n    pull ifempty       side 0x2 [1] ; Block with CSn high (minimum 2 cycles)\n.wrap                               ; Note ifempty to avoid time-of-check race\n\n; CPHA=1: data transitions on the leading edge of each SCK pulse, and is\n; captured on the trailing edge\n\n.program spi_cpha1_cs\n.side_set 2\n\n.wrap_target\nbitloop:\n    out pins, 1        side 0x1 [1]\n    in pins, 1         side 0x0\n    jmp x-- bitloop    side 0x0\n\n    out pins, 1        side 0x1\n    mov x, y           side 0x1\n    in pins, 1         side 0x0\n    jmp !osre bitloop  side 0x0\n\npublic entry_point:                 ; Must set X,Y to n-2 before starting!\n    pull ifempty       side 0x2 [1] ; Block with CSn high (minimum 2 cycles)\n    nop                side 0x0 [1]; CSn front porch\n.wrap\n\n% c-sdk {\n#include \"hardware/gpio.h\"\nstatic inline void pio_spi_cs_init(PIO pio, uint sm, uint prog_offs, uint n_bits, float clkdiv, bool cpha, bool cpol,\n        uint pin_sck, uint pin_mosi, uint pin_miso) {\n    pio_sm_config c = cpha ? spi_cpha1_cs_program_get_default_config(prog_offs) : spi_cpha0_cs_program_get_default_config(prog_offs);\n    sm_config_set_out_pins(&c, pin_mosi, 1);\n    sm_config_set_in_pins(&c, pin_miso);\n    sm_config_set_sideset_pins(&c, pin_sck);\n    sm_config_set_out_shift(&c, false, true, n_bits);\n    sm_config_set_in_shift(&c, false, true, n_bits);\n    sm_config_set_clkdiv(&c, clkdiv);\n\n    pio_sm_set_pins_with_mask64(pio, sm, (2ull << pin_sck), (3ull << pin_sck) | (1ull << pin_mosi));\n    pio_sm_set_pindirs_with_mask64(pio, sm, (3ull << pin_sck) | (1ull << pin_mosi), (3ull << pin_sck) | (1ull << pin_mosi) | (1ull << pin_miso));\n    pio_gpio_init(pio, pin_mosi);\n    pio_gpio_init(pio, pin_miso);\n    pio_gpio_init(pio, pin_sck);\n    pio_gpio_init(pio, pin_sck + 1);\n    gpio_set_outover(pin_sck, cpol ? GPIO_OVERRIDE_INVERT : GPIO_OVERRIDE_NORMAL);\n    pio_set_input_sync_bypass_with_mask64(pio, 1ull << pin_miso, 1ull << pin_miso);\n\n    uint entry_point = prog_offs + (cpha ? spi_cpha1_cs_offset_entry_point : spi_cpha0_cs_offset_entry_point);\n    pio_sm_init(pio, sm, entry_point, &c);\n    pio_sm_exec(pio, sm, pio_encode_set(pio_x, n_bits - 2));\n    pio_sm_exec(pio, sm, pio_encode_set(pio_y, n_bits - 2));\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n",
+      "sideset": {
+        "bits": 1,
+        "opt": false
+      },
+      "words": [24609, 45313, 16385],
+      "disasm": ["out x, 1 side 0", "mov pins, x side 1 [1]", "in pins, 1 side 0"]
+    },
+    {
+      "name": "spi_cpha0_cs",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n\n; These programs implement full-duplex SPI, with a SCK period of 4 clock\n; cycles. A different program is provided for each value of CPHA, and CPOL is\n; achieved using the hardware GPIO inversion available in the IO controls.\n;\n; Transmit-only SPI can go twice as fast -- see the ST7789 example!\n.pio_version 0 // only requires PIO version 0\n\n.program spi_cpha0\n.side_set 1\n\n; Pin assignments:\n; - SCK is side-set pin 0\n; - MOSI is OUT pin 0\n; - MISO is IN pin 0\n;\n; Autopush and autopull must be enabled, and the serial frame size is set by\n; configuring the push/pull threshold. Shift left/right is fine, but you must\n; justify the data yourself. This is done most conveniently for frame sizes of\n; 8 or 16 bits by using the narrow store replication and narrow load byte\n; picking behaviour of RP2040's IO fabric.\n\n; Clock phase = 0: data is captured on the leading edge of each SCK pulse, and\n; transitions on the trailing edge, or some time before the first leading edge.\n\n    out pins, 1 side 0 [1] ; Stall here on empty (sideset proceeds even if\n    in pins, 1  side 1 [1] ; instruction stalls, so we stall with SCK low)\n\n.program spi_cpha1\n.side_set 1\n\n; Clock phase = 1: data transitions on the leading edge of each SCK pulse, and\n; is captured on the trailing edge.\n\n    out x, 1    side 0     ; Stall here on empty (keep SCK deasserted)\n    mov pins, x side 1 [1] ; Output data, assert SCK (mov pins uses OUT mapping)\n    in pins, 1  side 0     ; Input data, deassert SCK\n\n% c-sdk {\n#include \"hardware/gpio.h\"\nstatic inline void pio_spi_init(PIO pio, uint sm, uint prog_offs, uint n_bits,\n        float clkdiv, bool cpha, bool cpol, uint pin_sck, uint pin_mosi, uint pin_miso) {\n    pio_sm_config c = cpha ? spi_cpha1_program_get_default_config(prog_offs) : spi_cpha0_program_get_default_config(prog_offs);\n    sm_config_set_out_pins(&c, pin_mosi, 1);\n    sm_config_set_in_pins(&c, pin_miso);\n    sm_config_set_sideset_pins(&c, pin_sck);\n    // Only support MSB-first in this example code (shift to left, auto push/pull, threshold=nbits)\n    sm_config_set_out_shift(&c, false, true, n_bits);\n    sm_config_set_in_shift(&c, false, true, n_bits);\n    sm_config_set_clkdiv(&c, clkdiv);\n\n    // MOSI, SCK output are low, MISO is input\n    pio_sm_set_pins_with_mask64(pio, sm, 0, (1ull << pin_sck) | (1ull << pin_mosi));\n    pio_sm_set_pindirs_with_mask64(pio, sm, (1ull << pin_sck) | (1ull << pin_mosi), (1ull << pin_sck) | (1ull << pin_mosi) | (1ull << pin_miso));\n    pio_gpio_init(pio, pin_mosi);\n    pio_gpio_init(pio, pin_miso);\n    pio_gpio_init(pio, pin_sck);\n\n    // The pin muxes can be configured to invert the output (among other things\n    // and this is a cheesy way to get CPOL=1\n    gpio_set_outover(pin_sck, cpol ? GPIO_OVERRIDE_INVERT : GPIO_OVERRIDE_NORMAL);\n    // SPI is synchronous, so bypass input synchroniser to reduce input delay.\n    pio_set_input_sync_bypass_with_mask64(pio, 1ull << pin_miso, 1ull << pin_miso);\n\n    pio_sm_init(pio, sm, prog_offs, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n\n; SPI with Chip Select\n; -----------------------------------------------------------------------------\n;\n; For your amusement, here are some SPI programs with an automatic chip select\n; (asserted once data appears in TX FIFO, deasserts when FIFO bottoms out, has\n; a nice front/back porch).\n;\n; The number of bits per FIFO entry is configured via the Y register\n; and the autopush/pull threshold. From 2 to 32 bits.\n;\n; Pin assignments:\n; - SCK is side-set bit 0\n; - CSn is side-set bit 1\n; - MOSI is OUT bit 0 (host-to-device)\n; - MISO is IN bit 0 (device-to-host)\n;\n; This program only supports one chip select -- use GPIO if more are needed\n;\n; Provide a variation for each possibility of CPHA; for CPOL we can just\n; invert SCK in the IO muxing controls (downstream from PIO)\n\n\n; CPHA=0: data is captured on the leading edge of each SCK pulse (including\n; the first pulse), and transitions on the trailing edge\n\n.program spi_cpha0_cs\n.side_set 2\n\n.wrap_target\nbitloop:\n    out pins, 1        side 0x0 [1]\n    in pins, 1         side 0x1\n    jmp x-- bitloop    side 0x1\n\n    out pins, 1        side 0x0\n    mov x, y           side 0x0     ; Reload bit counter from Y\n    in pins, 1         side 0x1\n    jmp !osre bitloop  side 0x1     ; Fall-through if TXF empties\n\n    nop                side 0x0 [1] ; CSn back porch\npublic entry_point:                 ; Must set X,Y to n-2 before starting!\n    pull ifempty       side 0x2 [1] ; Block with CSn high (minimum 2 cycles)\n.wrap                               ; Note ifempty to avoid time-of-check race\n\n; CPHA=1: data transitions on the leading edge of each SCK pulse, and is\n; captured on the trailing edge\n\n.program spi_cpha1_cs\n.side_set 2\n\n.wrap_target\nbitloop:\n    out pins, 1        side 0x1 [1]\n    in pins, 1         side 0x0\n    jmp x-- bitloop    side 0x0\n\n    out pins, 1        side 0x1\n    mov x, y           side 0x1\n    in pins, 1         side 0x0\n    jmp !osre bitloop  side 0x0\n\npublic entry_point:                 ; Must set X,Y to n-2 before starting!\n    pull ifempty       side 0x2 [1] ; Block with CSn high (minimum 2 cycles)\n    nop                side 0x0 [1]; CSn front porch\n.wrap\n\n% c-sdk {\n#include \"hardware/gpio.h\"\nstatic inline void pio_spi_cs_init(PIO pio, uint sm, uint prog_offs, uint n_bits, float clkdiv, bool cpha, bool cpol,\n        uint pin_sck, uint pin_mosi, uint pin_miso) {\n    pio_sm_config c = cpha ? spi_cpha1_cs_program_get_default_config(prog_offs) : spi_cpha0_cs_program_get_default_config(prog_offs);\n    sm_config_set_out_pins(&c, pin_mosi, 1);\n    sm_config_set_in_pins(&c, pin_miso);\n    sm_config_set_sideset_pins(&c, pin_sck);\n    sm_config_set_out_shift(&c, false, true, n_bits);\n    sm_config_set_in_shift(&c, false, true, n_bits);\n    sm_config_set_clkdiv(&c, clkdiv);\n\n    pio_sm_set_pins_with_mask64(pio, sm, (2ull << pin_sck), (3ull << pin_sck) | (1ull << pin_mosi));\n    pio_sm_set_pindirs_with_mask64(pio, sm, (3ull << pin_sck) | (1ull << pin_mosi), (3ull << pin_sck) | (1ull << pin_mosi) | (1ull << pin_miso));\n    pio_gpio_init(pio, pin_mosi);\n    pio_gpio_init(pio, pin_miso);\n    pio_gpio_init(pio, pin_sck);\n    pio_gpio_init(pio, pin_sck + 1);\n    gpio_set_outover(pin_sck, cpol ? GPIO_OVERRIDE_INVERT : GPIO_OVERRIDE_NORMAL);\n    pio_set_input_sync_bypass_with_mask64(pio, 1ull << pin_miso, 1ull << pin_miso);\n\n    uint entry_point = prog_offs + (cpha ? spi_cpha1_cs_offset_entry_point : spi_cpha0_cs_offset_entry_point);\n    pio_sm_init(pio, sm, entry_point, &c);\n    pio_sm_exec(pio, sm, pio_encode_set(pio_x, n_bits - 2));\n    pio_sm_exec(pio, sm, pio_encode_set(pio_y, n_bits - 2));\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n",
+      "sideset": {
+        "bits": 2,
+        "opt": false
+      },
+      "words": [24833, 18433, 2112, 24577, 40994, 18433, 2272, 41282, 37344],
+      "disasm": [
+        "out pins, 1 side 0 [1]",
+        "in pins, 1 side 1",
+        "jmp x--, 0 side 1",
+        "out pins, 1 side 0",
+        "mov x, y side 0",
+        "in pins, 1 side 1",
+        "jmp !osre, 0 side 1",
+        "mov y, y side 0 [1]",
+        "pull ifempty block side 2 [1]"
+      ]
+    },
+    {
+      "name": "clocked_input",
+      "src": ";\n; Copyright (c) 2021 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program clocked_input\n\n; Sample bits using an external clock, and push groups of bits into the RX FIFO.\n; - IN pin 0 is the data pin\n; - IN pin 1 is the clock pin\n; - Autopush is enabled, threshold 8\n;\n; This program samples data with each rising clock edge (like mode 0 or mode 3\n; SPI). The data is actually sampled one system clock cycle after the rising\n; edge is observed, so a clock ratio of at least input_clk < clk_sys / 6 is\n; recommended for good sampling alignment.\n\n    wait 0 pin 1\n    wait 1 pin 1\n    in pins, 1\n\n% c-sdk {\nstatic inline void clocked_input_program_init(PIO pio, uint sm, uint offset, uint pin) {\n    pio_sm_config c = clocked_input_program_get_default_config(offset);\n\n    // Set the IN base pin to the provided `pin` parameter. This is the data\n    // pin, and the next-numbered GPIO is used as the clock pin.\n    sm_config_set_in_pins(&c, pin);\n    // Set the pin directions to input at the PIO\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 2, false);\n    // Connect these GPIOs to this PIO block\n    pio_gpio_init(pio, pin);\n    pio_gpio_init(pio, pin + 1);\n\n    // Shifting to left matches the customary MSB-first ordering of SPI.\n    sm_config_set_in_shift(\n        &c,\n        false, // Shift-to-right = false (i.e. shift to left)\n        true,  // Autopush enabled\n        8      // Autopush threshold = 8\n    );\n\n    // We only receive, so disable the TX FIFO to make the RX FIFO deeper.\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);\n\n    // Load our configuration, and start the program from the beginning\n    pio_sm_init(pio, sm, offset, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n",
+      "sideset": {
+        "bits": null,
+        "opt": false
+      },
+      "words": [8225, 8353, 16385],
+      "disasm": ["wait 0 pin 1", "wait 1 pin 1", "in pins, 1"]
+    },
+    {
+      "name": "quadrature_encoder",
+      "src": ";\n; Copyright (c) 2023 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program quadrature_encoder\n\n; the code must be loaded at address 0, because it uses computed jumps\n.origin 0\n\n\n; the code works by running a loop that continuously shifts the 2 phase pins into\n; ISR and looks at the lower 4 bits to do a computed jump to an instruction that\n; does the proper \"do nothing\" | \"increment\" | \"decrement\" action for that pin\n; state change (or no change)\n\n; ISR holds the last state of the 2 pins during most of the code. The Y register\n; keeps the current encoder count and is incremented / decremented according to\n; the steps sampled\n\n; the program keeps trying to write the current count to the RX FIFO without\n; blocking. To read the current count, the user code must drain the FIFO first\n; and wait for a fresh sample (takes ~4 SM cycles on average). The worst case\n; sampling loop takes 10 cycles, so this program is able to read step rates up\n; to sysclk / 10  (e.g., sysclk 125MHz, max step rate = 12.5 Msteps/sec)\n\n; 00 state\n    JMP update    ; read 00\n    JMP decrement ; read 01\n    JMP increment ; read 10\n    JMP update    ; read 11\n\n; 01 state\n    JMP increment ; read 00\n    JMP update    ; read 01\n    JMP update    ; read 10\n    JMP decrement ; read 11\n\n; 10 state\n    JMP decrement ; read 00\n    JMP update    ; read 01\n    JMP update    ; read 10\n    JMP increment ; read 11\n\n; to reduce code size, the last 2 states are implemented in place and become the\n; target for the other jumps\n\n; 11 state\n    JMP update    ; read 00\n    JMP increment ; read 01\ndecrement:\n    ; note: the target of this instruction must be the next address, so that\n    ; the effect of the instruction does not depend on the value of Y. The\n    ; same is true for the \"JMP X--\" below. Basically \"JMP Y--, <next addr>\"\n    ; is just a pure \"decrement Y\" instruction, with no other side effects\n    JMP Y--, update ; read 10\n\n    ; this is where the main loop starts\n.wrap_target\nupdate:\n    MOV ISR, Y      ; read 11\n    PUSH noblock\n\nsample_pins:\n    ; we shift into ISR the last state of the 2 input pins (now in OSR) and\n    ; the new state of the 2 pins, thus producing the 4 bit target for the\n    ; computed jump into the correct action for this state. Both the PUSH\n    ; above and the OUT below zero out the other bits in ISR\n    OUT ISR, 2\n    IN PINS, 2\n\n    ; save the state in the OSR, so that we can use ISR for other purposes\n    MOV OSR, ISR\n    ; jump to the correct state machine action\n    MOV PC, ISR\n\n    ; the PIO does not have a increment instruction, so to do that we do a\n    ; negate, decrement, negate sequence\nincrement:\n    MOV Y, ~Y\n    JMP Y--, increment_cont\nincrement_cont:\n    MOV Y, ~Y\n.wrap    ; the .wrap here avoids one jump instruction and saves a cycle too\n\n\n\n% c-sdk {\n\n#include \"hardware/clocks.h\"\n#include \"hardware/gpio.h\"\n\n// max_step_rate is used to lower the clock of the state machine to save power\n// if the application doesn't require a very high sampling rate. Passing zero\n// will set the clock to the maximum\n\nstatic inline void quadrature_encoder_program_init(PIO pio, uint sm, uint pin, int max_step_rate)\n{\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 2, false);\n    pio_gpio_init(pio, pin);\n    pio_gpio_init(pio, pin + 1);\n\n    gpio_pull_up(pin);\n    gpio_pull_up(pin + 1);\n\n    pio_sm_config c = quadrature_encoder_program_get_default_config(0);\n\n    sm_config_set_in_pins(&c, pin); // for WAIT, IN\n    sm_config_set_jmp_pin(&c, pin); // for JMP\n    // shift to left, autopull disabled\n    sm_config_set_in_shift(&c, false, false, 32);\n    // don't join FIFO's\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_NONE);\n\n    // passing \"0\" as the sample frequency,\n    if (max_step_rate == 0) {\n        sm_config_set_clkdiv(&c, 1.0);\n    } else {\n        // one state machine loop takes at most 10 cycles\n        float div = (float)clock_get_hz(clk_sys) / (10 * max_step_rate);\n        sm_config_set_clkdiv(&c, div);\n    }\n\n    pio_sm_init(pio, sm, 0, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n\nstatic inline int32_t quadrature_encoder_get_count(PIO pio, uint sm)\n{\n    uint ret;\n    int n;\n\n    // if the FIFO has N entries, we fetch them to drain the FIFO,\n    // plus one entry which will be guaranteed to not be stale\n    n = pio_sm_get_rx_fifo_level(pio, sm) + 1;\n    while (n > 0) {\n        ret = pio_sm_get_blocking(pio, sm);\n        n--;\n    }\n    return ret;\n}\n\n%}\n",
+      "sideset": {
+        "bits": null,
+        "opt": false
+      },
+      "words": [
+        15, 14, 21, 15, 21, 15, 15, 14, 14, 15, 15, 21, 15, 21, 143, 41154, 32768, 24770, 16386,
+        41190, 41126, 41034, 151, 41034
+      ],
+      "disasm": [
+        "jmp 15",
+        "jmp 14",
+        "jmp 21",
+        "jmp 15",
+        "jmp 21",
+        "jmp 15",
+        "jmp 15",
+        "jmp 14",
+        "jmp 14",
+        "jmp 15",
+        "jmp 15",
+        "jmp 21",
+        "jmp 15",
+        "jmp 21",
+        "jmp y--, 15",
+        "mov isr, y",
+        "push noblock",
+        "out isr, 2",
+        "in pins, 2",
+        "mov osr, isr",
+        "mov pc, isr",
+        "mov y, ~y",
+        "jmp y--, 23",
+        "mov y, ~y"
+      ]
+    },
+    {
+      "name": "onewire",
+      "src": ";\n; Copyright (c) 2023 mjcross\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n\n; Implements a Maxim 1-Wire bus with a GPIO pin.\n;\n; Place data words to be transmitted in the TX FIFO and read the results from the\n; RX FIFO. To reset the bus execute a jump to 'reset_bus' using the opcode from\n; the provided function.\n;\n; At 1us per cycle as initialised below the timings are those recommended by:\n; https://www.analog.com/en/technical-articles/1wire-communication-through-software.html\n;\n; Notes:\n;   (1) The code will stall with the bus in a safe state if the FIFOs are empty/full.\n;   (2) The bus must be pulled up with an external pull-up resistor of about 4k.\n;       The internal GPIO resistors are too high (~50k) to work reliably for this.\n;   (3) Do not connect the GPIO pin directly to a bus powered at more than 3.3V.\n\n.program onewire\n.side_set 1 pindirs\n\nPUBLIC reset_bus:\n        set x, 28       side 1  [15]    ; pull bus low                          16\nloop_a: jmp x-- loop_a  side 1  [15]    ;                                  29 x 16\n        set x, 8        side 0  [6]     ; release bus                            7\nloop_b: jmp x-- loop_b  side 0  [6]     ;                                    9 x 7\n\n        mov isr, pins   side 0          ; read all pins to ISR (avoids autopush) 1\n        push            side 0          ; push result manually                   1\n        set x, 24       side 0  [7]     ;                                        8\nloop_c: jmp x-- loop_c  side 0  [15]    ;                                  25 x 16\n\n.wrap_target\nPUBLIC fetch_bit:\n        out x, 1        side 0          ; shift next bit from OSR (autopull)     1\n        jmp !x  send_0  side 1  [5]     ; pull bus low, branch if sending '0'    6\n\nsend_1: ; send a '1' bit\n        set x, 2        side 0  [8]     ; release bus, wait for slave response   9\n        in pins, 1      side 0  [4]     ; read bus, shift bit to ISR (autopush)  5\nloop_e: jmp x-- loop_e  side 0  [15]    ;                                   3 x 16\n        jmp fetch_bit   side 0          ;                                        1\n\nsend_0: ; send a '0' bit\n        set x, 2        side 1  [5]     ; continue pulling bus low               6\nloop_d: jmp x-- loop_d  side 1  [15]    ;                                   3 x 16\n        in null, 1      side 0  [8]     ; release bus, shift 0 to ISR (autopush) 9\n.wrap\n;; (17 instructions)\n\n\n% c-sdk {\nstatic inline void onewire_sm_init (PIO pio, uint sm, uint offset, uint pin_num, uint bits_per_word) {\n\n    // create a new state machine configuration\n    pio_sm_config c = onewire_program_get_default_config (offset);\n\n    // Input Shift Register configuration settings\n    sm_config_set_in_shift (\n        &c,\n        true,           // shift direction: right\n        true,           // autopush: enabled\n        bits_per_word   // autopush threshold\n    );\n\n    // Output Shift Register configuration settings\n    sm_config_set_out_shift (\n        &c,\n        true,           // shift direction: right\n        true,           // autopull: enabled\n        bits_per_word   // autopull threshold\n    );\n\n    // configure the input and sideset pin groups to start at `pin_num`\n    sm_config_set_in_pins (&c, pin_num);\n    sm_config_set_sideset_pins (&c, pin_num);\n\n    // configure the clock divider for 1 usec per instruction\n    float div = clock_get_hz (clk_sys) * 1e-6;\n    sm_config_set_clkdiv (&c, div);\n\n    // apply the configuration and initialise the program counter\n    pio_sm_init (pio, sm, offset + onewire_offset_fetch_bit, &c);\n\n    // enable the state machine\n    pio_sm_set_enabled (pio, sm, true);\n}\n\nstatic inline uint onewire_reset_instr (uint offset) {\n    // encode a \"jmp reset_bus side 0\" instruction for the state machine\n    return pio_encode_jmp (offset + onewire_offset_reset_bus) | pio_encode_sideset (1, 0);\n}\n%}\n",
+      "sideset": {
+        "bits": 1,
+        "opt": false
+      },
+      "words": [
+        65340, 8001, 58920, 1603, 41152, 32800, 59192, 3911, 24609, 5422, 59426, 17409, 3916, 8,
+        62754, 8015, 18529
+      ],
+      "disasm": [
+        "set x, 28 side 1 [15]",
+        "jmp x--, 1 side 1 [15]",
+        "set x, 8 side 0 [6]",
+        "jmp x--, 3 side 0 [6]",
+        "mov isr, pins side 0",
+        "push block side 0",
+        "set x, 24 side 0 [7]",
+        "jmp x--, 7 side 0 [15]",
+        "out x, 1 side 0",
+        "jmp !x, 14 side 1 [5]",
+        "set x, 2 side 0 [8]",
+        "in pins, 1 side 0 [4]",
+        "jmp x--, 12 side 0 [15]",
+        "jmp 8 side 0",
+        "set x, 2 side 1 [5]",
+        "jmp x--, 15 side 1 [15]",
+        "in null, 1 side 0 [8]"
+      ]
+    },
+    {
+      "name": "i2c",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program i2c\n.side_set 1 opt pindirs\n\n; TX Encoding:\n; | 15:10 | 9     | 8:1  | 0   |\n; | Instr | Final | Data | NAK |\n;\n; If Instr has a value n > 0, then this FIFO word has no\n; data payload, and the next n + 1 words will be executed as instructions.\n; Otherwise, shift out the 8 data bits, followed by the ACK bit.\n;\n; The Instr mechanism allows stop/start/repstart sequences to be programmed\n; by the processor, and then carried out by the state machine at defined points\n; in the datastream.\n;\n; The \"Final\" field should be set for the final byte in a transfer.\n; This tells the state machine to ignore a NAK: if this field is not\n; set, then any NAK will cause the state machine to halt and interrupt.\n;\n; Autopull should be enabled, with a threshold of 16.\n; Autopush should be enabled, with a threshold of 8.\n; The TX FIFO should be accessed with halfword writes, to ensure\n; the data is immediately available in the OSR.\n;\n; Pin mapping:\n; - Input pin 0 is SDA, 1 is SCL (if clock stretching used)\n; - Jump pin is SDA\n; - Side-set pin 0 is SCL\n; - Set pin 0 is SDA\n; - OUT pin 0 is SDA\n; - SCL must be SDA + 1 (for wait mapping)\n;\n; The OE outputs should be inverted in the system IO controls!\n; (It's possible for the inversion to be done in this program,\n; but costs 2 instructions: 1 for inversion, and one to cope\n; with the side effect of the MOV on TX shift counter.)\n\ndo_nack:\n    jmp y-- entry_point        ; Continue if NAK was expected\n    irq wait 0 rel             ; Otherwise stop, ask for help\n\ndo_byte:\n    set x, 7                   ; Loop 8 times\nbitloop:\n    out pindirs, 1         [7] ; Serialise write data (all-ones if reading)\n    nop             side 1 [2] ; SCL rising edge\n    wait 1 pin, 1          [4] ; Allow clock to be stretched\n    in pins, 1             [7] ; Sample read data in middle of SCL pulse\n    jmp x-- bitloop side 0 [7] ; SCL falling edge\n\n    ; Handle ACK pulse\n    out pindirs, 1         [7] ; On reads, we provide the ACK.\n    nop             side 1 [7] ; SCL rising edge\n    wait 1 pin, 1          [7] ; Allow clock to be stretched\n    jmp pin do_nack side 0 [2] ; Test SDA for ACK/NAK, fall through if ACK\n\npublic entry_point:\n.wrap_target\n    out x, 6                   ; Unpack Instr count\n    out y, 1                   ; Unpack the NAK ignore bit\n    jmp !x do_byte             ; Instr == 0, this is a data record.\n    out null, 32               ; Instr > 0, remainder of this OSR is invalid\ndo_exec:\n    out exec, 16               ; Execute one instruction per FIFO word\n    jmp x-- do_exec            ; Repeat n + 1 times\n.wrap\n\n% c-sdk {\n\n#include \"hardware/clocks.h\"\n#include \"hardware/gpio.h\"\n\n\nstatic inline void i2c_program_init(PIO pio, uint sm, uint offset, uint pin_sda, uint pin_scl) {\n    assert(pin_scl == pin_sda + 1);\n    pio_sm_config c = i2c_program_get_default_config(offset);\n\n    // IO mapping\n    sm_config_set_out_pins(&c, pin_sda, 1);\n    sm_config_set_set_pins(&c, pin_sda, 1);\n    sm_config_set_in_pins(&c, pin_sda);\n    sm_config_set_sideset_pins(&c, pin_scl);\n    sm_config_set_jmp_pin(&c, pin_sda);\n\n    sm_config_set_out_shift(&c, false, true, 16);\n    sm_config_set_in_shift(&c, false, true, 8);\n\n    float div = (float)clock_get_hz(clk_sys) / (32 * 100000);\n    sm_config_set_clkdiv(&c, div);\n\n    // Try to avoid glitching the bus while connecting the IOs. Get things set\n    // up so that pin is driven down when PIO asserts OE low, and pulled up\n    // otherwise.\n    gpio_pull_up(pin_scl);\n    gpio_pull_up(pin_sda);\n    uint32_t both_pins = (1u << pin_sda) | (1u << pin_scl);\n    pio_sm_set_pins_with_mask(pio, sm, both_pins, both_pins);\n    pio_sm_set_pindirs_with_mask(pio, sm, both_pins, both_pins);\n    pio_gpio_init(pio, pin_sda);\n    gpio_set_oeover(pin_sda, GPIO_OVERRIDE_INVERT);\n    pio_gpio_init(pio, pin_scl);\n    gpio_set_oeover(pin_scl, GPIO_OVERRIDE_INVERT);\n    pio_sm_set_pins_with_mask(pio, sm, 0, both_pins);\n\n    // Clear IRQ flag before starting, and make sure flag doesn't actually\n    // assert a system-level interrupt (we're using it as a status flag)\n    pio_set_irq0_source_enabled(pio, (enum pio_interrupt_source) ((uint) pis_interrupt0 + sm), false);\n    pio_set_irq1_source_enabled(pio, (enum pio_interrupt_source) ((uint) pis_interrupt0 + sm), false);\n    pio_interrupt_clear(pio, sm);\n\n    // Configure and start SM\n    pio_sm_init(pio, sm, offset + i2c_offset_entry_point, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n\n%}\n\n\n.program set_scl_sda\n.side_set 1 opt\n\n; Assemble a table of instructions which software can select from, and pass\n; into the FIFO, to issue START/STOP/RSTART. This isn't intended to be run as\n; a complete program.\n\n    set pindirs, 0 side 0 [7] ; SCL = 0, SDA = 0\n    set pindirs, 1 side 0 [7] ; SCL = 0, SDA = 1\n    set pindirs, 0 side 1 [7] ; SCL = 1, SDA = 0\n    set pindirs, 1 side 1 [7] ; SCL = 1, SDA = 1\n\n% c-sdk {\n// Define order of our instruction table\nenum {\n    I2C_SC0_SD0 = 0,\n    I2C_SC0_SD1,\n    I2C_SC1_SD0,\n    I2C_SC1_SD1\n};\n%}\n",
+      "sideset": {
+        "bits": 1,
+        "opt": true
+      },
+      "words": [
+        140, 49200, 57383, 26497, 47682, 9377, 18177, 5955, 26497, 48962, 10145, 4800, 24614, 24641,
+        34, 24672, 24816, 80
+      ],
+      "disasm": [
+        "jmp y--, 12",
+        "irq wait 0 rel",
+        "set x, 7",
+        "out pindirs, 1 [7]",
+        "mov y, y side 1 [2]",
+        "wait 1 pin 1 [4]",
+        "in pins, 1 [7]",
+        "jmp x--, 3 side 0 [7]",
+        "out pindirs, 1 [7]",
+        "mov y, y side 1 [7]",
+        "wait 1 pin 1 [7]",
+        "jmp pin, 0 side 0 [2]",
+        "out x, 6",
+        "out y, 1",
+        "jmp !x, 2",
+        "out null, 32",
+        "out exec, 16",
+        "jmp x--, 16"
+      ]
+    },
+    {
+      "name": "set_scl_sda",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program i2c\n.side_set 1 opt pindirs\n\n; TX Encoding:\n; | 15:10 | 9     | 8:1  | 0   |\n; | Instr | Final | Data | NAK |\n;\n; If Instr has a value n > 0, then this FIFO word has no\n; data payload, and the next n + 1 words will be executed as instructions.\n; Otherwise, shift out the 8 data bits, followed by the ACK bit.\n;\n; The Instr mechanism allows stop/start/repstart sequences to be programmed\n; by the processor, and then carried out by the state machine at defined points\n; in the datastream.\n;\n; The \"Final\" field should be set for the final byte in a transfer.\n; This tells the state machine to ignore a NAK: if this field is not\n; set, then any NAK will cause the state machine to halt and interrupt.\n;\n; Autopull should be enabled, with a threshold of 16.\n; Autopush should be enabled, with a threshold of 8.\n; The TX FIFO should be accessed with halfword writes, to ensure\n; the data is immediately available in the OSR.\n;\n; Pin mapping:\n; - Input pin 0 is SDA, 1 is SCL (if clock stretching used)\n; - Jump pin is SDA\n; - Side-set pin 0 is SCL\n; - Set pin 0 is SDA\n; - OUT pin 0 is SDA\n; - SCL must be SDA + 1 (for wait mapping)\n;\n; The OE outputs should be inverted in the system IO controls!\n; (It's possible for the inversion to be done in this program,\n; but costs 2 instructions: 1 for inversion, and one to cope\n; with the side effect of the MOV on TX shift counter.)\n\ndo_nack:\n    jmp y-- entry_point        ; Continue if NAK was expected\n    irq wait 0 rel             ; Otherwise stop, ask for help\n\ndo_byte:\n    set x, 7                   ; Loop 8 times\nbitloop:\n    out pindirs, 1         [7] ; Serialise write data (all-ones if reading)\n    nop             side 1 [2] ; SCL rising edge\n    wait 1 pin, 1          [4] ; Allow clock to be stretched\n    in pins, 1             [7] ; Sample read data in middle of SCL pulse\n    jmp x-- bitloop side 0 [7] ; SCL falling edge\n\n    ; Handle ACK pulse\n    out pindirs, 1         [7] ; On reads, we provide the ACK.\n    nop             side 1 [7] ; SCL rising edge\n    wait 1 pin, 1          [7] ; Allow clock to be stretched\n    jmp pin do_nack side 0 [2] ; Test SDA for ACK/NAK, fall through if ACK\n\npublic entry_point:\n.wrap_target\n    out x, 6                   ; Unpack Instr count\n    out y, 1                   ; Unpack the NAK ignore bit\n    jmp !x do_byte             ; Instr == 0, this is a data record.\n    out null, 32               ; Instr > 0, remainder of this OSR is invalid\ndo_exec:\n    out exec, 16               ; Execute one instruction per FIFO word\n    jmp x-- do_exec            ; Repeat n + 1 times\n.wrap\n\n% c-sdk {\n\n#include \"hardware/clocks.h\"\n#include \"hardware/gpio.h\"\n\n\nstatic inline void i2c_program_init(PIO pio, uint sm, uint offset, uint pin_sda, uint pin_scl) {\n    assert(pin_scl == pin_sda + 1);\n    pio_sm_config c = i2c_program_get_default_config(offset);\n\n    // IO mapping\n    sm_config_set_out_pins(&c, pin_sda, 1);\n    sm_config_set_set_pins(&c, pin_sda, 1);\n    sm_config_set_in_pins(&c, pin_sda);\n    sm_config_set_sideset_pins(&c, pin_scl);\n    sm_config_set_jmp_pin(&c, pin_sda);\n\n    sm_config_set_out_shift(&c, false, true, 16);\n    sm_config_set_in_shift(&c, false, true, 8);\n\n    float div = (float)clock_get_hz(clk_sys) / (32 * 100000);\n    sm_config_set_clkdiv(&c, div);\n\n    // Try to avoid glitching the bus while connecting the IOs. Get things set\n    // up so that pin is driven down when PIO asserts OE low, and pulled up\n    // otherwise.\n    gpio_pull_up(pin_scl);\n    gpio_pull_up(pin_sda);\n    uint32_t both_pins = (1u << pin_sda) | (1u << pin_scl);\n    pio_sm_set_pins_with_mask(pio, sm, both_pins, both_pins);\n    pio_sm_set_pindirs_with_mask(pio, sm, both_pins, both_pins);\n    pio_gpio_init(pio, pin_sda);\n    gpio_set_oeover(pin_sda, GPIO_OVERRIDE_INVERT);\n    pio_gpio_init(pio, pin_scl);\n    gpio_set_oeover(pin_scl, GPIO_OVERRIDE_INVERT);\n    pio_sm_set_pins_with_mask(pio, sm, 0, both_pins);\n\n    // Clear IRQ flag before starting, and make sure flag doesn't actually\n    // assert a system-level interrupt (we're using it as a status flag)\n    pio_set_irq0_source_enabled(pio, (enum pio_interrupt_source) ((uint) pis_interrupt0 + sm), false);\n    pio_set_irq1_source_enabled(pio, (enum pio_interrupt_source) ((uint) pis_interrupt0 + sm), false);\n    pio_interrupt_clear(pio, sm);\n\n    // Configure and start SM\n    pio_sm_init(pio, sm, offset + i2c_offset_entry_point, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n\n%}\n\n\n.program set_scl_sda\n.side_set 1 opt\n\n; Assemble a table of instructions which software can select from, and pass\n; into the FIFO, to issue START/STOP/RSTART. This isn't intended to be run as\n; a complete program.\n\n    set pindirs, 0 side 0 [7] ; SCL = 0, SDA = 0\n    set pindirs, 1 side 0 [7] ; SCL = 0, SDA = 1\n    set pindirs, 0 side 1 [7] ; SCL = 1, SDA = 0\n    set pindirs, 1 side 1 [7] ; SCL = 1, SDA = 1\n\n% c-sdk {\n// Define order of our instruction table\nenum {\n    I2C_SC0_SD0 = 0,\n    I2C_SC0_SD1,\n    I2C_SC1_SD0,\n    I2C_SC1_SD1\n};\n%}\n",
+      "sideset": {
+        "bits": 1,
+        "opt": true
+      },
+      "words": [63360, 63361, 65408, 65409],
+      "disasm": [
+        "set pindirs, 0 side 0 [7]",
+        "set pindirs, 1 side 0 [7]",
+        "set pindirs, 0 side 1 [7]",
+        "set pindirs, 1 side 1 [7]"
+      ]
+    },
+    {
+      "name": "manchester_tx",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program manchester_tx\n.side_set 1 opt\n\n; Transmit one bit every 12 cycles. a '0' is encoded as a high-low sequence\n; (each part lasting half a bit period, or 6 cycles) and a '1' is encoded as a\n; low-high sequence.\n;\n; Side-set bit 0 must be mapped to the GPIO used for TX.\n; Autopull must be enabled -- this program does not care about the threshold.\n; The program starts at the public label 'start'.\n\n.wrap_target\ndo_1:\n    nop         side 0 [5] ; Low for 6 cycles (5 delay, +1 for nop)\n    jmp get_bit side 1 [3] ; High for 4 cycles. 'get_bit' takes another 2 cycles\ndo_0:\n    nop         side 1 [5] ; Output high for 6 cycles\n    nop         side 0 [3] ; Output low for 4 cycles\npublic start:\nget_bit:\n    out x, 1               ; Always shift out one bit from OSR to X, so we can\n    jmp !x do_0            ; branch on it. Autopull refills the OSR when empty.\n.wrap\n\n% c-sdk {\nstatic inline void manchester_tx_program_init(PIO pio, uint sm, uint offset, uint pin, float div) {\n    pio_sm_set_pins_with_mask(pio, sm, 0, 1u << pin);\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);\n    pio_gpio_init(pio, pin);\n\n    pio_sm_config c = manchester_tx_program_get_default_config(offset);\n    sm_config_set_sideset_pins(&c, pin);\n    sm_config_set_out_shift(&c, true, true, 32);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);\n    sm_config_set_clkdiv(&c, div);\n    pio_sm_init(pio, sm, offset + manchester_tx_offset_start, &c);\n\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n\n.program manchester_rx\n\n; Assumes line is idle low, first bit is 0\n; One bit is 12 cycles\n; a '0' is encoded as 10\n; a '1' is encoded as 01\n;\n; Both the IN base and the JMP pin mapping must be pointed at the GPIO used for RX.\n; Autopush must be enabled.\n; Before enabling the SM, it should be placed in a 'wait 1, pin` state, so that\n; it will not start sampling until the initial line idle state ends.\n\nstart_of_0:            ; We are 0.25 bits into a 0 - signal is high\n    wait 0 pin 0       ; Wait for the 1->0 transition - at this point we are 0.5 into the bit\n    in y, 1 [8]        ; Emit a 0, sleep 3/4 of a bit\n    jmp pin start_of_0 ; If signal is 1 again, it's another 0 bit, otherwise it's a 1\n\n.wrap_target\nstart_of_1:            ; We are 0.25 bits into a 1 - signal is 1   \n    wait 1 pin 0       ; Wait for the 0->1 transition - at this point we are 0.5 into the bit\n    in x, 1 [8]        ; Emit a 1, sleep 3/4 of a bit\n    jmp pin start_of_0 ; If signal is 0 again, it's another 1 bit otherwise it's a 0\n.wrap\n\n% c-sdk {\nstatic inline void manchester_rx_program_init(PIO pio, uint sm, uint offset, uint pin, float div) {\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);\n    pio_gpio_init(pio, pin);\n\n    pio_sm_config c = manchester_rx_program_get_default_config(offset);\n    sm_config_set_in_pins(&c, pin); // for WAIT\n    sm_config_set_jmp_pin(&c, pin); // for JMP\n    sm_config_set_in_shift(&c, true, true, 32);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);\n    sm_config_set_clkdiv(&c, div);\n    pio_sm_init(pio, sm, offset, &c);\n\n    // X and Y are set to 0 and 1, to conveniently emit these to ISR/FIFO.\n    pio_sm_exec(pio, sm, pio_encode_set(pio_x, 1));\n    pio_sm_exec(pio, sm, pio_encode_set(pio_y, 0));\n    // Assume line is idle low, and first transmitted bit is 0. Put SM in a\n    // wait state before enabling. RX will begin once the first 0 symbol is\n    // detected.\n    pio_sm_exec(pio, sm, pio_encode_wait_pin(1, 0) | pio_encode_delay(2));\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n",
+      "sideset": {
+        "bits": 1,
+        "opt": true
+      },
+      "words": [46402, 6916, 48450, 45890, 24609, 34],
+      "disasm": [
+        "mov y, y side 0 [5]",
+        "jmp 4 side 1 [3]",
+        "mov y, y side 1 [5]",
+        "mov y, y side 0 [3]",
+        "out x, 1",
+        "jmp !x, 2"
+      ]
+    },
+    {
+      "name": "manchester_rx",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program manchester_tx\n.side_set 1 opt\n\n; Transmit one bit every 12 cycles. a '0' is encoded as a high-low sequence\n; (each part lasting half a bit period, or 6 cycles) and a '1' is encoded as a\n; low-high sequence.\n;\n; Side-set bit 0 must be mapped to the GPIO used for TX.\n; Autopull must be enabled -- this program does not care about the threshold.\n; The program starts at the public label 'start'.\n\n.wrap_target\ndo_1:\n    nop         side 0 [5] ; Low for 6 cycles (5 delay, +1 for nop)\n    jmp get_bit side 1 [3] ; High for 4 cycles. 'get_bit' takes another 2 cycles\ndo_0:\n    nop         side 1 [5] ; Output high for 6 cycles\n    nop         side 0 [3] ; Output low for 4 cycles\npublic start:\nget_bit:\n    out x, 1               ; Always shift out one bit from OSR to X, so we can\n    jmp !x do_0            ; branch on it. Autopull refills the OSR when empty.\n.wrap\n\n% c-sdk {\nstatic inline void manchester_tx_program_init(PIO pio, uint sm, uint offset, uint pin, float div) {\n    pio_sm_set_pins_with_mask(pio, sm, 0, 1u << pin);\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);\n    pio_gpio_init(pio, pin);\n\n    pio_sm_config c = manchester_tx_program_get_default_config(offset);\n    sm_config_set_sideset_pins(&c, pin);\n    sm_config_set_out_shift(&c, true, true, 32);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);\n    sm_config_set_clkdiv(&c, div);\n    pio_sm_init(pio, sm, offset + manchester_tx_offset_start, &c);\n\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n\n.program manchester_rx\n\n; Assumes line is idle low, first bit is 0\n; One bit is 12 cycles\n; a '0' is encoded as 10\n; a '1' is encoded as 01\n;\n; Both the IN base and the JMP pin mapping must be pointed at the GPIO used for RX.\n; Autopush must be enabled.\n; Before enabling the SM, it should be placed in a 'wait 1, pin` state, so that\n; it will not start sampling until the initial line idle state ends.\n\nstart_of_0:            ; We are 0.25 bits into a 0 - signal is high\n    wait 0 pin 0       ; Wait for the 1->0 transition - at this point we are 0.5 into the bit\n    in y, 1 [8]        ; Emit a 0, sleep 3/4 of a bit\n    jmp pin start_of_0 ; If signal is 1 again, it's another 0 bit, otherwise it's a 1\n\n.wrap_target\nstart_of_1:            ; We are 0.25 bits into a 1 - signal is 1   \n    wait 1 pin 0       ; Wait for the 0->1 transition - at this point we are 0.5 into the bit\n    in x, 1 [8]        ; Emit a 1, sleep 3/4 of a bit\n    jmp pin start_of_0 ; If signal is 0 again, it's another 1 bit otherwise it's a 0\n.wrap\n\n% c-sdk {\nstatic inline void manchester_rx_program_init(PIO pio, uint sm, uint offset, uint pin, float div) {\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);\n    pio_gpio_init(pio, pin);\n\n    pio_sm_config c = manchester_rx_program_get_default_config(offset);\n    sm_config_set_in_pins(&c, pin); // for WAIT\n    sm_config_set_jmp_pin(&c, pin); // for JMP\n    sm_config_set_in_shift(&c, true, true, 32);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);\n    sm_config_set_clkdiv(&c, div);\n    pio_sm_init(pio, sm, offset, &c);\n\n    // X and Y are set to 0 and 1, to conveniently emit these to ISR/FIFO.\n    pio_sm_exec(pio, sm, pio_encode_set(pio_x, 1));\n    pio_sm_exec(pio, sm, pio_encode_set(pio_y, 0));\n    // Assume line is idle low, and first transmitted bit is 0. Put SM in a\n    // wait state before enabling. RX will begin once the first 0 symbol is\n    // detected.\n    pio_sm_exec(pio, sm, pio_encode_wait_pin(1, 0) | pio_encode_delay(2));\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n",
+      "sideset": {
+        "bits": null,
+        "opt": false
+      },
+      "words": [8224, 18497, 192, 8352, 18465, 192],
+      "disasm": [
+        "wait 0 pin 0",
+        "in y, 1 [8]",
+        "jmp pin, 0",
+        "wait 1 pin 0",
+        "in x, 1 [8]",
+        "jmp pin, 0"
+      ]
+    },
+    {
+      "name": "differential_manchester_tx",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program differential_manchester_tx\n.side_set 1 opt\n\n; Transmit one bit every 16 cycles. In each bit period:\n; - A '0' is encoded as a transition at the start of the bit period\n; - A '1' is encoded as a transition at the start *and* in the middle\n;\n; Side-set bit 0 must be mapped to the data output pin.\n; Autopull must be enabled.\n\npublic start:\ninitial_high:\n    out x, 1                     ; Start of bit period: always assert transition\n    jmp !x high_0     side 1 [6] ; Test the data bit we just shifted out of OSR\nhigh_1:\n    nop\n    jmp initial_high  side 0 [6] ; For `1` bits, also transition in the middle\nhigh_0:\n    jmp initial_low          [7] ; Otherwise, the line is stable in the middle\n\ninitial_low:\n    out x, 1                     ; Always shift 1 bit from OSR to X so we can\n    jmp !x low_0      side 0 [6] ; branch on it. Autopull refills OSR for us.\nlow_1:\n    nop\n    jmp initial_low   side 1 [6] ; If there are two transitions, return to\nlow_0:\n    jmp initial_high         [7] ; the initial line state is flipped!\n\n% c-sdk {\nstatic inline void differential_manchester_tx_program_init(PIO pio, uint sm, uint offset, uint pin, float div) {\n    pio_sm_set_pins_with_mask(pio, sm, 0, 1u << pin);\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);\n    pio_gpio_init(pio, pin);\n\n    pio_sm_config c = differential_manchester_tx_program_get_default_config(offset);\n    sm_config_set_sideset_pins(&c, pin);\n    sm_config_set_out_shift(&c, true, true, 32);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);\n    sm_config_set_clkdiv(&c, div);\n    pio_sm_init(pio, sm, offset + differential_manchester_tx_offset_start, &c);\n\n    // Execute a blocking pull so that we maintain the initial line state until data is available\n    pio_sm_exec(pio, sm, pio_encode_pull(false, true));\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n.program differential_manchester_rx\n\n; Assumes line is idle low\n; One bit is 16 cycles. In each bit period:\n; - A '0' is encoded as a transition at time 0\n; - A '1' is encoded as a transition at time 0 and a transition at time T/2\n;\n; The IN mapping and the JMP pin select must both be mapped to the GPIO used for\n; RX data. Autopush must be enabled.\n\npublic start:\ninitial_high:           ; Find rising edge at start of bit period\n    wait 1 pin, 0  [11] ; Delay to eye of second half-period (i.e 3/4 of way\n    jmp pin high_0      ; through bit) and branch on RX pin high/low.\nhigh_1:\n    in x, 1             ; Second transition detected (a `1` data symbol)\n    jmp initial_high\nhigh_0:\n    in y, 1 [1]         ; Line still high, no centre transition (data is `0`)\n    ; Fall-through\n\n.wrap_target\ninitial_low:            ; Find falling edge at start of bit period\n    wait 0 pin, 0 [11]  ; Delay to eye of second half-period\n    jmp pin low_1\nlow_0:\n    in y, 1             ; Line still low, no centre transition (data is `0`)\n    jmp initial_high\nlow_1:                  ; Second transition detected (data is `1`)\n    in x, 1 [1]\n.wrap\n\n% c-sdk {\nstatic inline void differential_manchester_rx_program_init(PIO pio, uint sm, uint offset, uint pin, float div) {\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);\n    pio_gpio_init(pio, pin);\n\n    pio_sm_config c = differential_manchester_rx_program_get_default_config(offset);\n    sm_config_set_in_pins(&c, pin); // for WAIT\n    sm_config_set_jmp_pin(&c, pin); // for JMP\n    sm_config_set_in_shift(&c, true, true, 32);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);\n    sm_config_set_clkdiv(&c, div);\n    pio_sm_init(pio, sm, offset, &c);\n\n    // X and Y are set to 0 and 1, to conveniently emit these to ISR/FIFO.\n    pio_sm_exec(pio, sm, pio_encode_set(pio_x, 1));\n    pio_sm_exec(pio, sm, pio_encode_set(pio_y, 0));\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n",
+      "sideset": {
+        "bits": 1,
+        "opt": true
+      },
+      "words": [24609, 7716, 41026, 5632, 1797, 24609, 5673, 41026, 7685, 1792],
+      "disasm": [
+        "out x, 1",
+        "jmp !x, 4 side 1 [6]",
+        "nop",
+        "jmp 0 side 0 [6]",
+        "jmp 5 [7]",
+        "out x, 1",
+        "jmp !x, 9 side 0 [6]",
+        "nop",
+        "jmp 5 side 1 [6]",
+        "jmp 0 [7]"
+      ]
+    },
+    {
+      "name": "differential_manchester_rx",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program differential_manchester_tx\n.side_set 1 opt\n\n; Transmit one bit every 16 cycles. In each bit period:\n; - A '0' is encoded as a transition at the start of the bit period\n; - A '1' is encoded as a transition at the start *and* in the middle\n;\n; Side-set bit 0 must be mapped to the data output pin.\n; Autopull must be enabled.\n\npublic start:\ninitial_high:\n    out x, 1                     ; Start of bit period: always assert transition\n    jmp !x high_0     side 1 [6] ; Test the data bit we just shifted out of OSR\nhigh_1:\n    nop\n    jmp initial_high  side 0 [6] ; For `1` bits, also transition in the middle\nhigh_0:\n    jmp initial_low          [7] ; Otherwise, the line is stable in the middle\n\ninitial_low:\n    out x, 1                     ; Always shift 1 bit from OSR to X so we can\n    jmp !x low_0      side 0 [6] ; branch on it. Autopull refills OSR for us.\nlow_1:\n    nop\n    jmp initial_low   side 1 [6] ; If there are two transitions, return to\nlow_0:\n    jmp initial_high         [7] ; the initial line state is flipped!\n\n% c-sdk {\nstatic inline void differential_manchester_tx_program_init(PIO pio, uint sm, uint offset, uint pin, float div) {\n    pio_sm_set_pins_with_mask(pio, sm, 0, 1u << pin);\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);\n    pio_gpio_init(pio, pin);\n\n    pio_sm_config c = differential_manchester_tx_program_get_default_config(offset);\n    sm_config_set_sideset_pins(&c, pin);\n    sm_config_set_out_shift(&c, true, true, 32);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);\n    sm_config_set_clkdiv(&c, div);\n    pio_sm_init(pio, sm, offset + differential_manchester_tx_offset_start, &c);\n\n    // Execute a blocking pull so that we maintain the initial line state until data is available\n    pio_sm_exec(pio, sm, pio_encode_pull(false, true));\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n.program differential_manchester_rx\n\n; Assumes line is idle low\n; One bit is 16 cycles. In each bit period:\n; - A '0' is encoded as a transition at time 0\n; - A '1' is encoded as a transition at time 0 and a transition at time T/2\n;\n; The IN mapping and the JMP pin select must both be mapped to the GPIO used for\n; RX data. Autopush must be enabled.\n\npublic start:\ninitial_high:           ; Find rising edge at start of bit period\n    wait 1 pin, 0  [11] ; Delay to eye of second half-period (i.e 3/4 of way\n    jmp pin high_0      ; through bit) and branch on RX pin high/low.\nhigh_1:\n    in x, 1             ; Second transition detected (a `1` data symbol)\n    jmp initial_high\nhigh_0:\n    in y, 1 [1]         ; Line still high, no centre transition (data is `0`)\n    ; Fall-through\n\n.wrap_target\ninitial_low:            ; Find falling edge at start of bit period\n    wait 0 pin, 0 [11]  ; Delay to eye of second half-period\n    jmp pin low_1\nlow_0:\n    in y, 1             ; Line still low, no centre transition (data is `0`)\n    jmp initial_high\nlow_1:                  ; Second transition detected (data is `1`)\n    in x, 1 [1]\n.wrap\n\n% c-sdk {\nstatic inline void differential_manchester_rx_program_init(PIO pio, uint sm, uint offset, uint pin, float div) {\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);\n    pio_gpio_init(pio, pin);\n\n    pio_sm_config c = differential_manchester_rx_program_get_default_config(offset);\n    sm_config_set_in_pins(&c, pin); // for WAIT\n    sm_config_set_jmp_pin(&c, pin); // for JMP\n    sm_config_set_in_shift(&c, true, true, 32);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);\n    sm_config_set_clkdiv(&c, div);\n    pio_sm_init(pio, sm, offset, &c);\n\n    // X and Y are set to 0 and 1, to conveniently emit these to ISR/FIFO.\n    pio_sm_exec(pio, sm, pio_encode_set(pio_x, 1));\n    pio_sm_exec(pio, sm, pio_encode_set(pio_y, 0));\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n",
+      "sideset": {
+        "bits": null,
+        "opt": false
+      },
+      "words": [11168, 196, 16417, 0, 16705, 11040, 201, 16449, 0, 16673],
+      "disasm": [
+        "wait 1 pin 0 [11]",
+        "jmp pin, 4",
+        "in x, 1",
+        "jmp 0",
+        "in y, 1 [1]",
+        "wait 0 pin 0 [11]",
+        "jmp pin, 9",
+        "in y, 1",
+        "jmp 0",
+        "in x, 1 [1]"
+      ]
+    },
+    {
+      "name": "uart_rx",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program uart_rx_mini\n\n; Minimum viable 8n1 UART receiver. Wait for the start bit, then sample 8 bits\n; with the correct timing.\n; IN pin 0 is mapped to the GPIO used as UART RX.\n; Autopush must be enabled, with a threshold of 8.\n\n    wait 0 pin 0        ; Wait for start bit\n    set x, 7 [10]       ; Preload bit counter, delay until eye of first data bit\nbitloop:                ; Loop 8 times\n    in pins, 1          ; Sample data\n    jmp x-- bitloop [6] ; Each iteration is 8 cycles\n\n% c-sdk {\n#include \"hardware/clocks.h\"\n#include \"hardware/gpio.h\"\n\nstatic inline void uart_rx_mini_program_init(PIO pio, uint sm, uint offset, uint pin, uint baud) {\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);\n    pio_gpio_init(pio, pin);\n    gpio_pull_up(pin);\n\n    pio_sm_config c = uart_rx_mini_program_get_default_config(offset);\n    sm_config_set_in_pins(&c, pin); // for WAIT, IN\n    // Shift to right, autopush enabled\n    sm_config_set_in_shift(&c, true, true, 8);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);\n    // SM transmits 1 bit per 8 execution cycles.\n    float div = (float)clock_get_hz(clk_sys) / (8 * baud);\n    sm_config_set_clkdiv(&c, div);\n    \n    pio_sm_init(pio, sm, offset, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n\n.program uart_rx\n\n; Slightly more fleshed-out 8n1 UART receiver which handles framing errors and\n; break conditions more gracefully.\n; IN pin 0 and JMP pin are both mapped to the GPIO used as UART RX.\n\nstart:\n    wait 0 pin 0        ; Stall until start bit is asserted\n    set x, 7    [10]    ; Preload bit counter, then delay until halfway through\nbitloop:                ; the first data bit (12 cycles incl wait, set).\n    in pins, 1          ; Shift data bit into ISR\n    jmp x-- bitloop [6] ; Loop 8 times, each loop iteration is 8 cycles\n    jmp pin good_stop   ; Check stop bit (should be high)\n\n    irq 4 rel           ; Either a framing error or a break. Set a sticky flag,\n    wait 1 pin 0        ; and wait for line to return to idle state.\n    jmp start           ; Don't push data if we didn't see good framing.\n\ngood_stop:              ; No delay before returning to start; a little slack is\n    push                ; important in case the TX clock is slightly too fast.\n\n\n% c-sdk {\nstatic inline void uart_rx_program_init(PIO pio, uint sm, uint offset, uint pin, uint baud) {\n    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);\n    pio_gpio_init(pio, pin);\n    gpio_pull_up(pin);\n\n    pio_sm_config c = uart_rx_program_get_default_config(offset);\n    sm_config_set_in_pins(&c, pin); // for WAIT, IN\n    sm_config_set_jmp_pin(&c, pin); // for JMP\n    // Shift to right, autopush disabled\n    sm_config_set_in_shift(&c, true, false, 32);\n    // Deeper FIFO as we're not doing any TX\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);\n    // SM transmits 1 bit per 8 execution cycles.\n    float div = (float)clock_get_hz(clk_sys) / (8 * baud);\n    sm_config_set_clkdiv(&c, div);\n    \n    pio_sm_init(pio, sm, offset, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n\nstatic inline char uart_rx_program_getc(PIO pio, uint sm) {\n    // 8-bit read from the uppermost byte of the FIFO, as data is left-justified\n    io_rw_8 *rxfifo_shift = (io_rw_8*)&pio->rxf[sm] + 3;\n    while (pio_sm_is_rx_fifo_empty(pio, sm))\n        tight_loop_contents();\n    return (char)*rxfifo_shift;\n}\n\n%}\n",
+      "sideset": {
+        "bits": null,
+        "opt": false
+      },
+      "words": [8224, 59943, 16385, 1602, 200, 49172, 8352, 0, 32800],
+      "disasm": [
+        "wait 0 pin 0",
+        "set x, 7 [10]",
+        "in pins, 1",
+        "jmp x--, 2 [6]",
+        "jmp pin, 8",
+        "irq 4 rel",
+        "wait 1 pin 0",
+        "jmp 0",
+        "push block"
+      ]
+    },
+    {
+      "name": "hub75_data_rgb888",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program hub75_row\n\n; side-set pin 0 is LATCH\n; side-set pin 1 is OEn\n; OUT pins are row select A-E\n;\n; Each FIFO record consists of:\n; - 5-bit row select (LSBs)\n; - Pulse width - 1 (27 MSBs)\n;\n; Repeatedly select a row, pulse LATCH, and generate a pulse of a certain\n; width on OEn.\n\n.side_set 2\n\n.wrap_target\n    out pins, 5 [7]    side 0x2 ; Deassert OEn, output row select\n    out x, 27   [7]    side 0x3 ; Pulse LATCH, get OEn pulse width\npulse_loop:\n    jmp x-- pulse_loop side 0x0 ; Assert OEn for x+1 cycles\n.wrap\n\n% c-sdk {\nstatic inline void hub75_row_program_init(PIO pio, uint sm, uint offset, uint row_base_pin, uint n_row_pins, uint latch_base_pin) {\n    pio_sm_set_consecutive_pindirs(pio, sm, row_base_pin, n_row_pins, true);\n    pio_sm_set_consecutive_pindirs(pio, sm, latch_base_pin, 2, true);\n    for (uint i = row_base_pin; i < row_base_pin + n_row_pins; ++i)\n        pio_gpio_init(pio, i);\n    pio_gpio_init(pio, latch_base_pin);\n    pio_gpio_init(pio, latch_base_pin + 1);\n\n    pio_sm_config c = hub75_row_program_get_default_config(offset);\n    sm_config_set_out_pins(&c, row_base_pin, n_row_pins);\n    sm_config_set_sideset_pins(&c, latch_base_pin);\n    sm_config_set_out_shift(&c, true, true, 32);\n    pio_sm_init(pio, sm, offset, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n\nstatic inline void hub75_wait_tx_stall(PIO pio, uint sm) {\n    uint32_t txstall_mask = 1u << (PIO_FDEBUG_TXSTALL_LSB + sm);\n    pio->fdebug = txstall_mask;\n    while (!(pio->fdebug & txstall_mask))\n        tight_loop_contents();\n}\n%}\n\n.program hub75_data_rgb888\n.side_set 1\n\n; Each FIFO record consists of a RGB888 pixel. (This is ok for e.g. an RGB565\n; source which has been gamma-corrected)\n;\n; Even pixels are sent on R0, G0, B0 and odd pixels on R1, G1, B1 (typically\n; these are for different parts of the screen, NOT for adjacent pixels, so the\n; frame buffer must be interleaved before passing to PIO.)\n;\n; Each pass through, we take bit n, n + 8 and n + 16 from each pixel, for n in\n; {0...7}. Therefore the pixels need to be transmitted 8 times (ouch) to build\n; up the full 8 bit value for each channel, and perform bit-planed PWM by\n; varying pulse widths on the other state machine, in ascending powers of 2.\n; This avoids a lot of bit shuffling on the processors, at the cost of DMA\n; bandwidth (which we have loads of).\n\n; Might want to close your eyes before you read this\npublic entry_point:\n.wrap_target\npublic shift0:\n    pull             side 0 ; gets patched to `out null, n` if n nonzero (otherwise the PULL is required for fencing)\n    in osr, 1        side 0 ; shuffle shuffle shuffle\n    out null, 8      side 0\n    in osr, 1        side 0\n    out null, 8      side 0\n    in osr, 1        side 0\n    out null, 32     side 0 ; Discard remainder of OSR contents\npublic shift1:\n    pull             side 0 ; gets patched to out null, n if n is nonzero (otherwise PULL required)\n    in osr, 1        side 1 ; Note this posedge clocks in the data from the previous iteration\n    out null, 8      side 1\n    in osr, 1        side 1\n    out null, 8      side 1\n    in osr, 1        side 1\n    out null, 32     side 1\n    in null, 26      side 1 ; Note we are just doing this little manoeuvre here to get GPIOs in the order\n    mov pins, ::isr  side 1 ; R0, G0, B0, R1, G1, B1. Can go 1 cycle faster if reversed\n.wrap\n; Note that because the clock edge for pixel n is in the middle of pixel n +\n; 1, a dummy pixel at the end is required to clock the last piece of genuine\n; data. (Also 1 pixel of garbage is clocked out at the start, but this is\n; harmless)\n\n% c-sdk {\nstatic inline void hub75_data_rgb888_program_init(PIO pio, uint sm, uint offset, uint rgb_base_pin, uint clock_pin) {\n    pio_sm_set_consecutive_pindirs(pio, sm, rgb_base_pin, 6, true);\n    pio_sm_set_consecutive_pindirs(pio, sm, clock_pin, 1, true);\n    for (uint i = rgb_base_pin; i < rgb_base_pin + 6; ++i)\n        pio_gpio_init(pio, i);\n    pio_gpio_init(pio, clock_pin);\n\n    pio_sm_config c = hub75_data_rgb888_program_get_default_config(offset);\n    sm_config_set_out_pins(&c, rgb_base_pin, 6);\n    sm_config_set_sideset_pins(&c, clock_pin);\n    sm_config_set_out_shift(&c, true, true, 24);\n    // ISR shift to left. R0 ends up at bit 5. We push it up to MSB and then flip the register.\n    sm_config_set_in_shift(&c, false, false, 32);\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);\n    pio_sm_init(pio, sm, offset, &c);\n    pio_sm_exec(pio, sm, offset + hub75_data_rgb888_offset_entry_point);\n    pio_sm_set_enabled(pio, sm, true);\n}\n\n// Patch a data program at `offset` to preshift pixels by `shamt`\nstatic inline void hub75_data_rgb888_set_shift(PIO pio, uint sm, uint offset, uint shamt) {\n    uint16_t instr;\n    if (shamt == 0)\n        instr = pio_encode_pull(false, true); // blocking PULL\n    else\n        instr = pio_encode_out(pio_null, shamt);\n    pio->instr_mem[offset + hub75_data_rgb888_offset_shift0] = instr;\n    pio->instr_mem[offset + hub75_data_rgb888_offset_shift1] = instr;\n}\n%}\n",
+      "sideset": {
+        "bits": 1,
+        "opt": false
+      },
+      "words": [
+        32928, 16609, 24680, 16609, 24680, 16609, 24672, 32928, 20705, 28776, 20705, 28776, 20705,
+        28768, 20602, 45078
+      ],
+      "disasm": [
+        "pull block side 0",
+        "in osr, 1 side 0",
+        "out null, 8 side 0",
+        "in osr, 1 side 0",
+        "out null, 8 side 0",
+        "in osr, 1 side 0",
+        "out null, 32 side 0",
+        "pull block side 0",
+        "in osr, 1 side 1",
+        "out null, 8 side 1",
+        "in osr, 1 side 1",
+        "out null, 8 side 1",
+        "in osr, 1 side 1",
+        "out null, 32 side 1",
+        "in null, 26 side 1",
+        "mov pins, ::isr side 1"
+      ]
+    },
+    {
+      "name": "apa102_rgb555",
+      "src": ";\n; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.\n;\n; SPDX-License-Identifier: BSD-3-Clause\n;\n.pio_version 0 // only requires PIO version 0\n\n.program apa102_mini\n.side_set 1\n\n; This is really just a TX-only SPI. CLK is side-set pin 0, DIN is OUT pin 0.\n; Autopull enabled, threshold 32.\n;\n; Every word (32 bits) written to the FIFO will be shifted out in its entirety, MSB-first.\n\n    out pins, 1   side 0   ; Stall here when no data (still asserts clock low)\n    nop           side 1\n\n% c-sdk {\n#include \"hardware/clocks.h\"\nstatic inline void apa102_mini_program_init(PIO pio, uint sm, uint offset,\n        uint baud, uint pin_clk, uint pin_din) {\n    pio_sm_set_pins_with_mask(pio, sm, 0, (1u << pin_clk) | (1u << pin_din));\n    pio_sm_set_pindirs_with_mask(pio, sm, ~0u, (1u << pin_clk) | (1u << pin_din));\n    pio_gpio_init(pio, pin_clk);\n    pio_gpio_init(pio, pin_din);\n\n    pio_sm_config c = apa102_mini_program_get_default_config(offset);\n    sm_config_set_out_pins(&c, pin_din, 1);\n    sm_config_set_sideset_pins(&c, pin_clk);\n    // Shift to right, autopull with threshold 32\n    sm_config_set_out_shift(&c, false, true, 32);\n    // Deeper FIFO as we're not doing any RX\n    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);\n    // We transmit 1 bit every 2 execution cycles\n    float div = (float)clock_get_hz(clk_sys) / (2 * baud);\n    sm_config_set_clkdiv(&c, div);\n\n    pio_sm_init(pio, sm, offset, &c);\n    pio_sm_set_enabled(pio, sm, true);\n}\n%}\n\n.program apa102_rgb555\n\n; Alternative program to unpack two RGB555 pixels from a FIFO word and transmit.\n; This makes it easier to DMA large buffers without processor involvement.\n\n; OSR: shift to right\n; ISR: shift to right\n\n; To set brightness, set ISR to bit-reverse of 5-bit brightness,\n; followed by 111. (00...00_b0b1b2b3b4_111)\n\n; DMA pixel format is 0RRRRRGGGGGBBBBB x2 (15 bpp, 2px per FIFO word)\n\n; APA102 command structure:\n; increasing time ---->>\n;             | byte 3 | byte 2 | byte 1 | byte 0 |\n;             |7      0|7      0|7      0|7      0|\n;             -------------------------------------\n; Pixel       |111bbbbb|BBBBBBBB|GGGGGGGG|RRRRRRRR|\n; Start Frame |00000000|00000000|00000000|00000000|\n; Stop Frame  |11111111|11111111|11111111|11111111|\n\n.wrap_target\npublic pixel_out:\n    ; pixel_out formats an APA102 colour command in the ISR.\n    ; bit_run shifts 32 bits out of the ISR, with clock.\n    pull ifempty\n    set x, 2\ncolour_loop:\n    in osr, 5\n    out null, 5\n    in null, 3\n    jmp x-- colour_loop\n    in y, 8\n    mov isr, ::isr ; reverse for msb-first wire order\n    out null, 1\npublic bit_run:\n    ; in isr, n rotates ISR by n bits (right rotation only)\n    ; Use this to perform out shifts from ISR, via mov pins\n    set x, 31\nbit_out:\n    set pins, 0\n    mov pins, isr [6]\n    set pins, 1\n    in isr, 1 [6]\n    jmp x-- bit_out\n.wrap\n",
+      "sideset": {
+        "bits": null,
+        "opt": false
+      },
+      "words": [
+        32992, 57378, 16613, 24677, 16483, 66, 16456, 41174, 24673, 57407, 57344, 42502, 57345,
+        18113, 74
+      ],
+      "disasm": [
+        "pull ifempty block",
+        "set x, 2",
+        "in osr, 5",
+        "out null, 5",
+        "in null, 3",
+        "jmp x--, 2",
+        "in y, 8",
+        "mov isr, ::isr",
+        "out null, 1",
+        "set x, 31",
+        "set pins, 0",
+        "mov pins, isr [6]",
+        "set pins, 1",
+        "in isr, 1 [6]",
+        "jmp x--, 10"
+      ]
+    }
+  ],
+  "exprs": [
+    {
+      "text": "1+2*3",
+      "symbols": {},
+      "value": 7
+    },
+    {
+      "text": "(1<<4) | N",
+      "symbols": {
+        "N": 1
+      },
+      "value": 17
+    },
+    {
+      "text": "-7/2",
+      "symbols": {},
+      "value": -3
+    },
+    {
+      "text": "7/-2",
+      "symbols": {},
+      "value": -3
+    },
+    {
+      "text": "-7%2",
+      "symbols": {},
+      "value": -1
+    },
+    {
+      "text": "7%-2",
+      "symbols": {},
+      "value": 1
+    },
+    {
+      "text": "0x1f",
+      "symbols": {},
+      "value": 31
+    },
+    {
+      "text": "0b101",
+      "symbols": {},
+      "value": 5
+    },
+    {
+      "text": "~0",
+      "symbols": {},
+      "value": -1
+    },
+    {
+      "text": "1|2^3&7",
+      "symbols": {},
+      "value": 1
+    },
+    {
+      "text": "255>>2",
+      "symbols": {},
+      "value": 63
+    }
+  ]
+}

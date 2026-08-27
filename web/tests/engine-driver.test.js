@@ -281,6 +281,30 @@ test('flashes derive from the cycle strobes', () => {
   assert.equal(drv.getState().flashes.wrap, false); // a jmp is not a wrap
 });
 
+// ---- setProgram: the C19 re-assemble-on-edit commit path --------------
+test('setProgram writes only changed imem slots as queued reg ops', () => {
+  const { M, drv } = freshDriver();
+  drv.load();
+  assert.equal(M.writes.length, 12);
+  // the same words as loaded: nothing to write, no clks consumed
+  const same = new Array(32).fill(0);
+  [0x9fa0, 0xf727, 0x6001, 0x0642].forEach((w, i) => {
+    same[i] = w;
+  });
+  drv.setProgram(same);
+  assert.equal(M.writes.length, 12);
+  // one changed slot (SPEC-7-10: IMEM0 + 4*i) — one rendered clk
+  same[3] = 0xa042; // nop instead of the jmp
+  drv.setProgram(same);
+  drv.run(1);
+  assert.deepEqual(M.writes.slice(12), [{ addr: 0x054, data: 0xa042 }]);
+  // clearing a slot writes 0 (jmp 0 — untouched-memory reset state)
+  same[3] = 0;
+  drv.setProgram(same);
+  drv.run(1);
+  assert.deepEqual(M.writes.slice(13), [{ addr: 0x054, data: 0 }]);
+});
+
 // ---- the defect hooks: red/green in process (the C20 demo) -----------
 // The make web gate runs these as subprocesses and expects FAIL; here
 // the same oracle checks are demonstrated directly: the clean driver is

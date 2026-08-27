@@ -7,6 +7,10 @@
 // G records) and the final FLEVEL read for the identical load timeline.
 //
 // Checks:
+//   asm    — the C19 in-browser assembler reproduces the level's words
+//            bit-exactly (assemble(disassemble(w)) per word under the
+//            level's .side_set — the shipped listing path sm-view.js
+//            renders and re-assembles through);
 //   pins   — the driver's per-cycle pin samples equal the model series
 //            (every rendered clk, load cycles included);
 //   flevel — the driver's reg-read FLEVEL equals the model's R record;
@@ -37,6 +41,7 @@ if (!engineJs || !expPath) {
 }
 
 const VibeDriver = require(path.resolve(__dirname, 'engine-driver.js'));
+const PioAsm = require(path.resolve(__dirname, 'pio-asm.js'));
 const PioEngine = require(path.resolve(engineJs));
 const expected = JSON.parse(fs.readFileSync(expPath, 'utf8'));
 const RUN_CLKS = expected.runClks;
@@ -54,6 +59,28 @@ PioEngine()
   .then((M) => {
     const drv = VibeDriver.create(M, defects);
     drv.load();
+
+    // C19: the shipped listing path — canonical disassembly of the
+    // level words under the level's .side_set must re-assemble into the
+    // same bits (sm-view.js derives its listing exactly this way).
+    const { LEVEL } = VibeDriver;
+    const prog = PioAsm.createProgram('gate');
+    prog.sidesetBits = LEVEL.sideBits;
+    prog.sidesetOpt = LEVEL.opt;
+    const rebuilt = LEVEL.words.map((w) =>
+      PioAsm.assembleInstruction(
+        PioAsm.disassemble(w, prog.sideEn, prog.sidesetCount),
+        prog,
+        {},
+        'gate',
+      ),
+    );
+    check(
+      'asm round-trip of the level listing',
+      rebuilt.every((w, i) => w === LEVEL.words[i]),
+      rebuilt.map((w, i) => `0x${w.toString(16)} vs 0x${LEVEL.words[i].toString(16)}`).join(' '),
+    );
+
     drv.run(RUN_CLKS);
     const flevel = drv.readFlevel();
     const st = drv.getState();

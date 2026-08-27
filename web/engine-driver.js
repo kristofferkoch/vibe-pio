@@ -141,6 +141,7 @@
     let txWords = []; // TX FIFO contents mirror (display bookkeeping)
     let pendingOps = []; // queued reg-bus ops, one rendered clk each
     let alloc = { sideBits: LEVEL.sideBits, opt: LEVEL.opt };
+    let memWords = new Array(32).fill(0); // imem image this client wrote
     let last = null; // decoded PioCycle of the most recent clk
     let flashes = {};
     let mon = { armed: false, start: 0, bits: [], frameOff: null, stopTail: -1, decoded: '' };
@@ -257,8 +258,10 @@
     function load() {
       M._pio_engine_reset();
       clearRunState();
+      memWords = new Array(32).fill(0);
       LEVEL.words.forEach((w, i) => {
         pendingOps.push({ addr: REG.IMEM0 + 4 * i, data: w });
+        memWords[i] = w;
       });
       pendingOps.push({ addr: REG.SM0 + 20, data: pinctrlFor(alloc.sideBits, alloc.opt) });
       pendingOps.push({ addr: REG.SM0 + 4, data: execctrlFor(alloc.sideBits, alloc.opt) });
@@ -299,6 +302,22 @@
       alloc = { sideBits, opt };
       pendingOps.push({ addr: REG.SM0 + 20, data: pinctrlFor(sideBits, opt) });
       pendingOps.push({ addr: REG.SM0 + 4, data: execctrlFor(sideBits, opt) });
+    }
+
+    // The C19 re-assemble-on-edit commit path: patch the live imem image
+    // (SPEC-7-10, one rendered clk per changed word — writing imem of a
+    // running SM is legal; the SM fetches the new bits on its next
+    // instruction boundary). words is the full 32-slot image; only
+    // slots that differ from what this client last wrote are queued,
+    // and 0 clears a slot back to untouched-memory (jmp 0).
+    function setProgram(words) {
+      for (let i = 0; i < 32; i++) {
+        const w = words[i] | 0;
+        if (w !== memWords[i]) {
+          pendingOps.push({ addr: REG.IMEM0 + 4 * i, data: w });
+          memWords[i] = w;
+        }
+      }
     }
 
     // "⏭ INSN": step until the displayed instruction changes (or the SM
@@ -372,6 +391,7 @@
       stepInsn,
       enqueue,
       setAlloc,
+      setProgram,
       readFlevel,
       getState,
       allPins: () => pins.slice(),

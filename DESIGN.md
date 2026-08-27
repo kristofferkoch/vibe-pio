@@ -556,7 +556,7 @@ flowchart TB
 | `tools/hyperopt.py` | C14 hyperoptimizer (`make hyperopt`): a catalog of semantics-preserving rewrites (trace-eq vs spec-only tagged, SPEC-/CC-cited) searched to a peephole closure, screened by the C12 model under the seed schedule and the C13 pre-filter under the miter config, Pareto-filtered on (imem words, ticks per loop iteration) and certified through the oracle; spec-only speed rewrites and the PINCTRL/SHIFTCTRL-overlay entries (side-set fusion, autopull) are catalogued and regression-cased but reported uncertified — the C15 spec-eq predicate exists (SPEC-16-10), wiring the oracle to it is future work. |
 | `rtl/pio_mon_*.sv` | C15 spec-conformance monitors (SPEC-16-9): UART-TX frame and square-wave half-period checkers over the gpio_out observables, shared by `sim/tb_pio_mon.sv` (standalone, reference programs accepted / corrupted rejected) and `formal/pio_mon.sby` (standalone BMC+cover, the spec-eq twin `pio_mon_spec_eq_fv` — monitors as the miter comparison predicate, SPEC-16-10 — and a k-induction probe of the monitors' status contract). C16 reuses the same instances as synthesis cover goals and witness re-checks (SPEC-16-11/12). |
 | `formal/pio_synth_fv.sv` + `tools/hypersynth.py` | C16 symbolic-program synthesis (`make synth`): free imem words (`pio_instr_mem` SYM via chparam, SPEC-16-11) with the C15 monitors as cover goals — square-wave smoke and UART-TX-byte targets — plus the witness pipeline (SPEC-16-12): cover-trace extraction, canonicalization (nop-fills, delay-preserving nops for reserved parks), `.pio` disassembly, and the three re-verify legs (C12 model replay + SPEC-16-9 window check, generated iverilog TB, bounded formal conformance of the loaded witness); the red contradictory-spec case proves the cover goals genuinely bind the solver (UNSAT). |
-| `tools/webbuild.py` + `web/` | C17/C18 wasm backend + browser client (`make web`): the verilator `-Wall` lint gate over rtl/*.sv (four documented idiom waivers), the AOT wasm build — Verilator `--cc --assert` over `web/pio_shim_top.sv` (pio_block + the compiled-in invariant subset) linked by em++ into one modularized `build/web/pio_engine.js` — the three-way SPEC-16-7 trace gate (model ↔ iverilog ↔ verilator-wasm over the C12 conformance matrix + fuzz corpus), the C18 client gate, and mutation demos for all three defect surfaces. `web/pio_shim.cpp` is the C++ cycle engine: the gate face (`pio_stim_trace`, pio-stim replay → trace), the game face (`pio_reg_write`/`pio_reg_read`/`pio_step`/`pio_snapshot`/`pio_last_cycle` — every cycle-closing entry point also fills the pre-edge `PioCycle` sample the client renders from). `web/sm-view.html` + `sm-view.js` is the shipped client (mockups/sm-view.html promoted), `web/engine-driver.js` the CI-gated client core, `web/engine-worker.js` the Worker transport, `web/serve.py` the dev server (repo root, no-store). |
+| `tools/webbuild.py` + `web/` | C17/C18 wasm backend + browser client (`make web`): the verilator `-Wall` lint gate over rtl/*.sv (four documented idiom waivers), the AOT wasm build — Verilator `--cc --assert` over `web/pio_shim_top.sv` (pio_block + the compiled-in invariant subset) linked by em++ into one modularized `build/web/pio_engine.js` — the three-way SPEC-16-7 trace gate (model ↔ iverilog ↔ verilator-wasm over the C12 conformance matrix + fuzz corpus), the C18 client gate, and mutation demos for all three defect surfaces. `web/pio_shim.cpp` is the C++ cycle engine: the gate face (`pio_stim_trace`, pio-stim replay → trace), the game face (`pio_reg_write`/`pio_reg_read`/`pio_step`/`pio_snapshot`/`pio_last_cycle` — every cycle-closing entry point also fills the pre-edge `PioCycle` sample the client renders from). `web/sm-view.html` + `sm-view.js` is the shipped client (mockups/sm-view.html promoted), `web/engine-driver.js` the CI-gated client core, `web/engine-worker.js` the Worker transport, `web/pio-asm.js` the C19 in-browser assembler/disassembler (pio_model port, golden-gated by `make js`), `web/serve.py` the dev server (repo root, no-store). |
 
 ### Golden model (C12, as built)
 
@@ -664,20 +664,41 @@ flowchart TB
   PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, so the machine genuinely
   re-decodes the same stored bits within two clks — the "garbled"
   display re-decode and the engine now agree by construction.
-- **Deferred to C19**: re-assembly on edit commit. Edits update the
-  canonical listing only; the machine keeps running the loaded build
-  and the program footer shows an "unbuilt edits" chip. The level-02
-  fixture (uart_tx words + config + 'PIO!' feeds) is data in the
-  driver (LEVEL), single-sourced: sm-view.js asserts its PROG display
-  table matches the driver's words at load.
+- **Re-assembly on edit (C19, as built)**: `web/pio-asm.js` is a
+  line-faithful JS port of the C12 pio_model asm/disasm/encoding trio
+  (SPEC-/CC- citations carried over; classic-script + CommonJS like
+  engine-driver.js). It is anchored to pio_model — never to itself —
+  by `make js`: golden bit-vectors (`tools/gen_pio_asm_golden.py` →
+  `web/tests/pio-asm-golden.json`, all 19 conformance programs' words
+  + canonical text + expression goldens, drift-checked) plus the C12
+  1-1 round-trip over all 65536 words x 4 side-set configs with the
+  canonical/reserved partition pinned to pio_model's own count
+  (141912). The view's listing is now *derived*: rows are the
+  canonical disassembly of the loaded words under the authored
+  .side_set (the hand-written PROG table and its LEVEL assert are
+  gone — the words are the single source). A committed row edit
+  re-assembles the whole listing under the authored .side_set; on
+  success `{cmd:'program', words}` patches the **live** imem image
+  (driver `setProgram`: one rendered clk per changed slot, 0 clears a
+  slot — writing imem of a running SM is legal), and on failure the
+  "unbuilt edits" chip names the row error while the machine keeps
+  the last good build. `⟲` reset restores the level listing. The
+  `make web` client gate gained an `asm round-trip` check: the level
+  words must survive assemble(disassemble(w)) through the same
+  pio-asm.js the browser runs.
+- The level-02 fixture (uart_tx words + config + 'PIO!' feeds) is
+  data in the driver (LEVEL), single-sourced: sm-view.js derives its
+  listing display from those words.
 - **Gate** (`make web` leg 5): the model oracle produces the expected
   per-clk gpio_out bit0 series + final FLEVEL for the identical load
   timeline (pio_model is still the referee); the node gate requires
-  pin-identical samples over all 374 rendered clks, the reg-read
-  value, the decoded 'PIO!' and mirror↔tx_level agreement. Red/green:
-  `--defect=pin` (pin sampled off gpio_out bit 1 — caught by the pin
-  diff, first divergence clk 15) and `--defect=mirror` (TX mirror
-  never pops — caught by the mirror-vs-engine check, mirror 4 vs 0).
+  the C19 asm round-trip of the level listing (assemble(disassemble)
+  through the client's own pio-asm.js), pin-identical samples over all
+  374 rendered clks, the reg-read value, the decoded 'PIO!' and
+  mirror↔tx_level agreement. Red/green: `--defect=pin` (pin sampled
+  off gpio_out bit 1 — caught by the pin diff, first divergence clk
+  15) and `--defect=mirror` (TX mirror never pops — caught by the
+  mirror-vs-engine check, mirror 4 vs 0).
 - **The fun gate** is re-read on this engine per the card: the owner
   plays it at `http://localhost:8138/web/sm-view.html`
   (`python3 web/serve.py` after `make web`); if the view cannot be

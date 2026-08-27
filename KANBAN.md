@@ -58,9 +58,13 @@ vs the model oracle; the fun-gate re-read now happens on the real
 engine) and C20 (the `make js` gate: Biome format+lint over
 web/ js+css+html with `sm-view.css` extracted, the `node --test`
 hermetic unit suite with the fake engine, `package.json`+lockfile,
-`docs/js-tooling.md`, the AGENTS.md JS line) are done. C18's
-re-assemble-on-edit milestone is folded into C19's landing (the client
-marks unbuilt edits meanwhile).
+`docs/js-tooling.md`, the AGENTS.md JS line) and C19 (the in-browser
+assembler/disassembler `web/pio-asm.js` — a pio_model asm/disasm port
+anchored by golden bit-vectors + the 65536-word canonical round-trip
+in `make js`, wiring the client's re-assemble-on-edit commit path)
+are done. The browser-game track is complete; the game loop (levels,
+monitor profiles, scoring) stays in IDEAS.md pending its own grilling
+round after the fun gate re-read.
 
 C20 was promoted after the 2026-08-27 JS-tooling grilling round
 (all owner decisions = the presented recommendations): **Biome** is
@@ -80,10 +84,3 @@ gate** (needs node+npm, like `make py` needs uv) — `make web` stays
 container-runnable and runtime JS stays dependency-free. Dependency
 order is thereby revised to C17 → C18 → **C20 → C19**: the
 assembler's encoding tables must land TDD from their first commit.
-
-- C19 (in-browser assembler/disassembler): JS port of pio_model
-  asm/disasm + encoding tables; CI gate = golden bit-vectors
-  generated from pio_model (already bit-equal to pioasm) plus the
-  canonical round-trip property (C12 1-1: canonical disassembly
-  re-assembles bit-identical). Landing it wires the client's
-  re-assemble-on-edit commit path (C18's deferred milestone).

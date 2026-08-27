@@ -1,33 +1,48 @@
-// sm-view.js — the C18 SM view client logic (KANBAN C18).
+// sm-view.js — the C18 SM view client logic (KANBAN C18; re-assembly
+// on edit landed with C19).
 //
 // The mock-up's hand-rolled simulator is deleted: every machine value
 // rendered here (pins, PC, phase, X/Y, OSR/ISR, counters, FIFO level)
 // comes from the wasm engine's per-clk state snapshot, posted by the
 // Web Worker (engine-worker.js / engine-driver.js — the CI-gated core).
-// What stays local is presentation: the canonical listing display, the
-// modeless editor (edits mark the listing "unbuilt" — re-assembly on
-// edit lands with C19), the ds-field allocator display re-decode (the
-// machine side of the allocation is a real PINCTRL/EXECCTRL write),
-// and the waveform/tag/monitor rendering of true pin samples.
+// What stays local is presentation: the canonical listing display
+// (C19: derived by disassembling the loaded words through pio-asm.js,
+// and committed edits re-assemble — the new build is patched into the
+// live engine one rendered clk per changed word; a row that doesn't
+// assemble marks the listing "unbuilt"), the ds-field allocator display
+// re-decode (the machine side of the allocation is a real
+// PINCTRL/EXECCTRL write), and the waveform/tag/monitor rendering of
+// true pin samples.
 'use strict';
 
 const $ = (id) => document.getElementById(id); // declared first: the transport
 // wiring below uses it at top level
 
-// ---- the program (canonical C12 listing of the level fixture; words
-// single-sourced from the driver's LEVEL) -------------------------------
-// No labels: jump targets are drawn as margin arcs (like the wrap path) —
-// the address is the only stored truth. side/delay re-decode from the ds
-// field under the allocator (SPEC-4-1..3).
+// ---- the program (canonical C12 listing of the level fixture) ----------
+// The words are the single source (VibeDriver.LEVEL); the listing text
+// is their canonical disassembly through pio-asm.js under the authored
+// .side_set — the same module the editor re-assembles committed rows
+// with (C19). No labels: jump targets are drawn as margin arcs (like
+// the wrap path) — the address is the only stored truth. side/delay
+// re-decode from the ds field under the allocator (SPEC-4-1..3).
 const LEVEL = VibeDriver.LEVEL;
-const PROG = [
-  { w: 0x9fa0, op: 'pull', args: 'block', side: 1, delay: 7 },
-  { w: 0xf727, op: 'set', args: 'x, 7', side: 0, delay: 7 },
-  { w: 0x6001, op: 'out', args: 'pins, 1', side: null, delay: 0 },
-  { w: 0x0642, op: 'jmp', args: 'x--', tgt: 2, side: null, delay: 6 },
-];
-if (PROG.some((p, i) => p.w !== LEVEL.words[i]))
-  throw new Error('view PROG table diverged from engine-driver LEVEL words');
+// the authored .side_set context rows assemble under (not the slider:
+// the listing is source text, the allocator is runtime config)
+const ASM_PROG = PioAsm.createProgram('level02');
+ASM_PROG.sidesetBits = LEVEL.sideBits;
+ASM_PROG.sidesetOpt = LEVEL.opt;
+const ssCntOwn = () => LEVEL.sideBits + (LEVEL.opt ? 1 : 0);
+const ssEnOwn = () => LEVEL.sideBits > 0 && !!LEVEL.opt;
+
+let BUILT = LEVEL.words.slice(); // the image the engine runs (C19 patch target)
+
+function wordsToRows(words) {
+  // canonical listing text of a word image under the authored .side_set
+  return words.map((w) => PioAsm.disassemble(w, ssEnOwn(), ssCntOwn()));
+}
+
+const ROWS0 = wordsToRows(BUILT);
+let PROG = BUILT.map((w, i) => ({ w, ...parseRow(ROWS0[i]) }));
 
 const WRAP_TARGET = LEVEL.wrapTarget,
   WRAP_LAST = LEVEL.wrapLast;
@@ -164,7 +179,14 @@ function enableCtrls(on) {
 $('brun').onclick = run;
 $('breset').onclick = () => {
   pause();
-  post({ cmd: 'reset' });
+  post({ cmd: 'reset' }); // worker: drv.load() — the level fixture again
+  // restore the listing to the level's canonical form (the words the
+  // reload puts back into the engine)
+  ROWS.splice(0, ROWS.length, ...ORIG);
+  asmErr = null;
+  BUILT = LEVEL.words.slice();
+  PROG = BUILT.map((w, i) => ({ w, ...parseRow(ROWS0[i]) }));
+  buildProgram();
 };
 $('bstep').onclick = () => {
   pause();
@@ -306,9 +328,10 @@ function buildProgram() {
   renderAlloc();
 }
 function updateUnbuilt() {
-  const diverged = ROWS.some((r, i) => r !== ORIG[i]);
   const u = $('unbuilt');
-  if (u) u.hidden = !diverged;
+  if (!u) return;
+  u.hidden = !asmErr;
+  if (asmErr) u.title = `edits do not assemble — ${asmErr} — the machine runs the last good build`;
 }
 function renderAlloc() {
   const h = $('dspips');
@@ -429,7 +452,15 @@ function renderExec(st) {
       (e.delay ? ` <span class="pf">[${e.delay}]</span>` : '')
     : `<span class="pf">· unwritten — jmp ${st.pc}</span>`;
   const f = $('execfields');
-  const base = EXECFIELDS[disp] || 'unwritten memory · 0x0000 decodes as jmp 0';
+  // the curated field breakdown is pinned to the level's virgin rows;
+  // edited rows show the built word + canonical text (the assembled
+  // image, PROG[disp].w — what the machine actually fetched)
+  const base =
+    ROWS[disp] === ORIG[disp] && EXECFIELDS[disp]
+      ? EXECFIELDS[disp]
+      : p
+        ? `0x${p.w.toString(16).padStart(4, '0').toUpperCase()} · ${ROWS[disp] || 'decodes as jmp 0'}`
+        : 'unwritten memory · 0x0000 decodes as jmp 0';
   const side = e.side != null ? `SIDE ${e.side} <span class='cfgtx'>→ gpio0</span>` : '';
   f.innerHTML = `${base}<br>${side ? `${side} · ` : ''}delay ${e.delay}`;
   const n = $('phasename'),
@@ -594,12 +625,39 @@ const ED = $('edittxt'),
   HOST = $('progrows');
 const SIDE = $('edside'),
   DLY = $('eddly');
-const ROWS = PROG.map(
-  (p) =>
-    `${p.op} ${p.args}${p.tgt != null ? `, ${p.tgt}` : ''}${p.side != null ? ` side ${p.side}` : ''}${p.delay ? ` [${p.delay}]` : ''}`,
-).concat(Array(32 - PROG.length).fill(''));
+const ROWS = ROWS0.concat(Array(32 - ROWS0.length).fill(''));
 const ORIG = [...ROWS];
 let curRow = -1;
+let asmErr = null; // row error of the last failed re-assembly (C19)
+
+// Re-assemble the whole listing (each non-empty row is one instruction
+// line, assembled under the authored .side_set — ASM_PROG) and, on
+// success, patch the live engine image: {cmd:'program'} → driver
+// setProgram, one rendered clk per changed word. On failure the chip
+// shows the error and the machine keeps running the last good build.
+function reassemble() {
+  const words = new Array(32).fill(0);
+  for (let i = 0; i < 32; i++) {
+    if (!ROWS[i]) continue;
+    try {
+      words[i] = PioAsm.assembleInstruction(ROWS[i], ASM_PROG, {}, `row ${i}`);
+    } catch (e) {
+      return { err: `${e.message}` };
+    }
+  }
+  return { words };
+}
+function buildAndPush() {
+  const r = reassemble();
+  asmErr = r.err || null;
+  if (!asmErr) {
+    BUILT = r.words;
+    const rows = wordsToRows(BUILT);
+    PROG = BUILT.map((w, i) => ({ w, ...parseRow(rows[i]) }));
+    post({ cmd: 'program', words: BUILT });
+  }
+  updateUnbuilt();
+}
 
 const ISA = {
   jmp: {
@@ -830,6 +888,7 @@ function commitRow() {
   RE.hidden = true;
   popupHide();
   HOST.classList.remove('picking');
+  buildAndPush(); // C19: re-assemble; on success patch the engine image
   buildProgram();
   render(V.state);
 }

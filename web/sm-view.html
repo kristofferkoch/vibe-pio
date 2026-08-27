@@ -19,11 +19,14 @@
   the engine's pre-edge cycle sample (the SPEC-16-7 observable point).
   Waveform tags and the decoded-bytes monitor are receiver-side
   interpretation of true pin samples (C15 flavor). Editing the listing
-  is modeless and live, but re-assembly lands with C19 (KANBAN): the
-  machine keeps running the loaded build; the program footer shows an
-  "unbuilt edits" chip. The ds-field allocator is REAL — it re-writes
-  PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, so the machine re-decodes
-  the same stored bits exactly as drawn.
+  is modeless and live, and committed rows re-assemble in the browser
+  (pio-asm.js, the C19 port of the C12 pio_model assembler — CI-checked
+  bit-equal against pioasm/pio_model goldens): the new build is patched
+  into the running engine one rendered clk per changed word, and a row
+  that doesn't assemble keeps the machine on the last good build (the
+  "unbuilt edits" chip names the error). The ds-field allocator is REAL
+  — it re-writes PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, so the
+  machine re-decodes the same stored bits exactly as drawn.
 
   Legend: amber = control · green = data · cyan = config/wiring ·
   red = stall · gray = idle. Serve from the repo root (web/serve.py)
@@ -113,7 +116,7 @@
             class="chip unbuilt"
             id="unbuilt"
             hidden
-            title="the listing diverges from the loaded build — re-assembly on edit lands with C19 (KANBAN)"
+            title="edits do not assemble — the machine runs the last good build (the title carries the row error)"
             >unbuilt edits</span
           >
         </div>
@@ -290,6 +293,7 @@
     <div id="boot"><span class="lamp on"></span>loading wasm engine…</div>
 
     <script src="engine-driver.js"></script>
+    <script src="pio-asm.js"></script>
     <script src="sm-view.js"></script>
   </body>
 </html>

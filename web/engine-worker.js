@@ -14,6 +14,9 @@
 //   {cmd:'stepInsn'}         → step one instruction
 //   {cmd:'enqueue', bytes}   → TXF writes; reply also carries {refused}
 //   {cmd:'alloc', sideBits, opt} → real PINCTRL/EXECCTRL re-write
+//   {cmd:'program', words}   → C19 re-assemble-on-edit: patch the live
+//                              imem image (one rendered clk per changed
+//                              word; the SM keeps running)
 //   {cmd:'reset'}            → load again
 
 /* global importScripts, onmessage, postMessage, VibeDriver, PioEngine */
@@ -77,6 +80,10 @@ onmessage = (e) => {
       }
       case 'alloc':
         drv.setAlloc(m.sideBits, !!m.opt);
+        postState();
+        break;
+      case 'program':
+        drv.setProgram(m.words || []);
         postState();
         break;
       case 'reset':

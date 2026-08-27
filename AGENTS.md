@@ -43,8 +43,10 @@ Conventions for AI agents (and subagents) working in this repo.
   stays dependency-free and classic-script-loadable so `make web` also
   runs in the container). JS fixes are red/green TDD like RTL/Python —
   the driver's `--defect=pin`/`--defect=mirror` hooks and the fake
-  engine are the cheap red cases; DOM glue is verified by the browser
-  session and `make web`, never unit tests.
+  engine are the cheap red cases; the C19 assembler port is anchored
+  to pio_model by golden bit-vectors (drift-checked in `make js`),
+  never to itself. DOM glue is verified by the browser session and
+  `make web`, never unit tests.
 
 ## Fact and clause citations
 

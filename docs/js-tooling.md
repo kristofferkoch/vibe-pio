@@ -1,10 +1,10 @@
 # JS tooling: npm + Biome + node --test
 
 The web client side of the repo (the C18 SM view, the shared driver
-core, the C17 headless gate runners, and — landing with C19 — the
-in-browser assembler) is developed under the same discipline as the
-RTL and the Python: one strict format+lint gate, and **red/green TDD**
-for every behavior change.
+core, the C17 headless gate runners, and the C19 in-browser
+assembler) is developed under the same discipline as the RTL and the
+Python: one strict format+lint gate, and **red/green TDD** for every
+behavior change.
 
 ## Layout
 
@@ -12,10 +12,12 @@ for every behavior change.
 |---|---|
 | `web/engine-driver.js` | the C18 client core — the same module runs in the browser worker, under the `make web` client gate (vs the pio_model oracle), and under `node --test` against the fake engine |
 | `web/engine-worker.js` | the C18 Web Worker transport around the driver |
-| `web/sm-view.js` | the view's DOM glue (**extract-on-touch**: lint/format always; logic migrates into require-able tested modules only as it is touched) |
+| `web/pio-asm.js` | the C19 in-browser assembler/disassembler — a JS port of the C12 pio_model asm/disasm/encoding trio, anchored to that oracle by golden bit-vectors + the 65536-word canonical round-trip (never to itself) |
+| `web/sm-view.js` | the view's DOM glue (**extract-on-touch**: lint/format always; logic migrates into require-able tested modules only as it is touched) — C19 made the listing itself assembler-derived: rows disassemble from the loaded words and committed edits re-assemble through `pio-asm.js` into a live imem patch |
 | `web/sm-view.html` / `web/sm-view.css` | the shipped page and its stylesheet (the `<style>` was extracted in C20 so css joins the gate) |
-| `web/node_gate.js` / `web/node_client_gate.js` | the headless `make web` runners (wasm engine / client-vs-oracle) |
-| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in) + `engine-driver.test.js` |
+| `web/node_gate.js` / `web/node_client_gate.js` | the headless `make web` runners (wasm engine / client-vs-oracle; the client gate also round-trips the level listing through `pio-asm.js`) |
+| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture |
+| `tools/gen_pio_asm_golden.py` | generates `web/tests/pio-asm-golden.json` from pio_model (stdlib-only; `--check` is the drift gate in `make js`) |
 | `biome.json` | the format+lint configuration (waivers documented below) |
 | `package.json` + `package-lock.json` | dev-only dependency: `@biomejs/biome` |
 
@@ -45,7 +47,8 @@ make js         # the full gate: biome ci + node --test
 | Step | Tool | Scope |
 |---|---|---|
 | install | `npm ci` | dev-only, from the committed lockfile |
-| format + lint | `biome ci web` | js + css + html under `web/` (incl. `web/tests/`); `mockups/` is outside `files.includes` and stays free-form |
+| format + lint | `biome ci web` | js + css + html + json under `web/` (incl. `web/tests/`); `mockups/` is outside `files.includes` and stays free-form |
+| golden drift | `python3 tools/gen_pio_asm_golden.py --check` | the committed `pio-asm-golden.json` must deep-equal fresh pio_model asm/disasm output (content-wise — biome owns the file's layout, so regenerate then `npx biome format --write` it) |
 | tests | `node --test web/tests/*.test.js` | hermetic unit suite — no wasm build, no model, no network |
 
 JS changes are not done until `make js` is green. The heavier gates
@@ -95,8 +98,18 @@ against the oracle gate. Prefer that route over blanket `--unsafe`.
   (the reg-bus sequence `webbuild.py::_client_level_sched` mirrors),
   the struct decode (including the 64-bit clk), the receiver monitor
   (frame tags, decode, back-to-back re-arm), the TX mirror and
-  refusal, `displayPc`/phase derivation, `stepInsn`, flashes, and the
-  two defect hooks.
+  refusal, `displayPc`/phase derivation, `stepInsn`, flashes, the C19
+  `setProgram` patch path, and the two defect hooks.
+- **The assembler suite is oracle-anchored, never self-anchored**
+  (C19): a port can be *consistently* wrong (assemble and disassemble
+  agreeing with each other but not with the hardware), so
+  `pio-asm.test.js` checks against `pio-asm-golden.json` — words,
+  canonical text and expression goldens generated from pio_model
+  (itself bit-equal to pioasm 2.3.0 per `make model`'s asm-check) —
+  plus the C12 1-1 round-trip property ported whole:
+  `assemble(disassemble(w)) === w` over all 65536 words x 4 side-set
+  configs, with the canonical/reserved partition pinned to the oracle
+  total (141912 — pio_model's own count over those configs).
 - **The defect hooks are the cheap red cases** (the
   `TestMutationsDiverge` idiom): `create(M, {pin:true})` /
 `{mirror:true}` re-inject the C18 mutation-demo defects; the suite
@@ -122,12 +135,23 @@ demonstrated by sabotaging `pinBit` to sample bit 1 unconditionally:
 4 tests red (first failing: `monitor decodes a scripted 8N1 frame`),
 14/14 green after restore.
 
-## Conventions for new JS code (C19 assembler, future levels)
+C19 worked examples (the port itself): the operand-passing defect —
+`encodeCore` pre-resolving operand names to numeric codes that the
+name-taking encoders then looked up again — went red on the very first
+golden run (`golden squarewave`, word 0: 0xE001 vs pio_model 0xE081,
+plus `addition`'s `mov x, ~osr` failing operand lookup outright);
+passing names across the Python `except KeyError` boundary made it
+green. The classic JS trap was demonstrated by injection: swapping the
+evaluator's C truncating division for native floor division turned
+`golden exprs` red on `-7/2` (expected -3, floor gives -4); restored,
+27/27 green.
+
+## Conventions for new JS code (future levels)
 
 1. Runtime code stays dependency-free and loads as a classic script;
    anything that needs npm is dev tooling, not shipped.
 2. New logic goes in require-able modules under `web/` with unit tests
-   in `web/tests/` from the first commit (C19's encoding tables land
+   in `web/tests/` from the first commit (C19's encoding tables landed
    TDD against golden bit-vectors generated from pio_model); `sm-view.js`
    stays extract-on-touch.
 3. DOM glue is never unit-tested — it is verified by the browser
