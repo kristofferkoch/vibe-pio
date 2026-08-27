@@ -26,19 +26,21 @@ Gates (KANBAN C17/C18 done-when):
                   drops word-0 writes — the DUT is untouched, only the
                   compiled-in asserts can catch it, leg 2: proves the
                   binary's self-check path fires).
-  --client        (5) the C18 client gate: web/engine-driver.js (the
+  --client        (5) the C18/C21 client gate: web/engine-driver.js (the
                   exact client core the browser worker runs) drives the
-                  wasm engine's game face through the level-02 load
-                  timeline; pio_model produces the expected pin series
-                  + final FLEVEL for the identical timeline and the
-                  node gate requires pin-identical samples, the
-                  reg-read value, the decoded 'PIO!' monitor output and
-                  the TX-mirror/tx_level agreement. Plus the two
-                  client-side mutation demos (red, then green):
-                  CLIENT_DEFECT_PIN (pin sampled off gpio_out bit 1 —
-                  caught by the model pin diff) and
-                  CLIENT_DEFECT_MIRROR (TX contents mirror never pops —
-                  caught by the mirror-vs-engine level check).
+                  wasm engine's game face through five sandbox legs
+                  (the uart demo / pin drives + the pattern generator /
+                  clkdiv!=1 / join overlay + RXF0 drains / aux put-get);
+                  pio_model mirrors each leg's timeline (the
+                  _SandboxMirror of the driver's clocking rules) and
+                  the node gate requires gpio-word-identical samples
+                  plus identical reg-read rdata, the lens decodes, and
+                  the TX/RX mirror agreements. Plus the two client-side
+                  mutation demos (red, then green): CLIENT_DEFECT_PIN
+                  (pin sampled off gpio_out bit 1 — caught by the model
+                  gpio diff) and CLIENT_DEFECT_MIRROR (TX contents
+                  mirror never pops — caught by the mirror-vs-engine
+                  level check).
   --self-test     all five (the `make web` target).
 
 Runs with native verilator+em++/node when present, else one vibe-pio
@@ -406,50 +408,239 @@ def cmd_mutation_demo(engine: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Gate 5: the C18 client gate (driver-level, model-cross-checked).
+# Gate 5: the C18/C21 client gate (driver-level, model-cross-checked).
 # ---------------------------------------------------------------------------
 
-# The client-gate run length: 4 frames x 80 clks + startup/stall tail —
-# 'P','I','O','!' decoded and the SM parked in the TX-empty stall.
+# The client-gate run length for the uart_demo leg: 4 frames x 80 clks +
+# startup/stall tail — 'P','I','O','!' decoded and the SM parked in the
+# TX-empty stall.
 CLIENT_RUN_CLKS = 360
 
 
-def _client_level_sched() -> stim.Schedule:
-    """The level-02 load timeline, mirroring web/engine-driver.js load()
-    cycle for cycle (imem words, PINCTRL, EXECCTRL, SHIFTCTRL, the
-    SPEC-6-2 settle clk, seed feeds, enable) then CLIENT_RUN_CLKS clks
-    and a final FLEVEL read. web/sm-view.js asserts the words match
-    VibeDriver.LEVEL; this python mirror is pinned by the pin-series
-    comparison itself."""
-    words = [0x9FA0, 0xF727, 0x6001, 0x0642]
-    s = stim.Schedule()
-    s.load_imem(words)
-    s.w(stim.A_SM0 + 4 * 5, stim.pctrl(ss_cnt=2, out_cnt=1))
-    s.w(stim.A_SM0 + 4 * 1, stim.execctrl(3, 0, side_en=True))
-    s.w(stim.A_SM0 + 4 * 2, stim.shiftctrl(fjoin_tx=True))
-    s.idle(1)
-    for f in (0x50, 0x49, 0x4F, 0x21):  # 'P','I','O','!'
-        s.feed(f)
-    s.enable()
-    s.run_to(len(s.cycles) + CLIENT_RUN_CLKS)
-    s.r(stim.A_FLEVEL)
-    return s
+class _SandboxMirror:
+    """The python twin of web/engine-driver.js's clocking rules, driving a
+    stim.Schedule the model replays: every driver action appends the same
+    rendered clks — the load timeline, queued reg ops (one clk each), and
+    the composed gpio_in per step clk (drive latches + the pattern
+    generator; op clks hold the last level — the shim's sticky-input
+    discipline). Each _leg_* below mirrors its JS twin in
+    web/node_client_gate.js call for call; the gate is the lockstep check
+    between them."""
+
+    def __init__(self) -> None:
+        self.s = stim.Schedule()
+        self.drives: list[int | None] = [None] * 32
+        self.pat_mode = "off"
+        self.pat_pin = 0
+        self.pat_period = 16
+        self.pat_bits: list[int] = [0]
+        self.start_idx = 0
+
+    # -- stimulus composition (engine-driver.js composedGpio/patLevel) --
+    def _pattern_level(self, idx: int) -> int:
+        if self.pat_mode == "square":
+            return (idx // (self.pat_period >> 1)) % 2
+        if self.pat_mode == "bits":
+            return self.pat_bits[min(idx, len(self.pat_bits) - 1)]
+        return 0
+
+    def _gpio(self) -> int:
+        g = 0
+        for p, lvl in enumerate(self.drives):
+            if lvl == 1:
+                g |= 1 << p
+        if self.pat_mode != "off":
+            idx = len(self.s.cycles) - self.start_idx
+            lvl = self._pattern_level(idx)
+            g = (g & ~(1 << self.pat_pin)) | (lvl << self.pat_pin)
+        return g & 0xFFFFFFFF
+
+    def _step_clk(self) -> None:
+        self.s.set_gpio(self._gpio())
+        self.s.idle(1)
+
+    def run(self, n: int) -> None:
+        for _ in range(n):
+            self._step_clk()
+
+    def set_drive(self, pin: int, lvl: int | None) -> None:
+        self.drives[pin] = lvl
+
+    def set_pattern(self, mode: str = "off", pin: int = 0, period: int = 16, bits: list[int] | None = None) -> None:
+        self.pat_mode = mode
+        if mode != "off":
+            self.pat_pin = pin
+            self.pat_period = period
+            self.pat_bits = bits or [0]
+        self.start_idx = len(self.s.cycles)
+
+    # -- the load timeline (engine-driver.js load): nonzero imem words,
+    #    PINCTRL, EXECCTRL, SHIFTCTRL, the SPEC-6-2 settle clk, CLKDIV
+    #    while non-default, the optional entry force, feeds, enable.
+    def load(
+        self,
+        words: list[int],
+        pinctrl_w: int,
+        exec_w: int,
+        shift_w: int,
+        clkdiv_w: int | None = None,
+        feeds: tuple[int, ...] = (),
+        entry: int | None = None,
+    ) -> None:
+        for i, w in enumerate(words):
+            if w:
+                self.s.w(stim.A_IMEM0 + 4 * i, w)
+        self.s.w(stim.A_SM0 + 4 * 5, pinctrl_w)
+        self.s.w(stim.A_SM0 + 4 * 1, exec_w)
+        self.s.w(stim.A_SM0 + 4 * 2, shift_w)
+        self._step_clk()  # the SPEC-6-2 settle clk
+        if clkdiv_w is not None and clkdiv_w != stim.clkdiv():
+            self.s.w(stim.A_SM0 + 4 * 0, clkdiv_w)
+        if entry is not None:
+            self.s.w(stim.A_SM0 + 4 * 4, entry)  # jmp entry (set_pc idiom)
+        for f in feeds:
+            self.s.feed(f)
+        self.s.enable()
+
+    def set_shiftctrl(self, word: int, *, fjoin_changed: bool) -> None:
+        self.s.w(stim.A_SM0 + 4 * 2, word)
+        if fjoin_changed:
+            self._step_clk()  # the SPEC-6-2 settle clk
+
+    def drain(self, n: int) -> None:
+        for _ in range(n):
+            self.s.r(stim.A_RXF0)
+
+    def read(self, addr: int) -> None:
+        self.s.r(addr)
+
+    def flevel(self) -> None:
+        self.read(stim.A_FLEVEL)
+
+
+def _leg_trace(m: _SandboxMirror, **extra: object) -> dict[str, object]:
+    """pio_model's oracle for one leg: the per-clk gpio_out words
+    (SPEC-16-7 G records — full 32-bit, stronger than the C18 bit0
+    series) and the ordered reg-read records."""
+    recs = run_model_trace(m.s)
+    gpio: list[int] = []
+    reads: list[list[int]] = []
+    for rec in recs:
+        if rec[0] == "G":
+            gpio.append(rec[2])
+        elif rec[0] == "R":
+            reads.append([rec[2], rec[3]])
+    return {"gpio": gpio, "reads": reads, **extra}
+
+
+def _frame_bits(byte: int, idle_cells: int = 2) -> list[int]:
+    """One 8N1 frame as a pasted bitstream (8 clks/bit) — the JS twin is
+    frameBits() in web/node_client_gate.js."""
+    cells = [1] * idle_cells + [0] + [(byte >> i) & 1 for i in range(8)] + [1]
+    return [c for c in cells for _ in range(8)]
+
+
+def _client_legs() -> list[tuple[str, dict[str, object]]]:
+    """(name, expected) per leg — the python twins of LEGS in
+    web/node_client_gate.js, call for call."""
+    legs: list[tuple[str, dict[str, object]]] = []
+
+    # uart_demo — the demoted level-02 fixture (the C18 leg)
+    m = _SandboxMirror()
+    m.load(
+        [0x9FA0, 0xF727, 0x6001, 0x0642],
+        stim.pctrl(ss_cnt=2, out_cnt=1),
+        stim.execctrl(3, 0, side_en=True),
+        stim.shiftctrl(fjoin_tx=True),
+        feeds=(0x50, 0x49, 0x4F, 0x21),  # 'P','I','O','!'
+    )
+    m.run(CLIENT_RUN_CLKS)
+    m.flevel()
+    legs.append(("uart_demo", _leg_trace(m, decoded="PIO!", txMirror=True)))
+
+    # pin_echo — manual drives + the square pattern through a mov-pins
+    # echo (set pindirs makes pin0 an output; in_base 3: out pin k echoes
+    # input pin k+3, so pin0 shows the pin3 drives and pin1 the pin4
+    # pattern); the square lens verdict is read off the echoed wave.
+    m = _SandboxMirror()
+    m.load(
+        [E.encode_set("pindirs", 1), E.encode_mov("pins", "pins", 0), E.encode_jmp(None, 1)],
+        stim.pctrl(set_cnt=1, in_base=3),
+        stim.execctrl(2, 1),
+        stim.shiftctrl(),
+    )
+    m.set_drive(3, 1)
+    m.run(12)
+    m.set_drive(3, 0)
+    m.run(9)
+    m.set_drive(3, 1)
+    m.run(7)
+    m.set_pattern(mode="square", pin=4, period=16)
+    m.run(64)
+    m.flevel()
+    legs.append(("pin_echo", _leg_trace(m, square={"period": 16, "dutyPct": 50})))
+
+    # clkdiv_frac — a set-pins squarewave behind CLKDIV INT=2 FRAC=128
+    m = _SandboxMirror()
+    m.load(
+        [E.encode_set("pins", 1, 3), E.encode_set("pins", 0, 3), E.encode_jmp(None, 0)],
+        stim.pctrl(set_cnt=1),
+        stim.execctrl(2, 0),
+        stim.shiftctrl(),
+        clkdiv_w=stim.clkdiv(2, 128),
+    )
+    m.run(150)
+    m.flevel()
+    legs.append(("clkdiv_frac", _leg_trace(m)))
+
+    # join_rx_drain — the sampler (in pins,1 [7] + autopush @8, in_base 5)
+    # under a pasted-frame bitstream; RXF0 drains, a mid-run FJOIN_RX
+    # overlay edit (flush + settle), drains into the 8-deep.
+    m = _SandboxMirror()
+    m.load(
+        [E.encode_in("pins", 1, 7), E.encode_jmp(None, 0)],
+        stim.pctrl(in_base=5),
+        stim.execctrl(1, 0),
+        stim.shiftctrl(push_thr=8, autopush=True),
+    )
+    m.set_pattern(mode="bits", pin=5, bits=_frame_bits(0x55))  # 'U'
+    m.run(208)  # ~3 sample groups land in the 4-deep RX
+    m.drain(2)  # the JS twin's drainRx(2) + run(2): two read clks
+    m.flevel()  # 1 word remains
+    # the JS twin's setOverlayField(...) + run(2): the write clk (sticky
+    # gpio_in) + the SPEC-6-2 settle clk, appended here directly
+    m.set_shiftctrl(stim.shiftctrl(fjoin_rx=True, push_thr=8, autopush=True), fjoin_changed=True)
+    m.run(520)  # ~8 sample groups into the 8-deep RX
+    m.drain(6)  # the JS twin's drainRx(6) + run(6): six read clks
+    m.flevel()
+    legs.append(("join_rx_drain", _leg_trace(m, rxMirror=True)))
+
+    # aux_putget — FJOIN_RX_PUT: the SM PUTs ISR into the RX storage
+    # (mov rxfifo[y], isr, index 0 via set y,0), the system reads the
+    # window back (SPEC-7-13). in pins,8 grabs pins 12..5 into ISR[31:24].
+    m = _SandboxMirror()
+    m.load(
+        [E.encode_set("y", 0), E.encode_in("pins", 8, 1), E.encode_put(None), E.encode_jmp(None, 1)],
+        stim.pctrl(in_base=5),
+        stim.execctrl(3, 1),
+        stim.shiftctrl(fjoin_rx_put=True),
+    )
+    for pin, lvl in {5: 1, 6: 0, 7: 1, 8: 1, 9: 0, 10: 1, 11: 0, 12: 1}.items():
+        m.set_drive(pin, lvl)
+    m.run(16)
+    m.read(stim.A_PUTGET0)  # 0xAD000000: pins 12..5 as ISR[31:24]
+    m.read(stim.A_PUTGET0 + 4)  # storage 1: never written
+    m.set_drive(5, 0)
+    m.set_drive(12, 0)  # flip both end pins
+    m.run(16)
+    m.read(stim.A_PUTGET0)  # 0x2C000000 after the flip
+    legs.append(("aux_putget", _leg_trace(m)))
+
+    return legs
 
 
 def _client_expected() -> dict[str, object]:
-    """pio_model's oracle for the client run: the per-clk gpio_out bit0
-    series (SPEC-16-7 G records) and the final FLEVEL read."""
-    recs = run_model_trace(_client_level_sched())
-    pins: list[int] = []
-    flevel = None
-    for rec in recs:
-        if rec[0] == "G":
-            pins.append(rec[2] & 1)
-        elif rec[0] == "R" and rec[2] == stim.A_FLEVEL:
-            flevel = rec[3]
-    if flevel is None:
-        raise RuntimeError("client oracle: model trace carries no FLEVEL R record")
-    return {"runClks": CLIENT_RUN_CLKS, "pins": pins, "flevel": flevel}
+    return {"legs": dict(_client_legs())}
 
 
 def run_client_gate(engine: Path, expected: Path, defect: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -472,7 +663,7 @@ def cmd_client(engine: Path | None = None) -> int:
         return [ln for ln in (r.stdout + r.stderr).splitlines() if ln.startswith(("PASS", "FAIL"))]
 
     # Green: the clean client core against the model oracle.
-    print("--- client gate: driver vs pio_model oracle (level 02, uart_tx)")
+    print("--- client gate: driver vs pio_model oracle (5 sandbox legs)")
     r = run_client_gate(engine, exp_path)
     for ln in report(r):
         print(f"  {ln}")
@@ -480,12 +671,12 @@ def cmd_client(engine: Path | None = None) -> int:
         fails += 1
         print("FAIL client: diverged from the model oracle (see above)")
     else:
-        print("PASS client: green")
+        print(f"PASS client: green ({sum(1 for ln in report(r) if ln.startswith('PASS'))} checks)")
 
     # Mutation demo legs — the client-side red-injection hooks.
-    print("--- client mutation demo 1: --defect=pin (model pin diff catches)")
+    print("--- client mutation demo 1: --defect=pin (model gpio diff catches)")
     r = run_client_gate(engine, exp_path, defect="pin")
-    pin_fail = next((ln for ln in report(r) if ln.startswith("FAIL pins")), "")
+    pin_fail = next((ln for ln in report(r) if ln.startswith("FAIL uart_demo pin")), "")
     if r.returncode == 0 or not pin_fail:
         fails += 1
         print("FAIL defect_pin: NOT caught (the pin series never diverges?)")
@@ -494,7 +685,7 @@ def cmd_client(engine: Path | None = None) -> int:
 
     print("--- client mutation demo 2: --defect=mirror (mirror-vs-engine check catches)")
     r = run_client_gate(engine, exp_path, defect="mirror")
-    mir_fail = next((ln for ln in report(r) if ln.startswith("FAIL tx mirror")), "")
+    mir_fail = next((ln for ln in report(r) if ln.startswith("FAIL uart_demo tx mirror")), "")
     if r.returncode == 0 or not mir_fail:
         fails += 1
         print("FAIL defect_mirror: NOT caught (the mirror never disagrees?)")

@@ -3,30 +3,31 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>vibe-pio // SM0 — uart_tx</title>
+    <title>vibe-pio // SM0 — sandbox</title>
     <!--
-  vibe-pio SM0 view — the shipped client (KANBAN C18; design record:
-  mockups/sm-view.html + DESIGN-NOTES.md).
+  vibe-pio SM0 view — the shipped client (KANBAN C18/C19; the C21
+  sandbox surface; design record: mockups/sm-view.html + DESIGN-NOTES.md).
 
   The machine below is the verified RTL itself: the C17 wasm engine
   (Verilator -> em++, build/web/pio_engine.js) runs in a Web Worker
   (engine-worker.js) and feeds per-clk state snapshots back to this
   view (batch stepping; engine-driver.js is the shared client core —
-  the CI gate runs it headless against the pio_model oracle).
+  the CI gate runs it headless against the pio_model oracle, five
+  sandbox legs: the uart demo, pin drives + pattern, clkdiv≠1, join
+  overlays + RX drains, aux put/get).
 
-  The throwaway JS simulator of the mock-up is gone: pins, PC, X/Y,
-  OSR/ISR, shift counters, FIFO level, stall/delay phase all come from
-  the engine's pre-edge cycle sample (the SPEC-16-7 observable point).
-  Waveform tags and the decoded-bytes monitor are receiver-side
-  interpretation of true pin samples (C15 flavor). Editing the listing
-  is modeless and live, and committed rows re-assemble in the browser
-  (pio-asm.js, the C19 port of the C12 pio_model assembler — CI-checked
-  bit-equal against pioasm/pio_model goldens): the new build is patched
-  into the running engine one rendered clk per changed word, and a row
-  that doesn't assemble keeps the machine on the last good build (the
-  "unbuilt edits" chip names the error). The ds-field allocator is REAL
-  — it re-writes PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, so the
-  machine re-decodes the same stored bits exactly as drawn.
+  The sandbox is "everything unlocked": the full single-SM register
+  surface (the inspector panel — every datasheet field readable and
+  settable, tooltips citing SPEC-7-x), pin drives + hold latches + a
+  pattern generator on the pin strip, the RX drain, IRQ flags, real
+  CLKDIV, and the selectable monitor lens (off / square / uart on a
+  picked pin — a lens, never a judge, until levels). Boots to empty
+  memory (all-zero = the jmp-0 park); the old level-02 uart_tx lives
+  on as the loadable demo. Persistence is localStorage autosave +
+  JSON export/import of the stored-program format (32 words + config
+  overlay), plus copy-as-canonical-listing via the in-browser
+  assembler (pio-asm.js, the C19 port — CI-checked bit-equal against
+  pio_model).
 
   Legend: amber = control · green = data · cyan = config/wiring ·
   red = stall · gray = idle. Serve from the repo root (web/serve.py)
@@ -37,13 +38,49 @@
   <body>
     <header>
       <div class="brand">vibe<em>-</em>pio</div>
-      <div class="lvl">
-        SM0 · <b>LEVEL 02 “IDLE HANDS”</b><span class="tail"> · uart_tx 8N1 · 8 cyc/bit</span>
-      </div>
-      <span class="cfgtag" title="config · clock divider (abstracted at game scale)"
+      <div class="lvl">SM0 · <b>SANDBOX</b><span class="tail"> · all features unlocked</span></div>
+      <span
+        class="cfgtag"
+        id="clkdivtag"
+        title="config · SM0_CLKDIV — the real divider (SPEC-7-14); set it in the inspector"
         >clkdiv ÷1.0</span
       >
       <div class="spacer"></div>
+      <button
+        type="button"
+        id="bempty"
+        class="mini"
+        title="reload empty memory — all-zero is the jmp-0 park"
+      >
+        ␀ EMPTY
+      </button>
+      <button
+        type="button"
+        id="bdemo"
+        class="mini"
+        title="load the uart_tx demo program + config (the old level 02)"
+      >
+        ▶ DEMO
+      </button>
+      <button
+        type="button"
+        id="bexport"
+        class="mini"
+        title="download the stored program (32 words + config overlay) as JSON"
+      >
+        ⇩ JSON
+      </button>
+      <label class="mini imp" title="import a stored-program JSON"
+        >⇧ IMPORT<input type="file" id="impfile" accept=".json,application/json" hidden></label
+      >
+      <button
+        type="button"
+        id="bcopy"
+        class="mini"
+        title="copy the program as a canonical pioasm listing"
+      >
+        ⧉ LISTING
+      </button>
       <div class="cyc">CYCLE <b id="cyc">0</b></div>
       <div class="ctrl">
         <button type="button" id="breset" title="reset SM (0)">⟲</button>
@@ -58,19 +95,27 @@
       </div>
     </header>
 
+    <!-- ============ pin I/O strip: drives, hold latches, pattern ============ -->
+    <div id="pinstrip">
+      <span class="pslabel"
+        >pins · click cycles the drive latch <b>Z→1→0</b> · cyan = driven · ▲ = engine output</span
+      >
+      <div id="pincells"></div>
+    </div>
+
     <main>
       <!-- ================= program ================= -->
       <section class="panel" id="program" style="display:flex;flex-direction:column">
         <div class="ptitle">
           program memory · 32 × 16b
           <span class="aux"
-            >canonical C12 · <b id="usedct">4/32</b> used · click a row · Tab crosses
+            >canonical C12 · <b id="usedct">0/32</b> used · click a row · Tab crosses
             ins/side/delay</span
           >
         </div>
         <div
           id="dsalloc"
-          title="the ds field (bits 12:8) is one shared budget: side-set bits steal delay range. This allocation is the .side_set directive, program-wide."
+          title="the ds field (bits 12:8) is one shared budget: side-set bits steal delay range. This allocation is PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, program-wide (SPEC-4-1..3)."
         >
           <div class="dsrow1">
             <span>ds 5b</span>
@@ -79,8 +124,8 @@
             <button type="button" id="ssplus" title="more side bits → less delay range">+</button>
             <label
               class="opttgl"
-              title="OPT: an enable bit so instructions may skip the side-set (out/jmp here rely on it)"
-              ><input type="checkbox" id="ssopt" checked>opt</label
+              title="OPT: an enable bit so instructions may skip the side-set (SPEC-4-2)"
+              ><input type="checkbox" id="ssopt">opt</label
             >
           </div>
           <div id="dsinfo"></div>
@@ -111,7 +156,7 @@
           </div>
         </div>
         <div id="progfoot">
-          <span>words <b id="wordsct">4</b></span><span>free <b id="freect">28</b></span>
+          <span>words <b id="wordsct">0</b></span><span>free <b id="freect">32</b></span>
           <span
             class="chip unbuilt"
             id="unbuilt"
@@ -127,7 +172,18 @@
         <div class="ptitle">
           execute
           <span class="aux" id="mon"
-            >MONITOR uart_rx L2 · decoded <b id="monbuf"></b> <span id="moncnt"></span></span
+            >MONITOR lens
+            <select
+              id="lensmode"
+              title="the receiver monitor is a lens over the picked pin — a lens, never a judge, until levels"
+            >
+              <option value="off" selected>off</option>
+              <option value="square">square</option>
+              <option value="uart">uart 8N1</option>
+            </select>
+            · pin
+            <select id="lenspin" title="the lens/waveform target pin"></select>
+            · decoded <b id="monbuf"></b> <span id="moncnt"></span></span
           >
         </div>
         <div id="execbody">
@@ -146,15 +202,18 @@
           <div id="fmcells"></div>
         </div>
         <div class="ptitle" style="border-top:1px solid var(--line)">
-          gpio0 · uart tx line
-          <span class="cfgtag" title="config · OUT mapping: out pins drives gpio0, 1 pin"
-            >out gpio0·1</span
+          <span id="wavelabel">gpio0</span>
+          <span class="cfgtag" id="outmaptag" title="config · OUT mapping (SPEC-7-26)"
+            >out gpio0·0</span
           >
           <span
             class="cfgtag"
             id="sidetag"
             title="config · SIDESET allocation shown in the program panel"
-            >side gpio0·1+opt</span
+            >side —</span
+          >
+          <span class="cfgtag" id="inmaptag" title="config · IN mapping (SPEC-7-26)"
+            >in gpio0·32</span
           >
           <span class="aux">window <span id="wavewin">128</span> cycles · 8 cyc/grid</span>
         </div>
@@ -165,7 +224,28 @@
           <input type="text" id="feedtxt" value="PIO!" maxlength="32" spellcheck="false">
           <button type="button" id="bfeed">ENQUEUE</button>
           <button type="button" id="bfeed55" title="one 0x55 word">0x55</button>
-          <span class="note">TX FIFO is 8 deep (join TX) — overflow is refused</span>
+          <span class="note" id="txnote">TX FIFO 4 deep — overflow is refused</span>
+        </div>
+        <div id="pattern">
+          <span class="ptitle" style="border:none;padding:0;background:none">pattern →</span>
+          <select
+            id="patmode"
+            title="the deterministic pattern generator — square period or a pasted bitstream, one pin, pure function of clks since arming"
+          >
+            <option value="off" selected>off</option>
+            <option value="square">square</option>
+            <option value="bits">bits</option>
+          </select>
+          <label id="patperwrap" hidden
+            >period <input type="number" id="patperiod" value="16" min="2" max="1024" step="2">
+          </label>
+          <label id="patbitswrap" hidden
+            >bits
+            <input type="text" id="patbits" value="01000011" maxlength="256" spellcheck="false">
+          </label>
+          <span>on pin</span>
+          <select id="patpin"></select>
+          <span class="note">drives gpio_in on step clks; reg-op clks hold the last level</span>
         </div>
       </section>
 
@@ -181,22 +261,35 @@
           </div>
         </div>
 
+        <div id="irqpanel">
+          <div class="ptitle">
+            irq
+            <span class="aux"
+              >INTR <b id="intrhex">0x00F0</b>
+              <span
+                class="cfgtx"
+                title="config · the composed INTR (SPEC-7-12): SM flags 15:8, TXNFULL 7:4, RXNEMPTY 3:0"
+                >readback view</span
+              ></span
+            >
+          </div>
+          <div id="irqlamps"></div>
+        </div>
+
         <div id="fifo">
           <div class="ptitle">
             tx fifo
             <span class="aux"
-              ><span
-                class="cfgtx on"
-                title="config · FIFO JOIN TX: the RX storage is borrowed as extra TX depth"
-                >join TX</span
+              ><span id="joinchip" class="cfgtx" title="config · the FIFO join mode (SPEC-6-2/3)"
+                >split</span
               >
-              · 8 deep</span
+              · <b id="txdepth">4</b> deep</span
             >
           </div>
           <div id="fifobody">
             <div id="fslots"></div>
             <div id="fifometa">
-              <div id="fifolvltxt">LEVEL <b id="fifolvl">4</b>/8</div>
+              <div id="fifolvltxt">LEVEL <b id="fifolvl">0</b>/<span id="txdepth2">4</span></div>
               <div id="fifolvlbar"><div id="fifolvlfill"></div></div>
               <div id="fifostall">EMPTY · SM STALLED</div>
             </div>
@@ -217,13 +310,16 @@
           <div class="bits" id="osrbits"></div>
           <div class="shiftviz">
             <div class="sv-arrow r" style="flex:1"></div>
-            <span class="sv-end">out → pins</span>
+            <span class="sv-end" id="osrdir">out → pins</span>
           </div>
           <div class="shbar"><div class="shfill" id="osrfill"></div></div>
           <div class="shiftnote">
             <span>shift <span id="osrcnt" style="color:var(--txt)">0</span>/32</span>
-            <span class="cfgtx" title="config · autopull reloads OSR from TX FIFO at threshold"
-              >autopull — thr 32</span
+            <span
+              class="cfgtx"
+              id="autopulltag"
+              title="config · autopull reloads OSR from TX FIFO at threshold (SPEC-5-8)"
+              >autopull — off</span
             >
             <span class="flag" id="osre" title="osr_cnt ≥ pull threshold">OSRE</span>
           </div>
@@ -231,41 +327,59 @@
 
         <div id="isr">
           <div class="ptitle">
-            isr · in shift register <span class="aux">idle — no IN in this program</span>
+            isr · in shift register <span class="aux" id="isrnote">idle</span>
           </div>
           <div class="bits" id="isrbits"></div>
           <div class="shiftviz">
-            <span class="sv-end">pins → in</span>
+            <span class="sv-end" id="isrdir">pins → in</span>
             <div class="sv-arrow r"></div>
             <span class="sv-end">push → rx</span>
           </div>
           <div class="shbar"><div class="shfill" id="isrfill"></div></div>
           <div class="shiftnote">
-            <span>shift 0/32</span>
-            <span class="cfgtx" title="config · autopush writes ISR to RX FIFO at threshold"
-              >autopush — thr 32</span
+            <span>shift <b id="isrcnt">0</b>/32</span>
+            <span
+              class="cfgtx"
+              id="autopushtag"
+              title="config · autopush writes ISR to RX FIFO at threshold (SPEC-5-9)"
+              >autopush — off</span
             >
-            <span class="flag">ISR Full</span>
+            <span class="flag" id="isrf">ISR Full</span>
           </div>
         </div>
 
         <div id="rxfifo">
           <div class="ptitle">
             rx fifo
+            <span class="aux"><b id="rxdepth">4</b> deep · contents learned only by draining</span>
+          </div>
+          <div id="rxbody">
+            <div id="rxmeta">
+              <div id="rxlvltxt">LEVEL <b id="rxlvl">0</b>/<span id="rxdepth2">4</span></div>
+              <div id="rxlvlbar"><div id="rxlvlfill"></div></div>
+              <button
+                type="button"
+                id="bdrain"
+                title="read RXF0 once — a queued reg read, one rendered clk"
+              >
+                DRAIN 1
+              </button>
+              <button type="button" id="bdrainall" title="drain every mirrored word">
+                DRAIN ALL
+              </button>
+            </div>
+            <div id="rxlog"><span class="note">drained words appear here</span></div>
+          </div>
+        </div>
+
+        <div id="inspector">
+          <div class="ptitle">
+            register inspector
             <span class="aux"
-              ><span
-                class="cfgtx on"
-                title="config · its 4 slots live upstairs, borrowed into the TX FIFO"
-                >joined → tx</span
-              ></span
+              >datasheet map · every field readable and settable · <b id="inspstate">live</b></span
             >
           </div>
-          <div id="rxrow">
-            <div class="rxslot" title="borrowed into TX slot 4"></div>
-            <div class="rxslot" title="borrowed into TX slot 5"></div>
-            <div class="rxslot" title="borrowed into TX slot 6"></div>
-            <div class="rxslot" title="borrowed into TX slot 7"></div>
-          </div>
+          <div id="inspbody"></div>
         </div>
       </section>
     </main>
@@ -281,7 +395,8 @@
       >
       <span>keys: SPACE cycle · I insn · R run · 0 reset — outside the editor</span>
       <span class="right"
-        >engine: verified RTL (verilator→wasm) · oracle: pio_model (CI cross-check)</span
+        >engine: verified RTL (verilator→wasm) · oracle: pio_model (CI cross-check) · autosave:
+        <b id="savestate">on</b></span
       >
     </footer>
 

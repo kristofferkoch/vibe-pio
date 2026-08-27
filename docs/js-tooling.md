@@ -10,7 +10,7 @@ behavior change.
 
 | Path | What |
 |---|---|
-| `web/engine-driver.js` | the C18 client core — the same module runs in the browser worker, under the `make web` client gate (vs the pio_model oracle), and under `node --test` against the fake engine |
+| `web/engine-driver.js` | the C18/C21 client core (the sandbox driver: overlay→reg-write mapping, pin drives + pattern generator, RX drain + mirrors, the monitor lens, the stored-program serializer) — the same module runs in the browser worker, under the `make web` client gate's five model-oracle legs, and under `node --test` against the fake engine |
 | `web/engine-worker.js` | the C18 Web Worker transport around the driver |
 | `web/pio-asm.js` | the C19 in-browser assembler/disassembler — a JS port of the C12 pio_model asm/disasm/encoding trio, anchored to that oracle by golden bit-vectors + the 65536-word canonical round-trip (never to itself) |
 | `web/sm-view.js` | the view's DOM glue (**extract-on-touch**: lint/format always; logic migrates into require-able tested modules only as it is touched) — C19 made the listing itself assembler-derived: rows disassemble from the loaded words and committed edits re-assemble through `pio-asm.js` into a live imem patch |
@@ -94,12 +94,20 @@ against the oracle gate. Prefer that route over blanket `--unsafe`.
 - **Unit suite** (`web/tests/`): fast and hermetic — `fake-engine.js`
   implements the wasm ABI (HEAPU8 + `_pio_*` exports, the little-endian
   PioCycle struct) over a plain ArrayBuffer, with scripted per-clk
-  effects. The suite pins the driver's logic: the exact load timeline
-  (the reg-bus sequence `webbuild.py::_client_level_sched` mirrors),
-  the struct decode (including the 64-bit clk), the receiver monitor
-  (frame tags, decode, back-to-back re-arm), the TX mirror and
-  refusal, `displayPc`/phase derivation, `stepInsn`, flashes, the C19
-  `setProgram` patch path, and the two defect hooks.
+  effects. `engine-driver.test.js` pins the C18 core: the exact demo
+  load timeline (the reg-bus sequence `webbuild.py`'s client-gate legs
+  mirror clk for clk), the struct decode (including the 64-bit clk),
+  the receiver monitor (frame tags, decode, back-to-back re-arm), the
+  TX mirror and refusal, `displayPc`/phase derivation, `stepInsn`,
+  flashes, the C19 `setProgram` patch path, and the two C18 defect
+  hooks. `sandbox.test.js` pins the C21 surface: the overlay composes
+  bit-exact with the stim.py builders (incl. the reset words), the
+  load timelines, queued overlay edits with the SPEC-6-2 settle clk
+  and the FIFO-mirror flush on fifo-mode changes, the drive/pattern
+  gpio composition (sticky on op clks), the RX drain + count mirror,
+  the lens (uart/square verdicts, the replay on pin change), the
+  stored-program round-trip, and the four C21 defect hooks (rx / lens
+  / pattern / overlay).
 - **The assembler suite is oracle-anchored, never self-anchored**
   (C19): a port can be *consistently* wrong (assemble and disassemble
   agreeing with each other but not with the hardware), so

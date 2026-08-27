@@ -112,44 +112,22 @@ autosave + JSON export/import** of the stored-program format
 plus copy-as-canonical-listing via pio-asm. Sandbox boots to **empty
 memory** (all-zero = the jmp-0 park, the DESIGN-NOTES lesson), the
 old level-02 uart_tx fixture demoted to a loadable demo (promotion
-default, re-decidable at C21 kickoff). Dependency order:
+default, kept at C21 kickoff). Dependency order:
 C21 → C22 ∥ C23; C24 after C21 + C23. Tooling/web cards state their
 own done-when gates below; the RTL-card template does not apply
-(the RTL is already multi-SM complete).
-
-### C21 — sandbox: the full single-SM feature surface
-
-- The driver's LEVEL fixture is retired: `VibeDriver` loads a
-  sandbox state object (words + config overlay covering PINCTRL/
-  EXECCTRL/SHIFTCTRL/CLKDIV incl. join/aux bits — every field the
-  inspector shows) as the same one-reg-write-per-rendered-clk
-  timeline, and post-load field edits land as queued reg writes
-  (the feed discipline, SPEC-6-2 settle clk included). New driver
-  faces: per-pin drive ops + hold latches + a deterministic pattern
-  generator (square period / pasted bitstream, one pin); RX drain
-  (queued RXF0 reads) with an RX contents mirror bookkept against
-  the engine's rx_push strobes (the TX-mirror precedent); IRQ flags
-  + INTR readback view.
-- UI: the register inspector panel (datasheet map: block regs +
-  SM0 CLKDIV/PINCTRL/EXECCTRL/SHIFTCTRL/SM0_INSTR + TXF/RXF/FLEVEL —
-  every field readable and settable, field tooltips citing SPEC-7-x;
-  the universal "everything unlocked" guarantee); a pin I/O strip
-  (drive, hold, pattern source per pin); RX panel; clkdiv header
-  chip; monitor lens selector (off default) with target-pin pick;
-  empty boot + demo loads. Persistence: the JSON serializer is pure
-  driver code; localStorage/export/import glue lives in sm-view.js.
-- Done when: `make js` covers the new driver logic against the fake
-  engine (pattern-gen determinism, RX mirror vs rx_level, lens
-  verdicts on canned pin series, overlay→reg-write mapping, JSON
-  round-trip) with red/green defect hooks (rx / lens / pattern /
-  overlay — same register as the C18 pin/mirror hooks); `make web`'s
-  client gate grows model-oracle sandbox legs — pio-stim schedules
-  using pin drives (`set_gpio`), clkdiv≠1, join/aux overlays and
-  RXF0 drains must yield pin-identical samples + FLEVEL + read
-  rdata vs pio_model, with the lens decoding checked over that
-  oracle series (the C18 'PIO!' precedent); the browser session
-  plays it (fun-gate flavor: every feature reachable without
-  opening a devtool).
+(the RTL is already multi-SM complete). **C21 (sandbox: the full
+single-SM feature surface) is done** — the driver's LEVEL fixture is
+retired (sandbox state objects + the config overlay incl. join/aux
+bits, queued field edits with the SPEC-6-2 settle clk and the
+FIFO-mirror flush), per-pin drive latches + the deterministic
+pattern generator, the RX drain with its count mirror, IRQ flags +
+the INTR readback view, the selectable monitor lens (off/square/
+uart, replayed on pin change), the register inspector panel, the
+pin I/O strip, empty boot + the demoted demo, localStorage autosave
++ JSON export/import + copy-as-listing; five model-oracle client
+legs (uart demo / pin drives + pattern / clkdiv≠1 / join + RXF0
+drains / aux put-get) and the rx/lens/pattern/overlay red-injection
+hooks live in `make web` / `make js`.
 
 ### C22 — drawn config (the DESIGN-NOTES grammar)
 

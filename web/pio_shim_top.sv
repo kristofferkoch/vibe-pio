@@ -140,13 +140,22 @@ module pio_shim_top (
   logic [15:0] sh_imem [0:31];  // bus-written instruction memory (SPEC-7-10)
   logic [3:0]  sh_en;           // CTRL.SM_ENABLE storage (SPEC-7-2)
   logic        started_r;       // >= 1 clk seen (i3 only asserts post-edge)
+  // i3 may only judge observables once at least one rst edge of the
+  // CURRENT reset has retired: on the second-and-later engine resets the
+  // pads still carry the previous run's driven levels at the first rst
+  // edge (SPEC-10-1 clears them at that edge — found by the C21 client
+  // gate's multi-leg run: uart_demo parks gpio_out=1, pin_echo's load
+  // tripped the invariant on pre-reset values).
+  logic        rst_seen_r;
 
   always_ff @(posedge clk) begin
     if (rst) begin
       for (int i = 0; i < 32; i++) sh_imem[i] <= 16'd0;
       sh_en      <= 4'd0;
       started_r  <= 1'b1;
+      rst_seen_r <= 1'b1;
     end else begin
+      rst_seen_r <= 1'b0;
 `ifdef PIO_DEFECT_INVARIANT
       // red-injection: word 0 drops out of the shadow (demo leg 2)
       if (reg_write && (reg_addr[8:2] >= 7'd19) && (reg_addr[8:2] <= 7'd49))
@@ -176,8 +185,10 @@ module pio_shim_top (
       endcase
       // i2 (SPEC-7-2)
       assert (dbg_sm_en == sh_en) else $error("i2 SPEC-7-2 SM_ENABLE");
-    end else if (started_r) begin
-      // i3 (reset contract)
+    end else if (started_r && rst_seen_r) begin
+      // i3 (reset contract): from the second rst edge on, every
+      // pre-edge observable is a reset value (the first edge retired
+      // the previous run's pads — CC-1/SPEC-10-1).
       assert ((gpio_out == 32'd0) && (gpio_oe == 32'd0) && (intr == 16'h00f0))
         else $error("i3 reset observables");
     end

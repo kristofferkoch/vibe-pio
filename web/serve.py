@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the shipped C18 client from the repo root, Cache-Control:
+"""Serve the shipped client from the repo root, Cache-Control:
 no-store (the mockups/serve.py lesson — a heuristically cached copy
 once produced a stale-UI false bug report). The client needs the repo
 root as base so the wasm engine resolves at build/web/pio_engine.js:
@@ -8,6 +8,7 @@ root as base so the wasm engine resolves at build/web/pio_engine.js:
 
 Requires `make web` (or tools/webbuild.py --build) to have produced
 build/web/pio_engine.js first."""
+
 import functools
 import http.server
 import os

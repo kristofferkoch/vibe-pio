@@ -51,8 +51,11 @@
 #            trace gate (model <-> iverilog <-> verilator-wasm on the
 #            conformance matrix + fuzz corpus), the C18 client gate
 #            (web/engine-driver.js — the exact client core the browser
-#            worker runs — checked against the pio_model oracle: pin
-#            series, FLEVEL read, decoded monitor, TX mirror), and the
+#            worker runs — checked against the pio_model oracle over
+#            five sandbox legs: the uart demo, pin drives + pattern
+#            generator, clkdiv!=1, join/aux overlays + RXF0 drains,
+#            aux put/get; full gpio word series + reg-read rdata), and
+#            the
 #            red/green mutation demos for the shim defects and the two
 #            client-side defect hooks (--defect=pin/--defect=mirror).
 #            Needs verilator+em++/node on PATH or the vibe-pio

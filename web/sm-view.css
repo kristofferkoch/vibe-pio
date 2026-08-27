@@ -1130,3 +1130,302 @@ button:disabled:hover {
 #boot .lamp {
   animation: blink 1s steps(2) infinite;
 }
+
+/* ===================== C21: the sandbox surface ======================
+   Pin strip (drives/holds/pattern), pattern controls, lens selects,
+   IRQ lamps + INTR readback, the RX drain panel, and the register
+   inspector. Same palette: amber control · green data · cyan config ·
+   red stall · gray idle. */
+body {
+  grid-template-rows: auto auto minmax(0, 1fr) 30px;
+}
+header .mini {
+  background: var(--panel2);
+  color: var(--txt);
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+header .mini:hover {
+  border-color: var(--cfg);
+  color: var(--cfg);
+}
+header .mini.imp {
+  display: inline-block;
+}
+#pinstrip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+#pinstrip .pslabel {
+  color: var(--dim);
+  font-size: 10px;
+  white-space: nowrap;
+}
+#pincells {
+  display: flex;
+  gap: 3px;
+}
+.pcell {
+  width: 34px;
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  background: var(--panel2);
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  padding: 1px 0 2px;
+}
+.pcell .pn {
+  display: block;
+  font-size: 9px;
+  color: var(--dim);
+}
+.pcell .pl {
+  display: block;
+  font-size: 12px;
+  color: var(--dim);
+}
+.pcell.hi .pl {
+  color: var(--green);
+}
+.pcell.oe {
+  border-color: var(--amber-dim);
+}
+.pcell.oe .pm {
+  color: var(--amber);
+}
+.pcell.dh,
+.pcell.dl {
+  border-color: var(--cfg-dim);
+}
+.pcell.dh .pl,
+.pcell.dl .pl {
+  color: var(--cfg);
+}
+.pcell.pat {
+  box-shadow: 0 0 0 1px var(--cfg-dim) inset;
+}
+.pcell.pat .pm {
+  color: var(--cfg);
+}
+.pcell.sel {
+  border-color: var(--amber);
+}
+#pattern {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--line);
+}
+#pattern input[type="number"] {
+  width: 58px;
+}
+#pattern input[type="text"] {
+  width: 170px;
+}
+#pattern .note {
+  color: var(--dimmer);
+}
+.aux select {
+  background: var(--panel2);
+  color: var(--cfg);
+  border: 1px solid var(--line2);
+  border-radius: 3px;
+  font: inherit;
+  font-size: 11px;
+}
+#irqpanel .ptitle b {
+  color: var(--cfg);
+}
+#irqlamps {
+  display: flex;
+  gap: 3px;
+  padding: 4px 2px 6px;
+  flex-wrap: wrap;
+}
+.ilamp {
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  color: var(--dim);
+  cursor: pointer;
+}
+.ilamp.on {
+  color: var(--red);
+  border-color: var(--red);
+}
+.ilamp.sub {
+  cursor: default;
+  color: var(--dimmer);
+}
+.ilamp.sub.on {
+  color: var(--green);
+  border-color: var(--green-dim);
+}
+#rxbody {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+#rxmeta {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto auto;
+  gap: 2px 8px;
+  align-items: center;
+}
+#rxlvltxt {
+  font-size: 10px;
+  color: var(--dim);
+}
+#rxlvltxt b {
+  color: var(--green);
+}
+#rxlvlbar {
+  width: 8px;
+  grid-row: 1 / 4;
+  grid-column: 2;
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+#rxlvlfill {
+  width: 100%;
+  background: var(--green-dim);
+}
+#rxmeta button {
+  font: inherit;
+  font-size: 10px;
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  color: var(--txt);
+  border-radius: 4px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+#rxmeta button:hover:not(:disabled) {
+  border-color: var(--cfg);
+  color: var(--cfg);
+}
+#rxmeta button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+#rxlog {
+  flex: 1;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  max-height: 64px;
+  overflow-y: auto;
+}
+#rxlog .rxw {
+  font-size: 10px;
+  color: var(--green);
+  border: 1px solid var(--green-dim);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+#rxlog .rxw i {
+  color: var(--dim);
+  font-style: normal;
+}
+#inspector {
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+}
+#inspbody {
+  padding: 4px 8px 10px;
+}
+.igroup {
+  color: var(--cfg);
+  font-size: 10px;
+  margin: 8px 0 3px;
+  border-bottom: 1px dashed var(--cfg-dim);
+}
+.ireg {
+  margin: 4px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.irn {
+  color: var(--bright);
+  font-size: 11px;
+}
+.ira {
+  color: var(--addr);
+  font-size: 10px;
+}
+.iro {
+  color: var(--green);
+  font-size: 10px;
+}
+.ifields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  width: 100%;
+}
+.ifield {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  cursor: help;
+}
+.ifield .ifn {
+  color: var(--txt);
+}
+.ifield .ifb {
+  color: var(--dim);
+}
+.ifield input[type="number"] {
+  width: 52px;
+}
+.ifield input[type="checkbox"] {
+  accent-color: var(--cfg);
+}
+input.ihex {
+  width: 90px;
+}
+.ipulse {
+  font: inherit;
+  font-size: 9px;
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  color: var(--txt);
+  border-radius: 3px;
+  padding: 0 5px;
+  cursor: pointer;
+}
+.ipulse:hover {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+#inspector .ptitle {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+#regs {
+  grid-template-rows: auto auto 1fr auto auto auto auto;
+  overflow-y: auto;
+}

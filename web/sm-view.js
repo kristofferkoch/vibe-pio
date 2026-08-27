@@ -1,64 +1,102 @@
-// sm-view.js — the C18 SM view client logic (KANBAN C18; re-assembly
-// on edit landed with C19).
+// sm-view.js — the C21 sandbox SM view client logic (KANBAN C18/C19/C21).
 //
-// The mock-up's hand-rolled simulator is deleted: every machine value
-// rendered here (pins, PC, phase, X/Y, OSR/ISR, counters, FIFO level)
-// comes from the wasm engine's per-clk state snapshot, posted by the
-// Web Worker (engine-worker.js / engine-driver.js — the CI-gated core).
-// What stays local is presentation: the canonical listing display
-// (C19: derived by disassembling the loaded words through pio-asm.js,
-// and committed edits re-assemble — the new build is patched into the
-// live engine one rendered clk per changed word; a row that doesn't
-// assemble marks the listing "unbuilt"), the ds-field allocator display
-// re-decode (the machine side of the allocation is a real
-// PINCTRL/EXECCTRL write), and the waveform/tag/monitor rendering of
-// true pin samples.
+// Every machine value rendered here (pins, PC, phase, X/Y, OSR/ISR,
+// counters, FIFO levels, IRQ flags) comes from the wasm engine's
+// per-clk state snapshot, posted by the Web Worker (engine-worker.js /
+// engine-driver.js — the CI-gated core). What stays local is
+// presentation: the canonical listing display (C19: derived by
+// disassembling the loaded words through pio-asm.js under the CURRENT
+// ds-field allocation, and committed edits re-assemble under it — the
+// new build is patched into the live engine one rendered clk per
+// changed word), the register inspector (the datasheet map — every
+// field readable and settable, tooltips citing SPEC-7-x; settable
+// config fields go through the driver's overlay as queued reg writes),
+// the pin I/O strip (drive latches + the pattern generator + engine
+// output ownership), the RX drain panel, the monitor lens selector,
+// and the persistence glue (localStorage autosave + JSON export/import
+// of the stored-program format; the serializer itself is pure driver
+// code, CI-checked).
 'use strict';
 
 const $ = (id) => document.getElementById(id); // declared first: the transport
 // wiring below uses it at top level
 
-// ---- the program (canonical C12 listing of the level fixture) ----------
-// The words are the single source (VibeDriver.LEVEL); the listing text
-// is their canonical disassembly through pio-asm.js under the authored
-// .side_set — the same module the editor re-assembles committed rows
-// with (C19). No labels: jump targets are drawn as margin arcs (like
-// the wrap path) — the address is the only stored truth. side/delay
-// re-decode from the ds field under the allocator (SPEC-4-1..3).
-const LEVEL = VibeDriver.LEVEL;
-// the authored .side_set context rows assemble under (not the slider:
-// the listing is source text, the allocator is runtime config)
-const ASM_PROG = PioAsm.createProgram('level02');
-ASM_PROG.sidesetBits = LEVEL.sideBits;
-ASM_PROG.sidesetOpt = LEVEL.opt;
-const ssCntOwn = () => LEVEL.sideBits + (LEVEL.opt ? 1 : 0);
-const ssEnOwn = () => LEVEL.sideBits > 0 && !!LEVEL.opt;
+// ================= the sandbox state (the view's copy) ==================
+// Boot: localStorage autosave if present, else EMPTY (all-zero memory —
+// the jmp-0 park). The old level-02 uart_tx is the loadable demo.
+const SAVE_KEY = 'vibe-pio-sandbox';
+const VD = VibeDriver;
 
-let BUILT = LEVEL.words.slice(); // the image the engine runs (C19 patch target)
-
-function wordsToRows(words) {
-  // canonical listing text of a word image under the authored .side_set
-  return words.map((w) => PioAsm.disassemble(w, ssEnOwn(), ssCntOwn()));
+function savedState() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    return VD.parseState(JSON.parse(raw));
+  } catch (e) {
+    console.warn('autosave unreadable — booting empty', e);
+    return null;
+  }
 }
 
-const ROWS0 = wordsToRows(BUILT);
-let PROG = BUILT.map((w, i) => ({ w, ...parseRow(ROWS0[i]) }));
+let curState = savedState() || VD.newState(); // the view's stored-program copy
 
-const WRAP_TARGET = LEVEL.wrapTarget,
-  WRAP_LAST = LEVEL.wrapLast;
-const FIFODEPTH = LEVEL.fifoDepth,
-  WIN = 128;
+// The authored .side_set context the listing assembles/disassembles
+// under: it FOLLOWS the current overlay split (PINCTRL.SIDESET_COUNT +
+// EXECCTRL.SIDE_EN — the ds slider and the inspector edit the same
+// fields), so committed rows and the machine's re-decode always agree.
+const ASM_PROG = PioAsm.createProgram('sandbox');
+let BUILT = curState.words.slice(); // the image the engine runs (C19 patch target)
+let lensPin = 0; // wave + lens target (the lens selector moves it)
 
-// ds-field allocation (the .side_set directive): side data bits + optional
-// enable bit share 5 bits with delay. max delay = 2^(5-total) - 1.
-// The stored program is just 16-bit words — change the allocation and the
-// SAME bits re-split (split_sideset, encoding.py / SPEC-4-1..3). The
-// listing honors the re-decode AND the machine genuinely re-decodes too:
-// the worker re-writes PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN.
-const ALLOC = { sideBits: LEVEL.sideBits, opt: LEVEL.opt };
-const PROGRAM_OWN = { sideBits: LEVEL.sideBits, opt: LEVEL.opt }; // the authored .side_set
-const dsTotal = () => ALLOC.sideBits + (ALLOC.opt ? 1 : 0);
+// ds-field allocation, derived from the overlay (SPEC-4-1..3)
+const ssCntOf = (ov) => ov.pinctrl.ssCnt;
+const sideEnOf = (ov) => ov.execctrl.sideEn;
+const allocOf = (ov) => {
+  const cnt = ssCntOf(ov);
+  return { sideBits: Math.max(0, cnt - (sideEnOf(ov) ? 1 : 0)), opt: sideEnOf(ov) && cnt > 0 };
+};
+const dsTotal = () => {
+  const a = allocOf(OV);
+  return a.sideBits + (a.opt ? 1 : 0);
+};
 const maxDelay = () => (1 << (5 - dsTotal())) - 1;
+
+// the overlay mirror (kept in step with every worker 'state' reply —
+// the driver's ov is the truth; this local copy renders between clks)
+let OV = {
+  clkdiv: { ...curState.clkdiv },
+  pinctrl: { ...curState.pinctrl },
+  execctrl: { ...curState.execctrl },
+  shiftctrl: { ...curState.shiftctrl },
+};
+
+function wordsToRows(words) {
+  const a = allocOf(OV);
+  const ssCnt = a.sideBits + (a.opt ? 1 : 0);
+  // a 0 word is untouched memory (the jmp-0 park) — rendered as empty.
+  // A word whose ds bits alias under the CURRENT split (e.g. a delay
+  // budget authored under fewer side bits) has no canonical listing —
+  // the marker row shows the raw bits and re-assembles to them (the
+  // stored words are the truth; the listing is a view).
+  return words.map((w) => {
+    if (!w) return '';
+    try {
+      return PioAsm.disassemble(w, a.opt && a.sideBits > 0, ssCnt);
+    } catch {
+      return `«${w.toString(16).padStart(4, '0').toUpperCase()}»`;
+    }
+  });
+}
+const RAW_ROW = /^«([0-9A-F]{4})»$/;
+function syncAsmContext() {
+  const a = allocOf(OV);
+  ASM_PROG.sidesetBits = a.sideBits;
+  ASM_PROG.sidesetOpt = a.opt;
+}
+
+const WIN = 128;
+
+let PROG = BUILT.map((w, i) => ({ w, ...parseRow(wordsToRows(BUILT)[i]) }));
 
 function splitSideset(ds, side_en, sideset_count) {
   const total = sideset_count & 7;
@@ -73,12 +111,10 @@ function splitSideset(ds, side_en, sideset_count) {
 // per-instruction effective {delay, side} under the CURRENT allocation
 let EFF = [];
 function rebuildEff() {
+  const a = allocOf(OV);
+  const ssCnt = a.sideBits + (a.opt ? 1 : 0);
   EFF = PROG.map((p) => {
-    const [dly, valid, val] = splitSideset(
-      (p.w >> 8) & 0x1f,
-      ALLOC.opt,
-      ALLOC.sideBits + (ALLOC.opt ? 1 : 0),
-    );
+    const [dly, valid, val] = splitSideset((p.w >> 8) & 0x1f, a.opt && a.sideBits > 0, ssCnt);
     return { delay: dly, side: valid ? val : null };
   });
 }
@@ -99,14 +135,26 @@ const V = {
     isr: 0,
     osrCnt: 0,
     isrCnt: 0,
+    gpioOut: 0,
+    gpioOe: 0,
+    intr: 0x00f0,
     txLevel: 0,
     txEmpty: true,
     txFull: false,
     txWords: [],
-    monitor: { decoded: '', frameOff: null },
+    rxLevel: 0,
+    rxWords: [],
+    rxMirror: { pushes: 0, drains: 0, ok: true },
+    fifoDepths: { tx: 4, rx: 4 },
+    monitor: { decoded: '', frameOff: null, square: null },
     wave: { pins: [], tags: [], startCycle: 0 },
     flashes: {},
     refused: 0,
+    lens: { mode: 'off', pin: 0 },
+    overlay: OV,
+    drives: new Array(32).fill(null),
+    pattern: { mode: 'off', pin: 0, period: 16, bits: [0] },
+    readLog: [],
   },
   ready: false,
   inflight: false,
@@ -128,14 +176,27 @@ worker.onmessage = (e) => {
     const b = $('boot');
     if (b) b.remove();
     enableCtrls(true);
+    post({ cmd: 'load', state: curState });
     applyUrlParams();
     return;
   }
   if (m.cmd === 'state') {
     V.inflight = false;
+    const prev = OV;
     V.state = m.state;
+    OV = m.state.overlay;
+    lensPin = m.state.lens.pin;
+    syncAsmContext();
+    // the listing re-decodes when the ds split moves; the wrap arc is
+    // live config and follows WRAP_TOP/BOTTOM (both in buildProgram)
+    const splitKey = (ov) => `${ov.pinctrl.ssCnt}/${ov.execctrl.sideEn}`;
+    const wrapKey = (ov) => `${ov.execctrl.wrapTop}/${ov.execctrl.wrapBot}`;
+    if (splitKey(prev) !== splitKey(OV)) rebuildListing();
+    else if (wrapKey(prev) !== wrapKey(OV)) buildProgram();
     if (m.refused > 0) refuseFlash();
-    render(V.state);
+    if (m.json) autosave(m.json);
+    if (m.raddr !== undefined) noteRead(m.raddr, m.rdata);
+    render(m.state);
   }
 };
 worker.onerror = (ev) => {
@@ -179,14 +240,9 @@ function enableCtrls(on) {
 $('brun').onclick = run;
 $('breset').onclick = () => {
   pause();
-  post({ cmd: 'reset' }); // worker: drv.load() — the level fixture again
-  // restore the listing to the level's canonical form (the words the
-  // reload puts back into the engine)
-  ROWS.splice(0, ROWS.length, ...ORIG);
   asmErr = null;
-  BUILT = LEVEL.words.slice();
-  PROG = BUILT.map((w, i) => ({ w, ...parseRow(ROWS0[i]) }));
-  buildProgram();
+  rebuildListing(); // back to the stored program's listing
+  post({ cmd: 'reset', state: curState }); // reload the stored program
 };
 $('bstep').onclick = () => {
   pause();
@@ -237,7 +293,85 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === '0') $('breset').onclick();
 });
 
+// ---- the sandbox loads: empty boot / demo / persistence ----------------
+function loadState(st) {
+  pause();
+  curState = VD.parseState(st);
+  BUILT = curState.words.slice();
+  asmErr = null;
+  rebuildListing(); // ROWS re-derive from the loaded words
+  post({ cmd: 'load', state: curState });
+  requestAutosave();
+}
+$('bempty').onclick = () => loadState(VD.EMPTY);
+$('bdemo').onclick = () => loadState(VD.DEMO_UART_TX);
+
+function requestAutosave() {
+  post({ cmd: 'serialize' });
+}
+function autosave(json) {
+  // the serializer is pure driver code; this glue just stores it
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(json));
+    curState = VD.parseState(json); // the authoritative stored program
+    $('savestate').textContent = 'on';
+  } catch {
+    $('savestate').textContent = 'failed';
+  }
+}
+$('bexport').onclick = () => {
+  requestAutosave();
+  const blob = new Blob([JSON.stringify(curState, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'vibe-pio-program.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+$('impfile').onchange = (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  f.text().then((txt) => {
+    try {
+      loadState(VD.parseState(JSON.parse(txt)));
+    } catch (err) {
+      alert(`not a stored-program JSON: ${err.message}`);
+    }
+  });
+  e.target.value = '';
+};
+$('bcopy').onclick = () => {
+  const lines = ['.program sandbox'];
+  const a = allocOf(OV);
+  if (a.sideBits) lines.push(`.side_set ${a.sideBits}${a.opt ? ' opt' : ''}`);
+  for (let i = 0; i < 32; i++) if (BUILT[i]) lines.push(`    ${wordsToRows(BUILT)[i]}`);
+  const txt = `${lines.join('\n')}\n`;
+  navigator.clipboard?.writeText(txt).then(
+    () => {
+      $('bcopy').textContent = '✓ LISTING';
+      setTimeout(() => ($('bcopy').textContent = '⧉ LISTING'), 900);
+    },
+    () => {},
+  );
+};
+
+// ---- overlay edits (the inspector + the ds slider ride these) ----------
+function ovEdit(group, field, value) {
+  curState[group][field] = value; // the view's stored-program copy
+  post({ cmd: 'overlay', group, field, value });
+  requestAutosave();
+}
+
 // ================= rendering (all machine values from state) ==========
+const ROWS = [];
+function rebuildListing() {
+  // the listing re-decodes under the current allocation (SPEC-4-1..3)
+  const rows = wordsToRows(BUILT);
+  ROWS.splice(0, ROWS.length, ...rows);
+  PROG = BUILT.map((w, i) => ({ w, ...parseRow(rows[i]) }));
+  buildProgram();
+}
+
 function buildProgram() {
   rebuildEff();
   const host = $('progrows');
@@ -254,17 +388,15 @@ function buildProgram() {
       continue;
     }
     const p = parseRow(ROWS[i]);
-    const orig = i < PROG.length && ROWS[i] === ORIG[i];
-    const eff = orig ? EFF[i] : null; // the slider re-decodes virgin words only
-    const side = eff ? eff.side : p.side,
-      dly = eff ? eff.delay : p.delay;
+    const eff = EFF[i];
+    const side = eff.side,
+      dly = eff.delay;
     const sideHtml =
       side == null
-        ? `<span title="${ALLOC.opt ? 'opt enable bit is 0 — no side applied' : 'no side-set allocated (ds is all delay)'}">—</span>`
+        ? `<span title="${allocOf(OV).opt ? 'opt enable bit is 0 — no side applied' : 'no side-set allocated (ds is all delay)'}">—</span>`
         : `<span>side <b>${side}</b></span>`;
     const dlyHtml = dly ? `<span>[${dly}]</span>` : `<span title="delay 0">—</span>`;
-    r.title =
-      (orig ? `0x${PROG[i].w.toString(16).padStart(4, '0').toUpperCase()} · ` : '') + ROWS[i];
+    r.title = `0x${PROG[i].w.toString(16).padStart(4, '0').toUpperCase()} · ${ROWS[i]}`;
     r.className = 'prow';
     r.id = `pr${i}`;
     const tgtHtml =
@@ -276,16 +408,19 @@ function buildProgram() {
       `<span class="chips"></span>`;
     nodes.push(r);
   }
+  // the wrap arc is LIVE config: EXECCTRL.WRAP_TOP/BOTTOM (SPEC-7-19)
+  const wrapTop = OV.execctrl.wrapTop,
+    wrapBot = OV.execctrl.wrapBot;
   const arc = document.createElement('div');
   arc.id = 'wraparc';
-  arc.title = `config · WRAP: after insn ${WRAP_LAST} the PC returns to ${WRAP_TARGET} instead of falling through`;
-  arc.style.top = `${WRAP_TARGET * 20 + 10}px`;
-  arc.style.height = `${(WRAP_LAST - WRAP_TARGET) * 20}px`;
+  arc.title = `config · WRAP (SPEC-7-19): after insn ${wrapTop} the PC returns to ${wrapBot} instead of falling through — set it in the inspector`;
+  arc.style.top = `${wrapBot * 20 + 10}px`;
+  arc.style.height = `${Math.max(0, wrapTop - wrapBot) * 20}px`;
   nodes.push(arc);
   const ah = document.createElement('div');
   ah.id = 'wraparrow';
   ah.title = arc.title;
-  ah.style.top = `${WRAP_TARGET * 20 + 6}px`;
+  ah.style.top = `${wrapBot * 20 + 6}px`;
   nodes.push(ah);
   const arcs = [];
   for (let i = 0; i < 32; i++) {
@@ -326,6 +461,7 @@ function buildProgram() {
   $('freect').textContent = 32 - usedN;
   updateUnbuilt();
   renderAlloc();
+  renderInspector();
 }
 function updateUnbuilt() {
   const u = $('unbuilt');
@@ -336,32 +472,29 @@ function updateUnbuilt() {
 function renderAlloc() {
   const h = $('dspips');
   h.innerHTML = '';
-  const total = dsTotal();
+  const a = allocOf(OV);
+  const total = a.sideBits + (a.opt ? 1 : 0);
   for (let k = 0; k < 5; k++) {
     const d = document.createElement('div');
-    d.className = `pip${k < total ? (k === 0 && ALLOC.opt ? ' en' : ' s') : ' d'}`;
+    d.className = `pip${k < total ? (k === 0 && a.opt ? ' en' : ' s') : ' d'}`;
     d.title =
       k < total
-        ? k === 0 && ALLOC.opt
-          ? 'opt-enable bit — per-instruction side on/off'
+        ? k === 0 && a.opt
+          ? 'opt-enable bit — per-instruction side on/off (SPEC-4-2)'
           : 'side data bit → gpio'
         : `delay bit (max delay ${maxDelay()})`;
     h.appendChild(d);
   }
-  $('ssminus').disabled = !ALLOC.sideBits;
-  $('ssplus').disabled = ALLOC.sideBits >= 5;
-  $('ssopt').disabled = !ALLOC.sideBits;
-  $('ssopt').checked = ALLOC.opt && !!ALLOC.sideBits;
-  const redecoded = ALLOC.sideBits !== PROGRAM_OWN.sideBits || ALLOC.opt !== PROGRAM_OWN.opt;
-  const info = $('dsinfo');
-  info.innerHTML =
-    `side ${ALLOC.sideBits}b${ALLOC.opt ? '+opt' : ''} · delay [0..${maxDelay()}]` +
-    (redecoded
-      ? ` <span style="color:var(--red)" title="same stored bits, re-decoded under this allocation — the machine runs what the bits now say (and the engine really does: PINCTRL/EXECCTRL were re-written)">· garbled</span>`
-      : '');
+  $('ssminus').disabled = !a.sideBits;
+  $('ssplus').disabled = a.sideBits >= 5;
+  $('ssopt').disabled = !a.sideBits;
+  $('ssopt').checked = a.opt && !!a.sideBits;
+  $('dsinfo').innerHTML =
+    `side ${a.sideBits}b${a.opt ? '+opt' : ''} · delay [0..${maxDelay()}] · PINCTRL.SIDESET_COUNT=${ssCntOf(OV)} (SPEC-7-26)`;
   const st = $('sidetag');
-  st.textContent = ALLOC.sideBits
-    ? `side gpio0·${ALLOC.sideBits}${ALLOC.opt ? '+opt' : ''}`
+  const sc = OV.pinctrl;
+  st.textContent = sc.ssCnt
+    ? `side gpio${sc.ssBase}·${Math.max(0, sc.ssCnt - (sideEnOf(OV) ? 1 : 0))}${sideEnOf(OV) ? '+opt' : ''}`
     : 'side —';
 }
 function flashWrap() {
@@ -381,6 +514,12 @@ function flashJmp() {
     a.classList.add('flash');
     setTimeout(() => a.classList.remove('flash'), 240);
   });
+}
+function flashPush() {
+  const c = $('rxfifo');
+  if (!c) return;
+  c.classList.add('flash');
+  setTimeout(() => c.classList.remove('flash'), 240);
 }
 
 function hex32(v) {
@@ -435,13 +574,6 @@ function renderProgram(st) {
   }
 }
 
-const EXECFIELDS = {
-  0: 'OP PULL · MODE block · FIFO→OSR',
-  1: 'OP SET · DST X · DATA 7',
-  2: "OP OUT · DST PINS <span class='cfgtx'>→ gpio0</span> · COUNT 1",
-  3: "OP JMP · COND X-- · TARGET <span class='pcaddr'>02 ↷ margin</span>",
-};
-
 function renderExec(st) {
   const disp = st.displayPc,
     p = PROG[disp],
@@ -452,17 +584,9 @@ function renderExec(st) {
       (e.delay ? ` <span class="pf">[${e.delay}]</span>` : '')
     : `<span class="pf">· unwritten — jmp ${st.pc}</span>`;
   const f = $('execfields');
-  // the curated field breakdown is pinned to the level's virgin rows;
-  // edited rows show the built word + canonical text (the assembled
-  // image, PROG[disp].w — what the machine actually fetched)
-  const base =
-    ROWS[disp] === ORIG[disp] && EXECFIELDS[disp]
-      ? EXECFIELDS[disp]
-      : p
-        ? `0x${p.w.toString(16).padStart(4, '0').toUpperCase()} · ${ROWS[disp] || 'decodes as jmp 0'}`
-        : 'unwritten memory · 0x0000 decodes as jmp 0';
-  const side = e.side != null ? `SIDE ${e.side} <span class='cfgtx'>→ gpio0</span>` : '';
-  f.innerHTML = `${base}<br>${side ? `${side} · ` : ''}delay ${e.delay}`;
+  f.innerHTML = p
+    ? `0x${p.w.toString(16).padStart(4, '0').toUpperCase()} · ${ROWS[disp] || 'decodes as jmp 0'}`
+    : 'unwritten memory · 0x0000 decodes as jmp 0';
   const n = $('phasename'),
     sub = $('phasesub'),
     fill = $('phasefill');
@@ -480,7 +604,7 @@ function renderExec(st) {
     n.textContent = 'STALL';
     n.className = 'wa';
     fill.style.width = '0%';
-    sub.textContent = 'pull block · TX empty · line held 1 (side)';
+    sub.textContent = 'blocked — check FIFOs / wait condition';
   } else {
     n.textContent = '—';
     n.className = '';
@@ -493,33 +617,187 @@ function renderExec(st) {
 function renderRegs(st) {
   $('xval').innerHTML = `${hex32(st.x)} <small>= ${st.x >>> 0}</small>`;
   $('yval').innerHTML = `${hex32(st.y)} <small>= ${st.y >>> 0}</small>`;
-  renderBits($('osrbits'), st.osr, st.osrCnt, '');
-  renderBits($('isrbits'), st.isr, 0, '');
+  renderBits($('osrbits'), st.osr, st.osrCnt);
+  renderBits($('isrbits'), st.isr, st.isrCnt);
   $('osrfill').style.width = `${(100 * st.osrCnt) / 32}%`;
   $('osrcnt').textContent = st.osrCnt;
-  $('osre').classList.toggle('lit', st.osrCnt >= 32);
+  $('osre').classList.toggle('lit', st.osrCnt >= (OV.shiftctrl.pullThr || 32));
+  $('isrfill').style.width = `${(100 * st.isrCnt) / 32}%`;
+  $('isrcnt').textContent = st.isrCnt;
+  const sc = OV.shiftctrl;
+  $('autopulltag').textContent = sc.autopull ? `autopull — thr ${sc.pullThr}` : 'autopull — off';
+  $('autopushtag').textContent = sc.autopush ? `autopush — thr ${sc.pushThr}` : 'autopush — off';
+  $('osrdir').textContent = sc.outRight ? 'out → pins →' : '← pins ← out';
+  $('isrdir').textContent = sc.inRight ? 'pins → in' : 'in ← pins';
+  $('isrnote').textContent = st.isrCnt ? `${st.isrCnt} shifted in` : 'idle';
+
+  const depth = st.fifoDepths.tx;
   const slots = $('fslots');
   slots.innerHTML = '';
-  for (let i = 0; i < FIFODEPTH; i++) {
+  for (let i = 0; i < depth; i++) {
     const d = document.createElement('div');
     const full = i < st.txWords.length;
     d.className = `fslot${full ? ' full' : ''}${i === 0 ? ' next' : ''}${i >= 4 ? ' borrowed' : ''}`;
-    if (i >= 4) d.title = 'config · storage borrowed from RX via FIFO JOIN TX';
+    if (i >= 4 && depth === 8)
+      d.title = 'config · storage borrowed from RX via FIFO JOIN TX (SPEC-6-2)';
     d.innerHTML = `<span class="idx">${i}</span><span class="hexv">${full ? hex32(st.txWords[i]) : '········'}</span><span class="chv">${full ? ascii(st.txWords[i]) : ''}</span>`;
     slots.appendChild(d);
   }
+  const joinChip = $('joinchip');
+  const mode = sc.fjoinRxPut
+    ? sc.fjoinRxGet
+      ? 'putget'
+      : 'txput'
+    : sc.fjoinRxGet
+      ? 'txget'
+      : sc.fjoinTx
+        ? 'join TX'
+        : sc.fjoinRx
+          ? 'join RX'
+          : 'split';
+  joinChip.textContent = mode;
+  joinChip.classList.toggle('on', mode !== 'split');
+  $('txdepth').textContent = depth;
+  $('txdepth2').textContent = depth;
   $('fifolvl').textContent = st.txLevel;
-  $('fifolvlfill').style.height = `${(100 * st.txLevel) / FIFODEPTH}%`;
+  $('fifolvlfill').style.height = `${depth ? (100 * st.txLevel) / depth : 0}%`;
   $('fifostall').classList.toggle('show', st.phase === 'STALL');
+  $('txnote').textContent =
+    depth === 0
+      ? 'TX disabled by the join mode (FSTAT: both empty and full)'
+      : `TX FIFO ${depth} deep — overflow is refused`;
+
+  // RX panel: the level is engine truth; contents appear only by draining
+  const rdepth = st.fifoDepths.rx;
+  $('rxdepth').textContent = rdepth;
+  $('rxdepth2').textContent = rdepth;
+  $('rxlvl').textContent = st.rxLevel;
+  $('rxlvlfill').style.height = `${rdepth ? (100 * st.rxLevel) / rdepth : 0}%`;
+  $('bdrainall').disabled = st.rxMirror.pushes - st.rxMirror.drains <= 0;
+  const log = $('rxlog');
+  if (st.rxWords.length) {
+    log.innerHTML = st.rxWords
+      .slice(-16)
+      .reverse()
+      .map((w) => `<span class="rxw">${hex32(w)} <i>${ascii(w)}</i></span>`)
+      .join('');
+  } else {
+    log.innerHTML = '<span class="note">drained words appear here</span>';
+  }
+
+  // IRQ flags + the INTR readback (SPEC-7-12)
+  $('intrhex').textContent = `0x${(st.intr & 0xffff).toString(16).padStart(4, '0').toUpperCase()}`;
+  const lamps = $('irqlamps');
+  const flags = (st.intr >> 8) & 0xff;
+  let lh = '';
+  for (let i = 0; i < 8; i++)
+    lh += `<span class="ilamp${(flags >> i) & 1 ? ' on' : ''}" title="IRQ flag ${i} — ${(flags >> i) & 1 ? 'SET' : 'clear'} · click = W1C via IRQ (SPEC-7-6)" data-flag="${i}">f${i}</span>`;
+  lh += `<span class="ilamp sub${(st.intr >> 4) & 1 ? ' on' : ''}" title="TXNFULL SM0 (SPEC-7-12)">tx¬full</span>`;
+  lh += `<span class="ilamp sub${st.intr & 1 ? ' on' : ''}" title="RXNEMPTY SM0 (SPEC-7-12)">rx¬empty</span>`;
+  lamps.innerHTML = lh;
+
+  // header chips
+  const cd = OV.clkdiv;
+  const div = (cd.intg || 65536) + cd.frac / 256;
+  $('clkdivtag').textContent = `clkdiv ÷${div.toFixed(2)}`;
+  const pc2 = OV.pinctrl;
+  $('outmaptag').textContent = `out gpio${pc2.outBase}·${pc2.outCnt || 32}`;
+  $('inmaptag').textContent = `in gpio${pc2.inBase}·${OV.shiftctrl.inCount || 32}`;
 }
+
+// ---- pin strip: drive latches, pattern source, engine outputs ---------
+function renderPins(st) {
+  const host = $('pincells');
+  const drives = st.drives;
+  const patPin = st.pattern.mode !== 'off' ? st.pattern.pin : -1;
+  let h = '';
+  for (let p = 0; p < 32; p++) {
+    const oe = (st.gpioOe >> p) & 1;
+    const lvl = (st.gpioOut >> p) & 1;
+    const drv = drives[p];
+    const cls = [
+      'pcell',
+      oe ? 'oe' : '',
+      drv === 1 ? 'dh' : drv === 0 ? 'dl' : '',
+      lvl ? 'hi' : '',
+      p === patPin ? 'pat' : '',
+      p === lensPin ? 'sel' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const tips = [
+      `pin ${p}`,
+      oe ? `engine OUTPUT — level ${lvl}` : 'engine input',
+      drv === null ? 'drive latch released (Z)' : `drive latch HELD at ${drv}`,
+      patPin === p ? `pattern source (${st.pattern.mode})` : '',
+      p === lensPin ? 'lens/wave target' : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    h += `<div class="${cls}" data-pin="${p}" title="${tips}"><span class="pn">${p}</span><span class="pl">${lvl}</span><span class="pm">${oe ? '▲' : drv !== null ? 'D' : ''}${patPin === p ? '◆' : ''}</span></div>`;
+  }
+  host.innerHTML = h;
+}
+$('pincells').addEventListener('click', (e) => {
+  const c = e.target.closest('.pcell');
+  if (!c) return;
+  const pin = +c.dataset.pin;
+  const cur = V.state.drives[pin];
+  const next = cur === null ? 1 : cur === 1 ? 0 : null; // Z → 1 → 0 → Z
+  post({ cmd: 'drive', pin, level: next });
+});
+
+// ---- pattern generator controls ----------------------------------------
+function patternUi() {
+  const mode = $('patmode').value;
+  $('patperwrap').hidden = mode !== 'square';
+  $('patbitswrap').hidden = mode !== 'bits';
+}
+function sendPattern() {
+  const mode = $('patmode').value;
+  const cfg = { mode, pin: +$('patpin').value };
+  if (mode === 'square') cfg.period = +$('patperiod').value || 16;
+  if (mode === 'bits')
+    cfg.bits = [...$('patbits').value]
+      .map((ch) => (ch === '1' ? 1 : 0))
+      .filter((b) => b !== undefined);
+  post({ cmd: 'pattern', cfg });
+}
+$('patmode').onchange = () => {
+  patternUi();
+  sendPattern();
+};
+$('patperiod').onchange = sendPattern;
+$('patbits').onchange = sendPattern;
+$('patpin').onchange = sendPattern;
+
+// ---- lens selector ------------------------------------------------------
+function lensUi() {
+  $('lensmode').value = V.state.lens.mode;
+  $('lenspin').value = String(lensPin);
+}
+$('lensmode').onchange = () => post({ cmd: 'lens', mode: $('lensmode').value, pin: lensPin });
+$('lenspin').onchange = () =>
+  post({ cmd: 'lens', mode: $('lensmode').value, pin: +$('lenspin').value });
 
 function renderMonitor(st) {
-  $('monbuf').textContent = st.monitor.decoded ? `'${st.monitor.decoded}'` : '—';
-  const n = [...st.monitor.decoded].length;
-  $('moncnt').textContent = n ? `· ${n} bytes ✓` : '';
+  const mon = st.monitor;
+  const mode = st.lens.mode;
+  if (mode === 'uart') {
+    $('monbuf').textContent = mon.decoded ? `'${mon.decoded}'` : '—';
+    const n = [...mon.decoded].length;
+    $('moncnt').textContent = n ? `· ${n} bytes ✓` : '';
+  } else if (mode === 'square' && mon.square && mon.square.period) {
+    $('monbuf').textContent = `${mon.square.period} clk/cycle`;
+    $('moncnt').textContent = `· ${mon.square.dutyPct}% duty · ${mon.square.edges} edges`;
+  } else {
+    $('monbuf').textContent = '—';
+    $('moncnt').textContent = '';
+  }
+  $('framemap').style.visibility = mode === 'uart' ? 'visible' : 'hidden';
 }
 
-// ---- waveform (svg): true engine pin samples, monitor-derived tags ----
+// ---- waveform (svg): true engine pin samples, lens-derived tags --------
 const CW = 7,
   HI = 16,
   LO = 62,
@@ -547,6 +825,8 @@ function renderWave(st) {
     if ((c0 + k) % 16 === 0 && k < WIN && Math.abs(x - n * CW) > 56)
       s += `<text x="${x + 3}" y="${RULY}" fill="var(--dimmer)" font-size="9" font-family="var(--mono)">${c0 + k}</text>`;
   }
+  $('wavelabel').textContent =
+    `gpio${lensPin} · ${st.lens.mode === 'off' ? 'raw' : st.lens.mode} lens`;
   if (!n) {
     svg.innerHTML = s;
     return;
@@ -571,7 +851,7 @@ function renderWave(st) {
   while (i < n) {
     let j = i + 1;
     while (j < n && tags[j] === tags[i]) j++;
-    if (j - i >= 3) {
+    if (j - i >= 3 && tags[i]) {
       const col = colOf[classOf(tags[i])];
       s += `<text x="${((i + j) * CW) / 2}" y="${TAGY}" fill="${col}" font-size="9" font-family="var(--mono)" text-anchor="middle" opacity=".85">${tags[i]}</text>`;
     }
@@ -599,25 +879,200 @@ function renderFrameMap(st) {
     .join('');
 }
 
+// ---- the register inspector (datasheet map, SPEC-7-x tooltips) ---------
+// Settable config fields ride the overlay; action rows (CTRL pulses, IRQ
+// W1C/force, FDEBUG W1C, SM0_INSTR force) are generic reg writes; RO rows
+// render live from the cycle sample or via a queued READ (a real clk).
+function inspFieldRow(group, field, spec, val) {
+  const [hi, lo, max] = spec;
+  const id = `insp-${group}-${field}`;
+  const bits = hi === lo ? `${hi}` : `${hi}:${lo}`;
+  const tip = `${group}.${field} — bits ${bits} (SPEC-7-${group === 'clkdiv' ? 14 : group === 'pinctrl' ? 26 : group === 'execctrl' ? (field.startsWith('wrap') ? '19' : '16') : '21'})`;
+  let ctrl;
+  if (max === 'b') {
+    ctrl = `<input type="checkbox" id="${id}" ${val ? 'checked' : ''} />`;
+  } else if (max === 'thr') {
+    ctrl = `<input type="number" id="${id}" value="${val}" min="1" max="32" />`;
+  } else {
+    ctrl = `<input type="number" id="${id}" value="${val}" min="0" max="${max}" />`;
+  }
+  return `<div class="ifield" title="${tip}"><span class="ifn">${field}</span><span class="ifb">${bits}</span>${ctrl}</div>`;
+}
+function renderInspector() {
+  const st = V.state;
+  const host = $('inspbody');
+  // a focused input owns its value until commit — skip the DOM rebuild
+  // that render would otherwise do under it every clk
+  if (host?.contains(document.activeElement)) return;
+  // the full map is ~100 nodes; while free-running, refresh it only
+  // every 8th clk (the lighter FIFO/pin/wave panels stay per-clk)
+  if (timer && st.cycle % 8 !== 0) return;
+  const regs = VD.REG;
+  // live RO values
+  const txEmpty = st.txEmpty ? 1 : 0,
+    txFull = st.txFull ? 1 : 0;
+  const rxEmpty = st.rxLevel === 0 ? 1 : 0,
+    rxFull = st.fifoDepths.rx && st.rxLevel >= st.fifoDepths.rx ? 1 : 0;
+  const fstatLive = `txe ${txEmpty} txf ${txFull} rxe ${rxEmpty} rxf ${rxFull}`;
+  let h = '';
+  h += `<div class="igroup">block</div>`;
+  h += `<div class="ireg" title="CTRL (SPEC-7-2..5): SM_ENABLE + the SM_RESTART / CLKDIV_RESTART pulses">
+    <span class="irn">CTRL</span><span class="ira">0x000</span>
+    <div class="ifields">
+      <div class="ifield" title="SM_ENABLE bit0 (SPEC-7-2) — SM0 on/off"><span class="ifn">SM_EN</span><span class="ifb">0</span><input type="checkbox" id="insp-ctrl-smen" /></div>
+      <button type="button" class="ipulse" data-wr="${regs.CTRL}" data-val="${1 << 4}" title="SM_RESTART bit4 (SPEC-7-3): clears shift counters, ISR, delay, WAIT state — one clk">SM_RESTART</button>
+      <button type="button" class="ipulse" data-wr="${regs.CTRL}" data-val="${1 << 8}" title="CLKDIV_RESTART bit8 (SPEC-7-4): divider back to phase 0">CLKDIV_RESTART</button>
+    </div></div>`;
+  h += `<div class="ireg" title="FSTAT (SPEC-7-29) — live from the cycle sample">
+    <span class="irn">FSTAT</span><span class="ira">0x004</span><span class="iro">${fstatLive}</span>
+    <button type="button" class="ipulse" data-rd="${regs.FSTAT}">READ</button></div>`;
+  h += `<div class="ireg" title="FDEBUG (SPEC-7-29) — sticky flags, W1C; READ costs one rendered clk">
+    <span class="irn">FDEBUG</span><span class="ira">0x008</span><span class="iro" id="insp-fdebug">—</span>
+    <button type="button" class="ipulse" data-rd="${regs.FDEBUG}">READ</button>
+    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 24}" title="W1C TXSTALL">clr TXSTALL</button>
+    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 16}" title="W1C TXOVER">clr TXOVER</button>
+    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 8}" title="W1C RXUNDER">clr RXUNDER</button>
+    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1}" title="W1C RXSTALL">clr RXSTALL</button></div>`;
+  h += `<div class="ireg" title="FLEVEL (SPEC-7-29) — live TX/RX nibbles">
+    <span class="irn">FLEVEL</span><span class="ira">0x00c</span><span class="iro">tx ${st.txLevel} rx ${st.rxLevel}</span>
+    <button type="button" class="ipulse" data-rd="${regs.FLEVEL}">READ</button></div>`;
+  h += `<div class="ireg" title="TXF0 (SPEC-7-28) — write pushes one 32-bit word (refused at full)">
+    <span class="irn">TXF0</span><span class="ira">0x010</span>
+    <div class="ifields"><div class="ifield"><span class="ifn">word</span><span class="ifb">31:0</span><input type="text" id="insp-txf0" class="ihex" placeholder="0x…" maxlength="10" /></div>
+    <button type="button" id="insp-txf0go">FEED</button></div></div>`;
+  h += `<div class="ireg" title="RXF0 (SPEC-7-28) — read pops one word (the RX drain)">
+    <span class="irn">RXF0</span><span class="ira">0x020</span><span class="iro">level ${st.rxLevel}</span>
+    <button type="button" id="insp-rxf0">DRAIN</button></div>`;
+  h += `<div class="ireg" title="IRQ (SPEC-7-6) — 8 SM flags, W1C (the lamps above); IRQ_FORCE sets without side effects on pads">
+    <span class="irn">IRQ</span><span class="ira">0x030</span><span class="iro">w1c</span>
+    ${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<button type="button" class="ipulse" data-wr="${regs.IRQ}" data-val="${1 << i}" title="clear flag ${i}">clr f${i}</button>`).join('')}
+    <span class="irn">IRQ_FORCE</span><span class="ira">0x034</span>
+    ${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<button type="button" class="ipulse" data-wr="${regs.IRQ_FORCE}" data-val="${1 << i}" title="force flag ${i} (SPEC-7-6)">set f${i}</button>`).join('')}</div>`;
+  h += `<div class="ireg" title="INPUT_SYNC_BYPASS (SPEC-7-7) — per-GPIO: 1 bypasses the 2-FF input synchroniser (CC-23)">
+    <span class="irn">ISB</span><span class="ira">0x038</span><span class="iro" id="insp-isb">—</span>
+    <div class="ifields"><div class="ifield"><span class="ifn">mask</span><span class="ifb">31:0</span><input type="text" id="insp-isbval" class="ihex" value="0x00000000" maxlength="10" /></div>
+    <button type="button" id="insp-isbgo">WRITE</button>
+    <button type="button" class="ipulse" data-rd="${regs.ISB}">READ</button></div></div>`;
+  h += `<div class="ireg" title="DBG_PADOUT / DBG_PADOE (SPEC-7-8) — the driven levels/output enables, live">
+    <span class="irn">PADOUT</span><span class="ira">0x03c</span><span class="iro">${hex32(st.gpioOut)}</span>
+    <span class="irn">PADOE</span><span class="ira">0x040</span><span class="iro">${hex32(st.gpioOe)}</span></div>`;
+  h += `<div class="ireg" title="DBG_CFGINFO (SPEC-7-9) — constant">
+    <span class="irn">CFGINFO</span><span class="ira">0x044</span><span class="iro">0x10200404 · imem 32 · sm 4 · fifo 4</span></div>`;
+
+  h += `<div class="igroup">SM0 — the config overlay (settable; edits land as queued reg writes, SPEC-7-14..26)</div>`;
+  const groups = [
+    ['clkdiv', 'CLKDIV', 'SM0_CLKDIV'],
+    ['pinctrl', 'PINCTRL', 'SM0_PINCTRL'],
+    ['execctrl', 'EXECCTRL', 'SM0_EXECCTRL'],
+    ['shiftctrl', 'SHIFTCTRL', 'SM0_SHIFTCTRL'],
+  ];
+  for (const [group, label, regName] of groups) {
+    const fields = VD.OVERLAY_GROUP_FIELDS(group);
+    let fh = '';
+    for (const [field, spec] of fields) fh += inspFieldRow(group, field, spec, OV[group][field]);
+    h += `<div class="ireg" title="${regName} — compose ${hex32(VD.composeOverlay(group, OV[group]))}">
+      <span class="irn">${label}</span><span class="ira">${group === 'clkdiv' ? '+0' : group === 'pinctrl' ? '+20' : group === 'execctrl' ? '+4' : '+8'}</span>
+      <span class="iro">${hex32(VD.composeOverlay(group, OV[group]))}</span>
+      <div class="ifields">${fh}</div></div>`;
+  }
+  h += `<div class="ireg" title="SM0_ADDR (SPEC-7-22) — the live PC">
+    <span class="irn">ADDR</span><span class="ira">+12</span><span class="iro">${st.pc}</span></div>`;
+  h += `<div class="ireg" title="SM0_INSTR (SPEC-7-23/24) — read: imem[pc]; write: FORCE-execute a word (delay ignored, bypasses the divider)">
+    <span class="irn">INSTR</span><span class="ira">+16</span><span class="iro">0x${(BUILT[st.pc] || 0).toString(16).padStart(4, '0').toUpperCase()}</span>
+    <div class="ifields"><div class="ifield"><span class="ifn">force</span><span class="ifb">15:0</span><input type="text" id="insp-force" class="ihex" placeholder="0x…" maxlength="6" /></div>
+    <button type="button" id="insp-forcego">FORCE</button></div></div>`;
+  h += `<div class="ireg" title="RXF0_PUTGET0..3 (SPEC-7-13) — the aux-mode storage window (readable in txput, writable in txget)">
+    ${[0, 1, 2, 3].map((y) => `<button type="button" class="ipulse" data-rd="${regs.PUTGET0 + 4 * y}">PG${y}</button>`).join('')}
+    <span class="iro" id="insp-putget">—</span></div>`;
+  h += `<div class="ireg"><span class="iro" id="insp-lastread">every READ/WRITE here retires one rendered clk</span></div>`;
+  host.innerHTML = h;
+  // wire the overlay field inputs (event delegation is awkward with
+  // per-field ids — one listener each, set on rebuild)
+  for (const [group] of groups) {
+    for (const [field, spec] of VD.OVERLAY_GROUP_FIELDS(group)) {
+      const el = $(`insp-${group}-${field}`);
+      if (!el) continue;
+      el.onchange = () => {
+        const max = spec[2];
+        const v = max === 'b' ? el.checked : Number(el.value);
+        if (
+          max !== 'b' &&
+          (!Number.isInteger(v) || v < (max === 'thr' ? 1 : 0) || v > (max === 'thr' ? 32 : max))
+        ) {
+          el.value = OV[group][field];
+          return;
+        }
+        ovEdit(group, field, v);
+      };
+    }
+  }
+  $('insp-ctrl-smen').onchange = (e) =>
+    post({ cmd: 'regwrite', addr: regs.CTRL, data: e.target.checked ? 1 : 0 });
+  $('insp-txf0go').onclick = () => {
+    const v = parseHexWord($('insp-txf0').value);
+    if (Number.isInteger(v)) post({ cmd: 'enqueueword', word: v >>> 0 });
+  };
+  $('insp-rxf0').onclick = () => post({ cmd: 'drain', n: 1 });
+  $('insp-isbgo').onclick = () => {
+    const v = parseHexWord($('insp-isbval').value);
+    if (Number.isInteger(v)) post({ cmd: 'regwrite', addr: regs.ISB, data: v >>> 0 });
+  };
+  $('insp-forcego').onclick = () => {
+    const v = parseHexWord($('insp-force').value);
+    if (Number.isInteger(v)) post({ cmd: 'regwrite', addr: regs.SM0 + 16, data: v & 0xffff });
+  };
+}
+// inspector action buttons (delegated): generic reads/writes
+$('inspbody').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.rd !== undefined) {
+    post({ cmd: 'regread', addr: +b.dataset.rd });
+    return;
+  }
+  if (b.dataset.wr !== undefined) {
+    post({ cmd: 'regwrite', addr: +b.dataset.wr, data: +b.dataset.val });
+  }
+});
+// hex word entry (0x prefix optional — everything here is hex)
+function parseHexWord(text) {
+  const t = String(text).trim().replace(/^0x/i, '');
+  return /^[0-9a-f]+$/i.test(t) ? Number.parseInt(t, 16) : Number.NaN;
+}
+
+// the regread replies land on the RO displays (each read was a real clk)
+function noteRead(addr, rdata) {
+  const map = { 8: 'insp-fdebug', 56: 'insp-isb' };
+  const el = $(map[addr]);
+  if (el) el.textContent = hex32(rdata);
+  const last = $('insp-lastread');
+  if (last)
+    last.textContent = `last read 0x${addr.toString(16).padStart(3, '0')} = ${hex32(rdata)}`;
+}
+
 function render(st) {
+  lensUi();
   renderProgram(st);
   renderExec(st);
   renderFrameMap(st);
   renderRegs(st);
   renderWave(st);
   renderMonitor(st);
+  renderPins(st);
+  renderInspector();
   const fl = st.flashes || {};
   if (st.cycle !== V.lastFlashClk) {
     // one flash per clk, not per message
     if (fl.pull) flashPull();
+    if (fl.push) flashPush();
     if (fl.jmp) flashJmp();
     if (fl.wrap) flashWrap();
     V.lastFlashClk = st.cycle;
   }
 }
 
-// ================= modeless row editor (unchanged from the mock-up;
-// edits mark the listing unbuilt — re-assembly lands with C19) ========
+// ================= modeless row editor (C19 discipline; the
+// listing now re-decodes under the live overlay allocation) =============
 const ED = $('edittxt'),
   HL = $('edithl'),
   POP = $('edpop'),
@@ -625,20 +1080,18 @@ const ED = $('edittxt'),
   HOST = $('progrows');
 const SIDE = $('edside'),
   DLY = $('eddly');
-const ROWS = ROWS0.concat(Array(32 - ROWS0.length).fill(''));
-const ORIG = [...ROWS];
 let curRow = -1;
 let asmErr = null; // row error of the last failed re-assembly (C19)
 
-// Re-assemble the whole listing (each non-empty row is one instruction
-// line, assembled under the authored .side_set — ASM_PROG) and, on
-// success, patch the live engine image: {cmd:'program'} → driver
-// setProgram, one rendered clk per changed word. On failure the chip
-// shows the error and the machine keeps running the last good build.
 function reassemble() {
   const words = new Array(32).fill(0);
   for (let i = 0; i < 32; i++) {
     if (!ROWS[i]) continue;
+    const raw = ROWS[i].match(RAW_ROW);
+    if (raw) {
+      words[i] = Number.parseInt(raw[1], 16); // the aliased-bits marker row
+      continue;
+    }
     try {
       words[i] = PioAsm.assembleInstruction(ROWS[i], ASM_PROG, {}, `row ${i}`);
     } catch (e) {
@@ -655,6 +1108,7 @@ function buildAndPush() {
     const rows = wordsToRows(BUILT);
     PROG = BUILT.map((w, i) => ({ w, ...parseRow(rows[i]) }));
     post({ cmd: 'program', words: BUILT });
+    requestAutosave();
   }
   updateUnbuilt();
 }
@@ -1191,52 +1645,85 @@ $('edcands').addEventListener('mousedown', (e) => {
   }
 });
 
-// ---- ds allocator: display re-decode + a REAL PINCTRL/EXECCTRL write -
+// ---- ds allocator: REAL PINCTRL/EXECCTRL writes through the overlay ----
 function allocChanged() {
   buildProgram();
   render(V.state);
-  post({ cmd: 'alloc', sideBits: ALLOC.sideBits, opt: ALLOC.opt });
+  requestAutosave();
 }
 $('ssminus').onclick = () => {
-  if (ALLOC.sideBits > 0) {
-    ALLOC.sideBits--;
-    if (!ALLOC.sideBits) ALLOC.opt = false;
+  const a = allocOf(OV);
+  if (a.sideBits > 0) {
+    const nb = a.sideBits - 1;
+    ovEdit('pinctrl', 'ssCnt', nb + (a.opt ? 1 : 0));
+    if (!nb) ovEdit('execctrl', 'sideEn', false);
     allocChanged();
   }
 };
 $('ssplus').onclick = () => {
-  if (ALLOC.sideBits < 5) {
-    ALLOC.sideBits++;
+  const a = allocOf(OV);
+  if (a.sideBits < 5) {
+    ovEdit('pinctrl', 'ssCnt', a.sideBits + 1 + (a.opt ? 1 : 0));
     allocChanged();
   }
 };
 $('ssopt').onchange = (e) => {
-  ALLOC.opt = e.target.checked && !!ALLOC.sideBits;
+  const a = allocOf(OV);
+  ovEdit('execctrl', 'sideEn', e.target.checked && !!a.sideBits);
   allocChanged();
 };
 
-// ---- boot ----
+// ---- RX drain buttons + IRQ lamp W1C ------------------------------------
+$('bdrain').onclick = () => post({ cmd: 'drain', n: 1 });
+$('bdrainall').onclick = () => {
+  const avail = V.state.rxMirror.pushes - V.state.rxMirror.drains;
+  if (avail > 0) post({ cmd: 'drain', n: avail });
+};
+$('irqlamps').addEventListener('click', (e) => {
+  const l = e.target.closest('.ilamp[data-flag]');
+  if (l) post({ cmd: 'regwrite', addr: VD.REG.IRQ, data: 1 << +l.dataset.flag });
+});
+
+// ---- the select options (pins 0..31) ------------------------------------
+for (const id of ['lenspin', 'patpin']) {
+  const sel = $(id);
+  for (let p = 0; p < 32; p++) sel.add(new Option(`${p}`, String(p)));
+}
+$('patpin').value = '0';
+
+// ---- boot ----------------------------------------------------------------
 addEventListener('error', (e) => {
   const f = document.querySelector('footer');
   if (f)
-    f.innerHTML = `<span style="color:var(--red)">PAGE ERROR: ${e.message} @${e.lineno}</span>`;
+    f.insertAdjacentHTML(
+      'afterbegin',
+      `<span style="color:var(--red)">PAGE ERROR: ${e.message} @${e.lineno}</span>`,
+    );
 });
 enableCtrls(false);
+ROWS.splice(0, ROWS.length, ...wordsToRows(BUILT));
+PROG = BUILT.map((w, i) => ({ w, ...parseRow(ROWS[i]) }));
+syncAsmContext();
 buildProgram();
 buildBits($('osrbits'));
 buildBits($('isrbits'));
+patternUi();
 render(V.state);
 
 function applyUrlParams() {
-  // shareable states: ?t=N pre-runs N cycles (one worker batch), ?run=1
-  // autoplays, ?ss=N&opt=0 presets the ds-field allocation; editor demo
-  // states (?row/?complete/?pick) stay view-local as in the mock-up.
+  // shareable states: ?demo=1 loads the uart demo, ?t=N pre-runs N cycles
+  // (one worker batch), ?run=1 autoplays, ?ss=N&opt=0 preset the ds-field
+  // allocation (the overlay fields); editor demo states (?row/?complete/
+  // ?pick) stay view-local as in the mock-up.
   const q = new URLSearchParams(location.search);
-  if (q.has('ss')) {
-    ALLOC.sideBits = Math.min(5, Math.max(0, Math.round(+q.get('ss')) || 0));
-    ALLOC.opt = q.get('opt') !== '0' && !!ALLOC.sideBits;
-    post({ cmd: 'alloc', sideBits: ALLOC.sideBits, opt: ALLOC.opt });
-    buildProgram();
+  if (q.get('demo')) {
+    loadState(VD.DEMO_UART_TX);
+  } else if (q.has('ss')) {
+    const sb = Math.min(5, Math.max(0, Math.round(+q.get('ss')) || 0));
+    const opt = q.get('opt') !== '0' && !!sb;
+    ovEdit('pinctrl', 'ssCnt', sb + (opt ? 1 : 0));
+    ovEdit('execctrl', 'sideEn', opt);
+    rebuildListing();
   }
   const t = Math.min(+q.get('t') || 0, 200000);
   if (t > 0) post({ cmd: 'run', cycles: t });

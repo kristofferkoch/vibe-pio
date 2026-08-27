@@ -1,23 +1,41 @@
-// engine-worker.js — the C18 Web Worker (KANBAN C18).
+// engine-worker.js — the C18/C21 Web Worker (KANBAN C18/C21).
 //
 // Loads the wasm engine (build/web/pio_engine.js, the C17 AOT build of
 // the verified RTL) inside the worker and exposes the driver through
 // postMessage, so the main thread never stalls on engine work: batch
 // stepping ({cmd:'run', cycles:N}) runs N clks per message and returns
-// one state snapshot the view renders from.
+// one state snapshot the view renders from. The worker owns no state:
+// the view sends the sandbox state on load/reset; overlay/drive/pattern/
+// lens edits go straight through to the driver (pure logic, unit-tested
+// against the fake engine — this file is transport only).
 //
 // Protocol (all replies carry {cmd:'state', state} unless noted):
-//   {cmd:'init', engineUrl}  → {cmd:'ready'} (loads driver + engine)
-//   {cmd:'load'}             → reset + program/config/feeds/enable
-//   {cmd:'run', cycles:N}    → batch-step N clks
-//   {cmd:'step'}             → one clk
-//   {cmd:'stepInsn'}         → step one instruction
-//   {cmd:'enqueue', bytes}   → TXF writes; reply also carries {refused}
-//   {cmd:'alloc', sideBits, opt} → real PINCTRL/EXECCTRL re-write
-//   {cmd:'program', words}   → C19 re-assemble-on-edit: patch the live
-//                              imem image (one rendered clk per changed
-//                              word; the SM keeps running)
-//   {cmd:'reset'}            → load again
+//   {cmd:'init', engineUrl}     → {cmd:'ready'} (loads driver + engine)
+//   {cmd:'load', state}         → reset + program/config/feeds/enable
+//                                 (state = the sandbox object; lens preset)
+//   {cmd:'run', cycles:N}       → batch-step N clks
+//   {cmd:'step'}                → one clk
+//   {cmd:'stepInsn'}            → step one instruction
+//   {cmd:'enqueue', bytes}      → TXF writes; reply also carries {refused}
+//   {cmd:'program', words}      → C19 re-assemble-on-edit: patch the live
+//                                 imem image (one rendered clk per changed
+//                                 word; the SM keeps running)
+//   {cmd:'overlay', group, field, value} → a config-field edit (queues
+//                                 the composed reg write + the SPEC-6-2
+//                                 settle clk on fifo-mode changes)
+//   {cmd:'drive', pin, level}   → a hold-latch pin drive (null releases)
+//   {cmd:'pattern', cfg}        → the pattern generator (off/square/bits)
+//   {cmd:'lens', mode, pin}     → the monitor lens (off/square/uart)
+//   {cmd:'drain', n}            → queue n RXF0 reads (the RX drain)
+//   {cmd:'regread', addr}       → a queued read, flushed; reply carries
+//                                 {rdata} (the inspector's RO rows)
+//   {cmd:'regwrite', addr, data} → a generic write, flushed (CTRL pulses,
+//                                 IRQ W1C/force, ISB, FDEBUG W1C, the
+//                                 SM0_INSTR force — never the overlay
+//                                 regs: those go through 'overlay')
+//   {cmd:'serialize'}           → reply also carries {json} (the
+//                                 stored-program format, for autosave)
+//   {cmd:'reset', state}        → load again (the view's program)
 
 /* global importScripts, onmessage, postMessage, VibeDriver, PioEngine */
 'use strict';
@@ -39,7 +57,6 @@ onmessage = (e) => {
       PioEngine({ locateFile: (f) => new URL(f, m.engineUrl).href }).then(
         (M) => {
           drv = VibeDriver.create(M);
-          drv.load();
           postMessage({ cmd: 'ready' });
           postState();
         },
@@ -58,7 +75,7 @@ onmessage = (e) => {
   try {
     switch (m.cmd) {
       case 'load':
-        drv.load();
+        drv.load(m.state);
         postState();
         break;
       case 'run':
@@ -78,16 +95,49 @@ onmessage = (e) => {
         postState({ refused });
         break;
       }
-      case 'alloc':
-        drv.setAlloc(m.sideBits, !!m.opt);
+      case 'enqueueword':
+        drv.enqueueWord(m.word >>> 0);
         postState();
         break;
       case 'program':
         drv.setProgram(m.words || []);
         postState();
         break;
+      case 'overlay':
+        drv.setOverlayField(m.group, m.field, m.value);
+        postState();
+        break;
+      case 'drive':
+        drv.setDrive(m.pin | 0, m.level === null ? null : m.level | 0);
+        postState();
+        break;
+      case 'pattern':
+        drv.setPattern(m.cfg || { mode: 'off' });
+        postState();
+        break;
+      case 'lens':
+        drv.setLens({ mode: m.mode || 'off', pin: m.pin | 0 });
+        postState();
+        break;
+      case 'drain': {
+        const drained = drv.drainRx(m.n | 0);
+        postState({ drained });
+        break;
+      }
+      case 'regread': {
+        const rdata = drv.readRegNow(m.addr >>> 0);
+        postState({ rdata, raddr: m.addr >>> 0 });
+        break;
+      }
+      case 'regwrite':
+        drv.writeRegNow(m.addr >>> 0, m.data | 0);
+        postState();
+        break;
+      case 'serialize':
+        postState({ json: drv.serialize() });
+        break;
       case 'reset':
-        drv.load();
+        drv.load(m.state);
         postState();
         break;
       default:

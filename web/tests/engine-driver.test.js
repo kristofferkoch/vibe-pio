@@ -6,7 +6,8 @@
 // This suite needs neither the wasm build nor the model: a scripted fake
 // engine (fake-engine.js) stands in for the C17 ABI, and the driver's
 // own logic is what gets checked — the load timeline (the reg-bus
-// sequence webbuild.py's _client_level_sched mirrors clk for clk), the
+// sequence webbuild.py's client-gate legs mirror clk for clk; the C21
+// sandbox surface has its own suite in sandbox.test.js), the
 // PioCycle decode, the receiver monitor, the TX contents mirror, the
 // phase/displayedPc derivation, and the two red-injection hooks
 // (--defect=pin / --defect=mirror) whose red/green demonstration the
@@ -20,7 +21,7 @@ const assert = require('node:assert/strict');
 const { createFake } = require('./fake-engine.js');
 const VibeDriver = require('../engine-driver.js');
 
-const { REG, ST, LEVEL } = VibeDriver;
+const { REG, ST, DEMO_UART_TX } = VibeDriver;
 const S = createFake().S; // strobe bits (the fake mirrors the shim's)
 
 function freshDriver(defects) {
@@ -44,17 +45,17 @@ function frameEffects(byte, gpioFor) {
 }
 
 // ---- the level fixture is pinned (webbuild._client_level_sched's mirror)
-test('LEVEL is the canonical C12 uart_tx listing', () => {
-  assert.deepEqual(LEVEL.words, [0x9fa0, 0xf727, 0x6001, 0x0642]);
-  assert.equal(LEVEL.wrapTarget, 0);
-  assert.equal(LEVEL.wrapLast, 3);
-  assert.deepEqual(LEVEL.seedFeeds, [0x50, 0x49, 0x4f, 0x21]); // 'PIO!'
+test('DEMO_UART_TX pins the canonical C12 uart_tx listing', () => {
+  // the retired LEVEL fixture, as a sandbox state (sandbox.test.js pins
+  // its overlay words bit-exact against the C18 timeline)
+  assert.deepEqual(DEMO_UART_TX.words.slice(0, 4), [0x9fa0, 0xf727, 0x6001, 0x0642]);
+  assert.deepEqual(DEMO_UART_TX.feeds, [0x50, 0x49, 0x4f, 0x21]); // 'PIO!'
 });
 
 // ---- load(): the reg-bus timeline, one rendered clk per op ----------
 test('load drives the exact level-02 reg-bus timeline', () => {
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
   // pinctrlFor(1,true): SIDESET_COUNT 2<<29 | OUT_CNT 1<<20 | OUT_BASE 0
   // execctrlFor(1,true): SIDE_EN 1<<30 | wrap top 3<<12 | wrap bot 0<<7
   // (SPEC-7-2/10/14..26; SHIFTCTRL bit-for-bit stim.shiftctrl(fjoin_tx))
@@ -65,7 +66,7 @@ test('load drives the exact level-02 reg-bus timeline', () => {
     { addr: 0x054, data: 0x0642 },
     { addr: 0x0dc, data: 0x40100000 }, // SM0+20 PINCTRL
     { addr: 0x0cc, data: 0x40003000 }, // SM0+4 EXECCTRL
-    { addr: 0x0d0, data: 0x40080000 }, // SM0+8 SHIFTCTRL (join TX, SPEC-6-2)
+    { addr: 0x0d0, data: 0x400c0000 }, // SM0+8 SHIFTCTRL (join TX, SPEC-6-2)
     { addr: 0x010, data: 0x50 },
     { addr: 0x010, data: 0x49 },
     { addr: 0x010, data: 0x4f },
@@ -84,7 +85,7 @@ test('load drives the exact level-02 reg-bus timeline', () => {
 // ---- readCycle: the struct decode, including the 64-bit clk ----------
 test('readCycle decodes every PioCycle field, clk across 2^32', () => {
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
   // one scripted cycle with every field non-default; clk is assigned
   // pre-increment so the sampled value lands at 0x1_0000_0004.
   M.script([
@@ -120,7 +121,7 @@ test('readCycle decodes every PioCycle field, clk across 2^32', () => {
 // ---- displayedPc: the executing instruction stays displayed in DELAY -
 test('displayedPc latches the exec pc through DELAY, drops at STALL', () => {
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
   M.script([
     { pc: 2, state: ST.EXEC, strobes: S.S_EXEC | S.S_TICK },
     { pc: 3, state: ST.DELAY, delay: 3 },
@@ -140,7 +141,8 @@ test('displayedPc latches the exec pc through DELAY, drops at STALL', () => {
 // ---- monitor: receiver decode over scripted true pin samples ---------
 test('monitor decodes a scripted 8N1 frame and tags the wave', () => {
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
+  drv.setLens({ mode: 'uart', pin: 0 }); // the demo lens, explicit
   M.script(frameEffects(0x41)); // 'A'
   drv.run(80);
   const st = drv.getState();
@@ -168,7 +170,8 @@ test('monitor decodes a scripted 8N1 frame and tags the wave', () => {
 // ---- back-to-back frames: the off-80 re-arm corner -------------------
 test('monitor re-arms on a back-to-back frame', () => {
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
+  drv.setLens({ mode: 'uart', pin: 0 });
   const fx = frameEffects(0x55).concat(frameEffects(0xaa)); // 160 clks
   M.script(fx);
   drv.run(160);
@@ -179,7 +182,7 @@ test('monitor re-arms on a back-to-back frame', () => {
 // ---- TX mirror: display bookkeeping against the engine level ---------
 test('tx mirror follows pops and agrees with the engine level', () => {
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
   M.script([{ strobes: S.S_TX_POP }, { strobes: S.S_TX_POP }]);
   drv.run(2);
   const st = drv.getState();
@@ -190,7 +193,7 @@ test('tx mirror follows pops and agrees with the engine level', () => {
 
 test('enqueue refuses at the engine tx_full and keeps the mirror exact', () => {
   const { M, drv } = freshDriver();
-  drv.load(); // 4 of 8 deep
+  drv.load(DEMO_UART_TX); // 4 of 8 deep
   const refused = drv.enqueue([1, 2, 3, 4]);
   assert.equal(refused, 0);
   drv.run(4); // the queued TXF writes retire
@@ -207,7 +210,7 @@ test('enqueue refuses at the engine tx_full and keeps the mirror exact', () => {
 // ---- readFlevel: a reg read is a rendered clk, timeline aligned -------
 test('readFlevel flushes one pending op first, then reads', () => {
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
   drv.enqueue([0x55]);
   const pinsBefore = drv.allPins().length;
   const v = drv.readFlevel();
@@ -224,24 +227,27 @@ test('readFlevel flushes one pending op first, then reads', () => {
   assert.equal(drv.allPins().length, pinsBefore + 3);
 });
 
-// ---- setAlloc: the ds split re-write is real config ------------------
-test('setAlloc queues PINCTRL/EXECCTRL for the new ds split', () => {
+// ---- the ds split rides the overlay fields (SPEC-7-16/26) ------------
+test('ds-allocator edits queue PINCTRL/EXECCTRL through the overlay', () => {
   const { M, drv } = freshDriver();
-  drv.load();
-  drv.setAlloc(2, false); // 2 side bits, no opt: ssCnt 2, no SIDE_EN
+  drv.load(DEMO_UART_TX);
+  // the slider's ssCnt/sideEn are the overlay's pinctrl.ssCnt +
+  // execctrl.sideEn — 2 side bits, no opt enable bit
+  drv.setOverlayField('pinctrl', 'ssCnt', 2);
+  drv.setOverlayField('execctrl', 'sideEn', false);
   drv.run(2);
-  const tail = M.writes.slice(12);
-  assert.deepEqual(tail, [
+  assert.deepEqual(M.writes.slice(12), [
     { addr: 0x0dc, data: 0x40100000 }, // (2<<29)|(1<<20): ssCnt 2, out 1
     { addr: 0x0cc, data: 0x3000 }, // wrap 3<<12, SIDE_EN 0
   ]);
-  assert.deepEqual(drv.getState().alloc, { sideBits: 2, opt: false });
+  assert.equal(drv.getState().overlay.pinctrl.ssCnt, 2);
+  assert.equal(drv.getState().overlay.execctrl.sideEn, false);
 });
 
 // ---- stepInsn: "⏭ INSN" stops at the instruction boundary -----------
 test('stepInsn advances to the next displayed instruction', () => {
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
   M.script([
     { pc: 0, state: ST.FETCH, strobes: S.S_TICK },
     { pc: 0, state: ST.EXEC, strobes: S.S_EXEC | S.S_TICK },
@@ -253,7 +259,7 @@ test('stepInsn advances to the next displayed instruction', () => {
   assert.equal(drv.getState().displayPc, 1);
   // a stalled SM: the early-exit fires after one clk
   const { M: M2, drv: drv2 } = freshDriver();
-  drv2.load();
+  drv2.load(DEMO_UART_TX);
   M2.script([
     { pc: 0, state: ST.STALL },
     { pc: 0, state: ST.STALL },
@@ -266,17 +272,17 @@ test('stepInsn advances to the next displayed instruction', () => {
 // ---- flashes: strobe-derived, one clk granularity --------------------
 test('flashes derive from the cycle strobes', () => {
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
   M.script([{ strobes: S.S_TX_POP, pc: 3 }]);
   drv.step();
   assert.equal(drv.getState().flashes.pull, true);
   M.script([{ strobes: S.S_PC_WR, pc: 2 }]);
   drv.step();
   assert.equal(drv.getState().flashes.jmp, true);
-  M.script([{ strobes: S.S_COMPLETE, pc: LEVEL.wrapLast }]);
+  M.script([{ strobes: S.S_COMPLETE, pc: 3 }]);
   drv.step();
   assert.equal(drv.getState().flashes.wrap, true); // complete at wrapLast
-  M.script([{ strobes: S.S_COMPLETE | S.S_PC_WR, pc: LEVEL.wrapLast }]);
+  M.script([{ strobes: S.S_COMPLETE | S.S_PC_WR, pc: 3 }]);
   drv.step();
   assert.equal(drv.getState().flashes.wrap, false); // a jmp is not a wrap
 });
@@ -284,7 +290,7 @@ test('flashes derive from the cycle strobes', () => {
 // ---- setProgram: the C19 re-assemble-on-edit commit path --------------
 test('setProgram writes only changed imem slots as queued reg ops', () => {
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
   assert.equal(M.writes.length, 12);
   // the same words as loaded: nothing to write, no clks consumed
   const same = new Array(32).fill(0);
@@ -314,14 +320,16 @@ test('defect=pin: the bit0 oracle check is green clean, red defective', () => {
   // bit0 and bit1 disagree: 0-cells drive 0b10, 1-cells drive 0b11
   const g = (pin) => (pin ? 3 : 2);
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
+  drv.setLens({ mode: 'uart', pin: 0 });
   M.script(frameEffects(0x41, g));
   drv.run(80);
   const clean = drv.allPins();
   const cleanState = drv.getState();
 
   const { M: M2, drv: bad } = freshDriver({ pin: true });
-  bad.load();
+  bad.load(DEMO_UART_TX);
+  bad.setLens({ mode: 'uart', pin: 0 });
   M2.script(frameEffects(0x41, g));
   bad.run(80);
   const defective = bad.allPins();
@@ -340,14 +348,14 @@ test('defect=pin: the bit0 oracle check is green clean, red defective', () => {
 test('defect=mirror: the mirror-vs-engine check is green clean, red defective', () => {
   const pops = [{ strobes: S.S_TX_POP }, { strobes: S.S_TX_POP }];
   const { M, drv } = freshDriver();
-  drv.load();
+  drv.load(DEMO_UART_TX);
   M.script(pops);
   drv.run(2);
   const clean = drv.getState();
   assert.equal(clean.txWords.length, clean.txLevel); // green leg
 
   const { M: M2, drv: bad } = freshDriver({ mirror: true });
-  bad.load();
+  bad.load(DEMO_UART_TX);
   M2.script(pops);
   bad.run(2);
   const defective = bad.getState();
