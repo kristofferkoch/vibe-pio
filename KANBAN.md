@@ -84,3 +84,112 @@ gate** (needs node+npm, like `make py` needs uv) — `make web` stays
 container-runnable and runtime JS stays dependency-free. Dependency
 order is thereby revised to C17 → C18 → **C20 → C19**: the
 assembler's encoding tables must land TDD from their first commit.
+
+## Game track (C21–C24)
+
+Promoted from the IDEAS game entry after the 2026-08-27 game-loop
+grilling (round 1: sandbox). Owner decisions: **sandbox first,
+SM0-only** — "all features unlocked" means the complete per-SM
+surface (FIFO join/aux modes, real CLKDIV, shift/autopush/autopull
+config, pin mapping in both directions, IRQ flags, RX drain); the
+other three SMs are their own later cards. The **multi-SM gate
+oracle is pio_model extended to multi-SM** — the Python referee
+grows, no iverilog-oracle detour (C23 lands before any multi-SM
+client work). Config UI is an **inspector-first hybrid**: a full
+datasheet register-inspector panel guarantees 100 % field coverage
+from day one, and the DESIGN-NOTES drawn grammar (shift arrows, join
+ghosts, wrap steppers, pin tags) lands incrementally on top (C22).
+**Real CLKDIV is exposed** even in sandbox (levels may still
+abstract it per level). Input stimulus is **manual pin drives + hold
+latches + a tiny pattern generator** (square / pasted bitstream on
+one pin — deliberately short of level-stimulus machinery). The
+receiver monitor becomes a **selectable lens** (off by default /
+square / uart, target pin picked — a lens, never a judge, until
+levels). **No game shell yet** — sm-view stays the entry page; the
+menu lands with the first level card. Persistence is **localStorage
+autosave + JSON export/import** of the stored-program format
+(32 words + config overlay — the same JSON seeds level authoring)
+plus copy-as-canonical-listing via pio-asm. Sandbox boots to **empty
+memory** (all-zero = the jmp-0 park, the DESIGN-NOTES lesson), the
+old level-02 uart_tx fixture demoted to a loadable demo (promotion
+default, re-decidable at C21 kickoff). Dependency order:
+C21 → C22 ∥ C23; C24 after C21 + C23. Tooling/web cards state their
+own done-when gates below; the RTL-card template does not apply
+(the RTL is already multi-SM complete).
+
+### C21 — sandbox: the full single-SM feature surface
+
+- The driver's LEVEL fixture is retired: `VibeDriver` loads a
+  sandbox state object (words + config overlay covering PINCTRL/
+  EXECCTRL/SHIFTCTRL/CLKDIV incl. join/aux bits — every field the
+  inspector shows) as the same one-reg-write-per-rendered-clk
+  timeline, and post-load field edits land as queued reg writes
+  (the feed discipline, SPEC-6-2 settle clk included). New driver
+  faces: per-pin drive ops + hold latches + a deterministic pattern
+  generator (square period / pasted bitstream, one pin); RX drain
+  (queued RXF0 reads) with an RX contents mirror bookkept against
+  the engine's rx_push strobes (the TX-mirror precedent); IRQ flags
+  + INTR readback view.
+- UI: the register inspector panel (datasheet map: block regs +
+  SM0 CLKDIV/PINCTRL/EXECCTRL/SHIFTCTRL/SM0_INSTR + TXF/RXF/FLEVEL —
+  every field readable and settable, field tooltips citing SPEC-7-x;
+  the universal "everything unlocked" guarantee); a pin I/O strip
+  (drive, hold, pattern source per pin); RX panel; clkdiv header
+  chip; monitor lens selector (off default) with target-pin pick;
+  empty boot + demo loads. Persistence: the JSON serializer is pure
+  driver code; localStorage/export/import glue lives in sm-view.js.
+- Done when: `make js` covers the new driver logic against the fake
+  engine (pattern-gen determinism, RX mirror vs rx_level, lens
+  verdicts on canned pin series, overlay→reg-write mapping, JSON
+  round-trip) with red/green defect hooks (rx / lens / pattern /
+  overlay — same register as the C18 pin/mirror hooks); `make web`'s
+  client gate grows model-oracle sandbox legs — pio-stim schedules
+  using pin drives (`set_gpio`), clkdiv≠1, join/aux overlays and
+  RXF0 drains must yield pin-identical samples + FLEVEL + read
+  rdata vs pio_model, with the lens decoding checked over that
+  oracle series (the C18 'PIO!' precedent); the browser session
+  plays it (fun-gate flavor: every feature reachable without
+  opening a devtool).
+
+### C22 — drawn config (the DESIGN-NOTES grammar)
+
+- The cyan structural config, on top of C21's overlay: shift
+  direction + autopush/autopull flow arrows with threshold steppers
+  over OSR/ISR; FIFO join ghosts (ticked upper TX slots, dimmed
+  ghost RX panel); wrap steppers on the wrap arc; pin-mapping tags
+  (out/side base·count) on the waveform. Every control is a real
+  reg write through the C21 overlay (the ds-allocator precedent) —
+  nothing is display-only.
+- Done when: `make js` units pin the field↔reg-write mapping;
+  `make web` and the browser session verify the glue (DOM work is
+  never unit-tested, the C20 discipline).
+
+### C23 — pio_model multi-SM extension (the multi-SM oracle)
+
+- The Python referee grows from SPEC-16-4's SM0 scope to all four
+  SMs: per-SM config/divider/FIFOs, cross-SM gpio priority
+  resolution (CC-6/CC-7), inter-SM IRQ, TXF1..3 and SM1..3 window
+  accesses. stim grows the SM-indexed vocabulary (a compatible
+  widening if possible); the C12 conformance matrix gains multi-SM
+  programs (parallel SMs on the shared imem, inter-SM IRQ handoff,
+  pin arbitration), plus fuzz and the mutation demo — an injected
+  multi-SM model bug must go red.
+- Done when: `make model` and `make web`'s three-way gate (which
+  gains the multi-SM corpus) show line-identical SPEC-16-7 traces
+  model ↔ iverilog ↔ verilator-wasm on multi-SM schedules, and the
+  C12 red/green discipline is re-demonstrated on a multi-SM
+  transcription bug.
+
+### C24 — sandbox multi-SM (four machines, one playground)
+
+- The shim's pre-edge sample extends per-SM (PioCycle grows the
+  SM1..3 fields or becomes an array — the CC-40 sampling point
+  unchanged); the view shows the shared listing with four PC
+  cursors, per-SM register/FIFO columns, and pad ownership
+  (highest-numbered SM wins, CC-7) on the pin strip; inspector and
+  detail panes select the SM. Client-gate legs run multi-SM
+  timelines against the C23-extended model.
+- Done when: `make js` and the `make web` client gate are green on
+  multi-SM timelines vs pio_model (load, parallel run, inter-SM
+  IRQ, pin-arbitration legs) with red/green defect hooks; browser
+  session; fun-gate re-read on four machines.

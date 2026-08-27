@@ -45,26 +45,19 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   equivalence), not a directed sim.
 - TIS-100-style competitive PIO game (grilled 2026-08-25 rounds 1–2;
   2026-08-26 round 3 pivoted the simulator into the browser — engine
-  track promoted as C17–C19, see KANBAN). Round-3 owner decisions:
-  the browser runs the verified RTL itself (Verilator→wasm, AOT build
-  of the Verilated model), not a JS/Python reimplementation;
-  pio_model stays the CI cross-check oracle (difftest gains a third
-  backend); the SSH daemon is deferred — browser-only until the game
-  loop lands, then reconsidered as a score/multiplayer server; the
-  in-browser assembler is a JS port of pio_model asm/disasm gated by
-  golden bit-vectors ("never forked" relaxed for asm only, since
-  bit-equality is mechanically checkable — the referee stays RTL).
-  Still open here, for the game-loop grilling once C18 re-reads the
-  fun gate on the real engine: each level = stimulus + a
+  track promoted as C17–C19; 2026-08-27 game-loop round 1 (sandbox)
+  promoted the sandbox + multi-SM track as C21–C24, see KANBAN for
+  those owner decisions). Still open here, for the *level* grilling
+  once C21 lands and is fun-gate re-read: each level = stimulus + a
   *receiver-style* conformance monitor (C15 machinery, spec-eq mode) —
   acceptance is "the receiver got the right data", never
   golden-trace equality, with monitor profiles as a ladder of
   stricter parameterized tolerances over one receiver skeleton
   (profiles are the level's visible spec, versioned with the model);
-  1 tick = 1 cycle, clkdiv abstracted, timing windows in ticks;
+  whether levels keep the 1-tick-1-cycle, clkdiv-abstracted
+  rendering (sandbox exposes the real divider, levels need not);
   progression one SM → multi-SM parallel buses → DMA at most as
-  late-game fixed-function pacing; stored program is the object code
-  (32×16-bit words + config overlay), canonical C12 disassembly as
-  the only source form; score metric open (C14's Pareto front is the
-  natural fit), par/solvability proofs likewise (C14/C16 certify for
-  free). Mock-up decisions live in `mockups/DESIGN-NOTES.md`.
+  late-game fixed-function pacing; score metric open (C14's Pareto
+  front is the natural fit), par/solvability proofs likewise
+  (C14/C16 certify for free). Mock-up decisions live in
+  `mockups/DESIGN-NOTES.md`.
