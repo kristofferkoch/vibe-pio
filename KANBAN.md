@@ -36,7 +36,7 @@ are done.
 Tooling cards (C14/C16) state their own done-when gates; the RTL-card
 template above applies to the RTL they touch.
 
-## Browser game engine track (C17–C19)
+## Browser game engine track (C17–C20)
 
 Promoted from the IDEAS game entry after the grilling round
 (2026-08-26, round 3 — browser pivot). Owner decisions: the browser
@@ -57,6 +57,40 @@ under web/ on the wasm engine — worker + batch stepping, client gate
 vs the model oracle; the fun-gate re-read now happens on the real
 engine) are done. C18's re-assemble-on-edit milestone is folded into
 C19's landing (the client marks unbuilt edits meanwhile).
+
+C20 was promoted after the 2026-08-27 JS-tooling grilling round
+(all owner decisions = the presented recommendations): **Biome** is
+the single format+lint tool for js+css+html (the ruff analog — one
+curated strict set, every waiver documented in `biome.json` and
+`docs/js-tooling.md`); the test runner is bare **`node --test`**
+(the stdlib-only pytest mirror — the unit suite stays runnable under
+the container's bare node); day-one scope is **all three languages**,
+which requires extracting `sm-view.html`'s inline `<style>` into
+`sm-view.css` first; the initial churn is absorbed by **one
+mechanical** biome-format commit (behavior-identical, `make web`
+re-verified); `sm-view.js` is **extract-on-touch** (lint/format from
+day one; logic moves into require-able tested modules only as it is
+touched — DOM glue is verified by the browser session and `make
+web`, never unit tests); and `make js` is a **standalone host-side
+gate** (needs node+npm, like `make py` needs uv) — `make web` stays
+container-runnable and runtime JS stays dependency-free. Dependency
+order is thereby revised to C17 → C18 → **C20 → C19**: the
+assembler's encoding tables must land TDD from their first commit.
+
+- C20 (JS tooling gate, `make js`): the web client's `make py`
+  mirror. Biome `ci` (format --check + strict lint) over
+  `web/*.js|css|html` (mockups/ stays free-form), plus the
+  `node --test` unit suite under `web/tests/` — hermetic, the
+  driver's logic checked against a fake engine object (no wasm
+  build), with the red/green discipline demonstrated on the existing
+  `--defect=pin`/`--defect=mirror` hooks. Includes: the `<style>`
+  extraction to `sm-view.css`, the one mechanical format commit,
+  `package.json` + committed lockfile (dev-only deps; runtime JS
+  gains nothing), `docs/js-tooling.md` (the python-tooling.md
+  mirror: gate table, waiver rationale, TDD rule), and the
+  AGENTS.md JS-discipline line. Done-when: `make js` green (format
+  check, lint, tests incl. the defect-hook red/green demo) and
+  `make web` still green after the extraction + reformat.
 
 - C19 (in-browser assembler/disassembler): JS port of pio_model
   asm/disasm + encoding tables; CI gate = golden bit-vectors
