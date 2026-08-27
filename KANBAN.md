@@ -48,22 +48,10 @@ overlay — the same JSON seeds level authoring) plus
 copy-as-canonical-listing via pio-asm. Sandbox boots to **empty
 memory** (all-zero = the jmp-0 park, the DESIGN-NOTES lesson), the
 old uart_tx demo demoted to a loadable promotion default (kept at
-kickoff). Dependency order: C22; C24 after the landed C23. Tooling/web
+kickoff). Dependency order: C24 alone remains (C22/C23 landed;
+the C22 drawn-config grammar rides the sandbox overlay). Tooling/web
 cards state their own done-when gates below; the RTL-card template
 does not apply (the RTL is already multi-SM complete).
-
-### C22 — drawn config (the DESIGN-NOTES grammar)
-
-- The cyan structural config, on top of the sandbox overlay: shift
-  direction + autopush/autopull flow arrows with threshold steppers
-  over OSR/ISR; FIFO join ghosts (ticked upper TX slots, dimmed
-  ghost RX panel); wrap steppers on the wrap arc; pin-mapping tags
-  (out/side base·count) on the waveform. Every control is a real
-  reg write through the sandbox overlay (the ds-allocator precedent)
-  — nothing is display-only.
-- Done when: `make js` units pin the field↔reg-write mapping;
-  `make web` and the browser session verify the glue (DOM work is
-  never unit-tested — the docs/js-tooling.md discipline).
 
 ### C24 — sandbox multi-SM (four machines, one playground)
 

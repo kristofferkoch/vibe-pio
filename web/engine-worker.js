@@ -23,6 +23,10 @@
 //   {cmd:'overlay', group, field, value} → a config-field edit (queues
 //                                 the composed reg write + the SPEC-6-2
 //                                 settle clk on fifo-mode changes)
+//   {cmd:'control', id, gesture} → a C22 drawn-config control (the
+//                                 DESIGN-NOTES grammar): the shared
+//                                 controlEdit table maps the gesture to
+//                                 overlay edits, landed atomically
 //   {cmd:'drive', pin, level}   → a hold-latch pin drive (null releases)
 //   {cmd:'pattern', cfg}        → the pattern generator (off/square/bits)
 //   {cmd:'lens', mode, pin}     → the monitor lens (off/square/uart)
@@ -105,6 +109,10 @@ onmessage = (e) => {
         break;
       case 'overlay':
         drv.setOverlayField(m.group, m.field, m.value);
+        postState();
+        break;
+      case 'control':
+        drv.applyControl(m.id, m.gesture);
         postState();
         break;
       case 'drive':

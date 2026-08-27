@@ -1,5 +1,5 @@
 // engine-driver.js — the C18 client core, grown into the C21 sandbox
-// driver (KANBAN C18/C19/C21).
+// driver (KANBAN C18/C19/C21; C22 adds the drawn-config control table).
 //
 // Pure logic, no DOM and no Worker API: the same instance runs inside
 // web/engine-worker.js (the browser client) and under node
@@ -26,7 +26,15 @@
 //     pin changes) plus the per-cycle waveform tags;
 //   - serializes the stored-program format (words + config overlay —
 //     the JSON that seeds level authoring; feeds/lens/drives are
-//     session state and stay out).
+//     session state and stay out);
+//   - maps the C22 drawn-config grammar (DESIGN-NOTES: shift-direction
+//     arrows, autopull/autopush toggles + threshold steppers, the FIFO
+//     join cycle, wrap steppers, pin-mapping base·count steppers) onto
+//     overlay edits — every drawn control is a real reg write, nothing
+//     is display-only. controlEdit is the pure gesture→edits table;
+//     setOverlayFields lands a multi-field edit as ONE composed write
+//     per group (the atomic join edit must not pay two SPEC-6-2 settle
+//     clks).
 //
 // Red-injection hooks for the mutation demos (never enabled in a real
 // run; web/node_client_gate.js and web/tests/sandbox.test.js turn them
@@ -43,7 +51,11 @@
 //                     ahead: the composed gpio series diverges;
 //   {overlay: true} — the SHIFTCTRL composer transcribes PULL_THRESH
 //                     at 24:20 instead of 29:25: the overlay→reg-write
-//                     mapping diverges from the datasheet.
+//                     mapping diverges from the datasheet;
+//   {cfgctrl: true} — the drawn fifo-join cycle swaps its bits onto
+//                     FJOIN_RX (bit 31) where the grammar says FJOIN_TX
+//                     (bit 30): the C22 field↔reg-write mapping
+//                     diverges (the drawn-config red case).
 
 /* global PioEngine */
 ((global) => {
@@ -185,6 +197,83 @@
     return out;
   }
 
+  // ---------------- C22: the drawn-config control table ----------------
+  // The DESIGN-NOTES grammar as overlay edits — every drawn control is a
+  // real reg write through the sandbox overlay, nothing display-only.
+  // Gestures: 'inc'/'dec' step a stepper through its legal stored values
+  // and WRAP AROUND (the wrap-stepper idiom); 'toggle' flips a drawn
+  // boolean. Kinds: 'toggle' a single boolean field; 'range' a 0..max
+  // field; 'thr' a threshold stored 1..32 (compose encodes 32 as 0,
+  // SPEC-5-7); 'c32' a count stored 0..31 where 0 displays/means 32
+  // (OUT_COUNT/IN_COUNT, SPEC-7-26/21); 'join' the FIFO-join cycle.
+  const CFG_CONTROLS = {
+    'osr-dir': { kind: 'toggle', group: 'shiftctrl', field: 'outRight' }, // SPEC-7-21
+    'isr-dir': { kind: 'toggle', group: 'shiftctrl', field: 'inRight' }, // SPEC-7-21
+    autopull: { kind: 'toggle', group: 'shiftctrl', field: 'autopull' }, // SPEC-5-8
+    autopush: { kind: 'toggle', group: 'shiftctrl', field: 'autopush' }, // SPEC-5-9
+    'pull-thr': { kind: 'thr', group: 'shiftctrl', field: 'pullThr' }, // SPEC-5-7
+    'push-thr': { kind: 'thr', group: 'shiftctrl', field: 'pushThr' }, // SPEC-5-7
+    'fifo-join': { kind: 'join' }, // SPEC-6-2/3
+    'wrap-top': { kind: 'range', group: 'execctrl', field: 'wrapTop', max: 31 }, // SPEC-7-19
+    'wrap-bot': { kind: 'range', group: 'execctrl', field: 'wrapBot', max: 31 }, // SPEC-7-19
+    'out-base': { kind: 'range', group: 'pinctrl', field: 'outBase', max: 31 }, // SPEC-7-26
+    'out-cnt': { kind: 'c32', group: 'pinctrl', field: 'outCnt' }, // SPEC-7-26
+    'side-base': { kind: 'range', group: 'pinctrl', field: 'ssBase', max: 31 }, // SPEC-7-26
+    'in-base': { kind: 'range', group: 'pinctrl', field: 'inBase', max: 31 }, // SPEC-7-26
+    'in-cnt': { kind: 'c32', group: 'shiftctrl', field: 'inCount' }, // SPEC-7-21
+  };
+
+  // The FIFO-join cycle (SPEC-6-2/3): split → join TX → join RX → split,
+  // walked by 'inc' ('dec' walks backwards). Any aux mode (FJOIN_RX_PUT/
+  // GET, inspector-set) is one cycle from split — the drawn grammar owns
+  // join, and the aux bits clear in the same single write.
+  function cfgJoinEdits(sc, gesture, defects) {
+    const edits = [];
+    const setBit = (field, v) => {
+      if (sc[field] !== v) edits.push(['shiftctrl', field, v]);
+    };
+    if (sc.fjoinRxPut || sc.fjoinRxGet) {
+      setBit('fjoinRxPut', false);
+      setBit('fjoinRxGet', false);
+      setBit('fjoinTx', false);
+      setBit('fjoinRx', false);
+      return edits;
+    }
+    const dir = gesture === 'dec' ? 2 : 1; // +1 / −1 mod 3
+    const cur = sc.fjoinTx ? 1 : sc.fjoinRx ? 2 : 0;
+    const nxt = (cur + dir) % 3;
+    let tx = nxt === 1,
+      rx = nxt === 2;
+    if (defects?.cfgctrl) [tx, rx] = [rx, tx]; // defect: the TX/RX bits swap
+    setBit('fjoinTx', tx);
+    setBit('fjoinRx', rx);
+    return edits;
+  }
+
+  // Pure: the drawn gesture → overlay edits ([[group, field, value]]).
+  // The view applies the same table to its stored-program copy, and the
+  // units pin the field↔reg-write mapping against composed words.
+  function controlEdit(ov, id, gesture, defects) {
+    const c = CFG_CONTROLS[id];
+    if (!c) throw new Error(`control: unknown ${id}`);
+    if (c.kind === 'join') {
+      if (gesture !== 'inc' && gesture !== 'dec') throw new Error(`control: ${id} wants inc/dec`);
+      return cfgJoinEdits(ov.shiftctrl, gesture, defects);
+    }
+    if (c.kind === 'toggle') {
+      if (gesture !== 'toggle') throw new Error(`control: ${id} wants toggle`);
+      return [[c.group, c.field, !ov[c.group][c.field]]];
+    }
+    if (gesture !== 'inc' && gesture !== 'dec') throw new Error(`control: ${id} wants inc/dec`);
+    const v = ov[c.group][c.field];
+    let next;
+    if (c.kind === 'thr') next = gesture === 'inc' ? (v % 32) + 1 : v === 1 ? 32 : v - 1;
+    else if (c.kind === 'c32')
+      next = gesture === 'inc' ? (v === 31 ? 0 : v + 1) : v === 0 ? 31 : v - 1;
+    else next = gesture === 'inc' ? (v + 1) % (c.max + 1) : v === 0 ? c.max : v - 1;
+    return [[c.group, c.field, next]];
+  }
+
   function newState() {
     // the reset-overlay state: all-zero memory (the jmp-0 park), every
     // config field at its hardware reset value
@@ -311,6 +400,7 @@
     const DEFECT_LENS = !!defects?.lens;
     const DEFECT_PATTERN = !!defects?.pattern;
     const DEFECT_OVERLAY = !!defects?.overlay;
+    const DEFECT_CFGCTRL = !!defects?.cfgctrl;
     const cyclePtr = M._pio_last_cycle();
     const dv = new DataView(M.HEAPU8.buffer, cyclePtr, CYC_SIZE);
 
@@ -647,19 +737,23 @@
     // changing SHIFTCTRL edit flushes the FIFOs (SPEC-6-2): the write
     // carries the mirror reset and the settle clk follows so a feeding
     // write cannot land on the flush edge.
-    function setOverlayField(group, field, value) {
+    function validateOverlayValue(group, field, value) {
       const spec = OVERLAY_GROUPS[group].fields[field];
       if (!spec) throw new Error(`overlay: no field ${group}.${field}`);
       const max = spec[2];
       if (max === 'b') {
         if (typeof value !== 'boolean') throw new Error(`${group}.${field}: not a boolean`);
-      } else {
-        value = Number(value);
-        const hiV = max === 'thr' ? 32 : max;
-        const loV = max === 'thr' ? 1 : 0;
-        if (!Number.isInteger(value) || value < loV || value > hiV)
-          throw new Error(`${group}.${field}: out of range (${loV}..${hiV})`);
+        return;
       }
+      const v = Number(value);
+      const hiV = max === 'thr' ? 32 : max;
+      const loV = max === 'thr' ? 1 : 0;
+      if (!Number.isInteger(v) || v < loV || v > hiV)
+        throw new Error(`${group}.${field}: out of range (${loV}..${hiV})`);
+    }
+
+    function setOverlayField(group, field, value) {
+      validateOverlayValue(group, field, value);
       const modeBefore = fifoModeOf(ov.shiftctrl);
       ov[group][field] = value;
       pendingOps.push({ addr: OVERLAY_GROUPS[group].addr(), data: compose(group) });
@@ -667,6 +761,37 @@
         pendingOps[pendingOps.length - 1].fjoinFlush = true;
         pendingOps.push(null);
       }
+    }
+
+    // A multi-field config edit (the C22 drawn controls): validate every
+    // edit first, then apply all and queue ONE composed write per
+    // touched group — an atomic join edit must not pay two SHIFTCTRL
+    // writes or two SPEC-6-2 settle clks.
+    function setOverlayFields(edits) {
+      if (!Array.isArray(edits) || edits.length === 0) throw new Error('overlay edits: none');
+      for (const [group, field, value] of edits) {
+        if (!OVERLAY_GROUPS[group]) throw new Error(`overlay: no group ${group}`);
+        validateOverlayValue(group, field, value);
+      }
+      const modeBefore = fifoModeOf(ov.shiftctrl);
+      for (const [group, field, value] of edits) ov[group][field] = value;
+      let shiftOp = null;
+      for (const group of [...new Set(edits.map(([g]) => g))]) {
+        const op = { addr: OVERLAY_GROUPS[group].addr(), data: compose(group) };
+        if (group === 'shiftctrl') shiftOp = op;
+        pendingOps.push(op);
+      }
+      if (shiftOp && modeBefore !== fifoModeOf(ov.shiftctrl)) {
+        shiftOp.fjoinFlush = true;
+        pendingOps.push(null);
+      }
+    }
+
+    // The drawn-control entry point (the worker's {cmd:'control'}): the
+    // shared controlEdit table decides the edits, setOverlayFields lands
+    // them. The defect hook re-injects the FJOIN TX/RX swap here.
+    function applyControl(id, gesture) {
+      setOverlayFields(controlEdit(ov, id, gesture, { cfgctrl: DEFECT_CFGCTRL }));
     }
 
     // Hold-latch a manual pin drive (null releases the pin). The level
@@ -881,6 +1006,8 @@
       enqueue,
       enqueueWord,
       setOverlayField,
+      setOverlayFields,
+      applyControl,
       setDrive,
       setPattern,
       setLens,
@@ -907,6 +1034,9 @@
     parseState,
     composeOverlay,
     decomposeOverlay,
+    // the C22 drawn-config grammar: gesture → overlay edits (pure)
+    CFG_CONTROLS,
+    controlEdit,
     // the inspector's field table (bit ranges + max/kind for its inputs)
     OVERLAY_GROUP_FIELDS: (group) => Object.entries(OVERLAY_GROUPS[group].fields),
     EMPTY,

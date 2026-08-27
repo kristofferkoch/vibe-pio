@@ -789,6 +789,13 @@ main > * {
   min-height: 0;
   min-width: 0;
 }
+/* ...except the FIFO: a join-deep (8-slot) panel squeezed under a
+   content-free minimum spilled its rows over the panels below (found
+   by the C22 browser session — drawn controls became unclickable under
+   the spill). The content-based automatic minimum keeps its row honest */
+#regs > div#fifo {
+  min-height: auto;
+}
 .kv {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -963,8 +970,16 @@ main > * {
   border: 1px dashed var(--line2);
   border-left: 3px solid var(--cfg-dim);
 }
-#rxfifo {
-  opacity: 0.55;
+/* the join ghost (C22) replaces the blanket RX dim: the panel whose
+   storage was borrowed fades behind its ghost chip */
+.ghost {
+  opacity: 0.4;
+  transition: opacity 0.3s;
+}
+#fifo,
+#rxfifo,
+#pullconn {
+  transition: opacity 0.3s;
 }
 .lamp {
   display: inline-block;
@@ -991,7 +1006,6 @@ main > * {
 #fifobody {
   display: grid;
   grid-template-columns: 1fr 86px;
-  min-height: 0;
 }
 #fslots {
   display: flex;
@@ -1425,7 +1439,194 @@ input.ihex {
   top: 0;
   z-index: 2;
 }
+/* rows are content-sized (a collapsed 1fr FIFO row spilled a join-deep
+   panel over the rows below — found by the C22 browser session); the
+   inspector is the flexible one — it scrolls internally, so a squeezed
+   column shrinks it, never the FIFO */
 #regs {
-  grid-template-rows: auto auto 1fr auto auto auto auto;
+  grid-template-rows: auto auto auto auto auto auto auto 1fr;
   overflow-y: auto;
+}
+
+/* ===================== C22: the drawn config grammar ==================
+   The DESIGN-NOTES cyan controls: every one is a real reg write through
+   the sandbox overlay (nothing display-only). Steppers cycle their
+   range and wrap; arrows toggle; the join chip cycles split → tx → rx.
+   Same palette: cyan = config/wiring. */
+button.shiftviz {
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0 12px 5px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  letter-spacing: normal;
+}
+button.shiftviz .sv-arrow {
+  display: block;
+}
+button.shiftviz:hover .sv-arrow {
+  border-top-color: var(--cfg);
+}
+button.shiftviz:hover .sv-arrow::after {
+  border-left-color: var(--cfg);
+}
+button.shiftviz:hover .sv-arrow.l::after {
+  border-right-color: var(--cfg);
+}
+button.shiftviz:hover .sv-end {
+  color: var(--cfg);
+}
+/* the autopull/autopush toggle + threshold stepper group */
+.cfgdraw {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ctgl {
+  font: inherit;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  background: none;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  color: var(--cfg-dim);
+  padding: 0 7px;
+  cursor: pointer;
+}
+.ctgl:hover {
+  border-color: var(--cfg);
+  color: var(--cfg);
+}
+.ctgl.on {
+  color: var(--cfg);
+  border-color: var(--cfg-dim);
+  background: rgba(90, 200, 216, 0.08);
+}
+.thrctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--cfg-dim);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+}
+.thrctl b {
+  color: var(--cfg);
+  font-weight: normal;
+  min-width: 17px;
+  text-align: center;
+}
+.cstep {
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  border-radius: 3px;
+  color: var(--dim);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cstep:hover {
+  border-color: var(--cfg);
+  color: var(--cfg);
+}
+/* the FIFO join chip (the cycle control) + the borrowed-slot tick */
+.cjoin {
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  background: none;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  color: var(--cfg-dim);
+  padding: 0 7px;
+  cursor: pointer;
+}
+.cjoin:hover {
+  border-color: var(--cfg);
+  color: var(--cfg);
+}
+.cjoin.on {
+  color: var(--cfg);
+  border-color: var(--cfg-dim);
+  background: rgba(90, 200, 216, 0.08);
+}
+.fslot .idx {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.fslot .idx .tick {
+  font-style: normal;
+  color: var(--cfg);
+  font-size: 9px;
+}
+/* the wrap steppers on the arc (WRAP_TOP at the top end, WRAP_BOTTOM
+   at the arrow end) */
+.wstep {
+  position: absolute;
+  left: 2px;
+  width: 12px;
+  height: 13px;
+  padding: 0;
+  z-index: 4;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  background: var(--panel2);
+  border: 1px solid var(--cfg-dim);
+  border-radius: 3px;
+  color: var(--cfg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wstep:hover {
+  border-color: var(--cfg);
+  color: var(--bright);
+}
+.wstep.inc {
+  left: 16px;
+}
+/* the pin-mapping tags on the waveform header: base·count steppers */
+.maptag {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+.maptag b {
+  color: var(--cfg);
+  font-weight: normal;
+  min-width: 18px;
+  text-align: center;
+}
+.tstep {
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  margin: 0 1px;
+  background: none;
+  border: 1px solid #23444c;
+  border-radius: 3px;
+  color: var(--cfg-dim);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tstep:hover {
+  border-color: var(--cfg);
+  color: var(--cfg);
 }

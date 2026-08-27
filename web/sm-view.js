@@ -1,4 +1,5 @@
-// sm-view.js — the C21 sandbox SM view client logic (KANBAN C18/C19/C21).
+// sm-view.js — the C21 sandbox SM view client logic (KANBAN
+// C18/C19/C21; C22 adds the drawn-config grammar).
 //
 // Every machine value rendered here (pins, PC, phase, X/Y, OSR/ISR,
 // counters, FIFO levels, IRQ flags) comes from the wasm engine's
@@ -362,6 +363,21 @@ function ovEdit(group, field, value) {
   requestAutosave();
 }
 
+// ---- the C22 drawn controls (DESIGN-NOTES grammar) ---------------------
+// Every drawn gesture rides the driver's shared controlEdit table (the
+// same pure mapping make js pins) and lands as one atomic overlay write
+// per group through the worker — nothing is display-only.
+function sendCtl(id, gesture) {
+  if (!V.ready) return;
+  for (const [g, f, v] of VD.controlEdit(OV, id, gesture)) curState[g][f] = v;
+  post({ cmd: 'control', id, gesture });
+  requestAutosave();
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ctl]');
+  if (b) sendCtl(b.dataset.ctl, b.dataset.g);
+});
+
 // ================= rendering (all machine values from state) ==========
 const ROWS = [];
 function rebuildListing() {
@@ -413,7 +429,7 @@ function buildProgram() {
     wrapBot = OV.execctrl.wrapBot;
   const arc = document.createElement('div');
   arc.id = 'wraparc';
-  arc.title = `config · WRAP (SPEC-7-19): after insn ${wrapTop} the PC returns to ${wrapBot} instead of falling through — set it in the inspector`;
+  arc.title = `config · WRAP (SPEC-7-19): after insn ${wrapTop} the PC returns to ${wrapBot} instead of falling through — the steppers at the arc's ends are real EXECCTRL writes`;
   arc.style.top = `${wrapBot * 20 + 10}px`;
   arc.style.height = `${Math.max(0, wrapTop - wrapBot) * 20}px`;
   nodes.push(arc);
@@ -422,6 +438,25 @@ function buildProgram() {
   ah.title = arc.title;
   ah.style.top = `${wrapBot * 20 + 6}px`;
   nodes.push(ah);
+  // wrap steppers on the arc (C22): WRAP_TOP at the top end, WRAP_BOTTOM
+  // at the arrow end — cycling EXECCTRL writes (the ds-allocator precedent)
+  const wrapStep = (field, g, y, label) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `wstep ${g}`;
+    b.dataset.ctl = field;
+    b.dataset.g = g;
+    b.textContent = g === 'inc' ? '+' : '−';
+    b.title = `config · ${field === 'wrap-top' ? 'WRAP_TOP' : 'WRAP_BOTTOM'} (SPEC-7-19): ${label} — cycles 0..31, a real EXECCTRL write`;
+    b.style.top = `${y}px`;
+    nodes.push(b);
+  };
+  const tY = wrapTop * 20 + (wrapTop === wrapBot ? -11 : 3),
+    bY = wrapBot * 20 + 3; // the arc ends' rows (20px rows; 13px buttons)
+  wrapStep('wrap-top', 'dec', tY, `after-insn ${wrapTop} −1`);
+  wrapStep('wrap-top', 'inc', tY, `after-insn ${wrapTop} +1`);
+  wrapStep('wrap-bot', 'dec', bY, `target ${wrapBot} −1`);
+  wrapStep('wrap-bot', 'inc', bY, `target ${wrapBot} +1`);
   const arcs = [];
   for (let i = 0; i < 32; i++) {
     if (!ROWS[i]) continue;
@@ -491,11 +526,11 @@ function renderAlloc() {
   $('ssopt').checked = a.opt && !!a.sideBits;
   $('dsinfo').innerHTML =
     `side ${a.sideBits}b${a.opt ? '+opt' : ''} · delay [0..${maxDelay()}] · PINCTRL.SIDESET_COUNT=${ssCntOf(OV)} (SPEC-7-26)`;
-  const st = $('sidetag');
-  const sc = OV.pinctrl;
-  st.textContent = sc.ssCnt
-    ? `side gpio${sc.ssBase}·${Math.max(0, sc.ssCnt - (sideEnOf(OV) ? 1 : 0))}${sideEnOf(OV) ? '+opt' : ''}`
-    : 'side —';
+  // the side tag's count/opt display — the shared ds budget, owned by
+  // these pips (the tag's steppers write SIDESET_BASE only)
+  $('sidecnt').textContent = ssCntOf(OV)
+    ? `${Math.max(0, ssCntOf(OV) - (sideEnOf(OV) ? 1 : 0))}b${sideEnOf(OV) ? '+opt' : ''}`
+    : '—';
 }
 function flashWrap() {
   const a = $('wraparc');
@@ -625,10 +660,18 @@ function renderRegs(st) {
   $('isrfill').style.width = `${(100 * st.isrCnt) / 32}%`;
   $('isrcnt').textContent = st.isrCnt;
   const sc = OV.shiftctrl;
-  $('autopulltag').textContent = sc.autopull ? `autopull — thr ${sc.pullThr}` : 'autopull — off';
-  $('autopushtag').textContent = sc.autopush ? `autopush — thr ${sc.pushThr}` : 'autopush — off';
-  $('osrdir').textContent = sc.outRight ? 'out → pins →' : '← pins ← out';
-  $('isrdir').textContent = sc.inRight ? 'pins → in' : 'in ← pins';
+  // the C22 drawn controls render from the overlay mirror (their writes
+  // retire on the next rendered clk, like every overlay edit)
+  $('aptgl').classList.toggle('on', sc.autopull);
+  $('apthr').textContent = sc.pullThr;
+  $('osrnotch').style.left = `${(100 * sc.pullThr) / 32}%`;
+  $('aptg2').classList.toggle('on', sc.autopush);
+  $('apthr2').textContent = sc.pushThr;
+  $('isrnotch').style.left = `${(100 * sc.pushThr) / 32}%`;
+  $('osrarr').className = `sv-arrow${sc.outRight ? '' : ' l'}`;
+  $('israrr').className = `sv-arrow${sc.inRight ? '' : ' l'}`;
+  $('osrdir').textContent = sc.outRight ? 'pins · lsb-first' : 'pins · msb-first';
+  $('isrdir').textContent = sc.inRight ? 'pins · lsb-first' : 'pins · msb-first';
   $('isrnote').textContent = st.isrCnt ? `${st.isrCnt} shifted in` : 'idle';
 
   const depth = st.fifoDepths.tx;
@@ -637,10 +680,11 @@ function renderRegs(st) {
   for (let i = 0; i < depth; i++) {
     const d = document.createElement('div');
     const full = i < st.txWords.length;
-    d.className = `fslot${full ? ' full' : ''}${i === 0 ? ' next' : ''}${i >= 4 ? ' borrowed' : ''}`;
-    if (i >= 4 && depth === 8)
-      d.title = 'config · storage borrowed from RX via FIFO JOIN TX (SPEC-6-2)';
-    d.innerHTML = `<span class="idx">${i}</span><span class="hexv">${full ? hex32(st.txWords[i]) : '········'}</span><span class="chv">${full ? ascii(st.txWords[i]) : ''}</span>`;
+    const borrowed = i >= 4 && depth === 8;
+    d.className = `fslot${full ? ' full' : ''}${i === 0 ? ' next' : ''}${borrowed ? ' borrowed' : ''}`;
+    if (borrowed)
+      d.title = 'config · storage borrowed from RX via FIFO JOIN TX (SPEC-6-2) — the tick';
+    d.innerHTML = `<span class="idx">${i}${borrowed ? '<i class="tick">✓</i>' : ''}</span><span class="hexv">${full ? hex32(st.txWords[i]) : '········'}</span><span class="chv">${full ? ascii(st.txWords[i]) : ''}</span>`;
     slots.appendChild(d);
   }
   const joinChip = $('joinchip');
@@ -673,6 +717,21 @@ function renderRegs(st) {
   $('rxdepth2').textContent = rdepth;
   $('rxlvl').textContent = st.rxLevel;
   $('rxlvlfill').style.height = `${rdepth ? (100 * st.rxLevel) / rdepth : 0}%`;
+  // join ghosts (SPEC-6-2/4): the panel whose storage was borrowed dims
+  // behind a chip that says where it went (a ghost, not a control — the
+  // join chip above is the write)
+  const txGone = depth === 0,
+    rxGone = rdepth === 0;
+  $('fifo').classList.toggle('ghost', txGone);
+  $('rxfifo').classList.toggle('ghost', rxGone);
+  const txGhost = $('txghost'),
+    rxGhost = $('rxghost');
+  txGhost.hidden = !txGone;
+  txGhost.textContent = sc.fjoinRx && sc.fjoinTx ? 'joined off' : 'joined → rx';
+  rxGhost.hidden = !rxGone;
+  rxGhost.textContent = sc.fjoinTx ? 'joined → tx' : 'aux storage';
+  // the pull connector ghosts with the TX panel it feeds
+  $('pullconn').classList.toggle('ghost', txGone);
   $('bdrainall').disabled = st.rxMirror.pushes - st.rxMirror.drains <= 0;
   const log = $('rxlog');
   if (st.rxWords.length) {
@@ -696,13 +755,16 @@ function renderRegs(st) {
   lh += `<span class="ilamp sub${st.intr & 1 ? ' on' : ''}" title="RXNEMPTY SM0 (SPEC-7-12)">rx¬empty</span>`;
   lamps.innerHTML = lh;
 
-  // header chips
+  // header chips + the C22 pin-mapping tag numbers (the steppers write)
   const cd = OV.clkdiv;
   const div = (cd.intg || 65536) + cd.frac / 256;
   $('clkdivtag').textContent = `clkdiv ÷${div.toFixed(2)}`;
   const pc2 = OV.pinctrl;
-  $('outmaptag').textContent = `out gpio${pc2.outBase}·${pc2.outCnt || 32}`;
-  $('inmaptag').textContent = `in gpio${pc2.inBase}·${OV.shiftctrl.inCount || 32}`;
+  $('outbase').textContent = pc2.outBase;
+  $('outcnt').textContent = pc2.outCnt || 32;
+  $('sidebase').textContent = pc2.ssBase;
+  $('inbase').textContent = pc2.inBase;
+  $('incnt').textContent = sc.inCount || 32;
 }
 
 // ---- pin strip: drive latches, pattern source, engine outputs ---------
