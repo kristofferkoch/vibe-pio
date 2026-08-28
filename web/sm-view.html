@@ -194,7 +194,14 @@
       </section>
 
       <!-- ================= center ================= -->
-      <section class="panel" style="display:flex;flex-direction:column">
+      <!-- pass 2 of the layout reprioritization: the old execbody wall
+           (flex:1 blank around the instruction echo) is gone — the echo
+           is two lines — and the out datapath (tx fifo → pull → osr)
+           took its place, moved in from the right column. The stack
+           reads top to bottom: what runs (echo) → what it shifts out
+           (fifo/osr) → what the pins did (wave) → what feeds it
+           (stimulus/pattern). -->
+      <section class="panel" id="exec">
         <div class="ptitle">
           execute
           <b
@@ -202,6 +209,7 @@
             title="the machine this pane follows — select with the machines bar above or keys 1–4"
             >SM0</b
           >
+          <span id="execins"></span>
           <span class="aux" id="mon"
             >MONITOR lens
             <select
@@ -217,116 +225,13 @@
             · decoded <b id="monbuf"></b> <span id="moncnt"></span></span
           >
         </div>
-        <div id="execbody">
-          <div>
-            <div id="execins"></div>
-            <div id="execfields"></div>
-          </div>
-          <div id="phase">
-            <div id="phasename">EXEC</div>
-            <div id="phasebar"><div id="phasefill"></div></div>
-            <div id="phasesub"></div>
-          </div>
-        </div>
-        <div id="framemap">
-          <span class="fmlabel">frame map · 8N1</span>
-          <div id="fmcells"></div>
-        </div>
-        <div class="ptitle" style="border-top:1px solid var(--line)">
-          <span id="wavelabel">gpio0</span>
-          <span
-            class="cfgtag maptag"
-            title="config · OUT mapping (SPEC-7-26): OUT_BASE / OUT_COUNT — the steppers are real PINCTRL writes; counts cycle 1..32 (0 encodes 32)"
-          >
-            out
-            <button type="button" class="tstep" data-ctl="out-base" data-g="dec">−</button
-            ><b id="outbase">0</b
-            ><button type="button" class="tstep" data-ctl="out-base" data-g="inc">+</button>
-            ·<button type="button" class="tstep" data-ctl="out-cnt" data-g="dec">−</button
-            ><b id="outcnt">32</b
-            ><button type="button" class="tstep" data-ctl="out-cnt" data-g="inc">+</button>
+        <div id="execslim">
+          <span id="execfields"></span>
+          <span id="phase">
+            <b id="phasename">EXEC</b>
+            <span id="phasebar"><span id="phasefill"></span></span>
+            <span id="phasesub"></span>
           </span>
-          <span
-            class="cfgtag maptag"
-            title="config · SIDESET mapping (SPEC-7-26): SIDESET_BASE — the steppers are real PINCTRL writes; the bit count is the ds-field allocator's shared budget (the pips in the program panel)"
-          >
-            side
-            <button type="button" class="tstep" data-ctl="side-base" data-g="dec">−</button
-            ><b id="sidebase">0</b
-            ><button type="button" class="tstep" data-ctl="side-base" data-g="inc">+</button>
-            · <span id="sidecnt">—</span>
-          </span>
-          <span
-            class="cfgtag maptag"
-            title="config · IN mapping (SPEC-7-26/21): IN_BASE / IN_COUNT — the steppers are real PINCTRL/SHIFTCTRL writes; counts cycle 1..32 (0 encodes 32)"
-          >
-            in
-            <button type="button" class="tstep" data-ctl="in-base" data-g="dec">−</button
-            ><b id="inbase">0</b
-            ><button type="button" class="tstep" data-ctl="in-base" data-g="inc">+</button>
-            ·<button type="button" class="tstep" data-ctl="in-cnt" data-g="dec">−</button
-            ><b id="incnt">32</b
-            ><button type="button" class="tstep" data-ctl="in-cnt" data-g="inc">+</button>
-          </span>
-          <span class="aux">window <span id="wavewin">128</span> cycles · 8 cyc/grid</span>
-        </div>
-        <!-- biome-ignore lint/a11y/noSvgWithoutTitle: the waveform svg is a live-drawn canvas — its innerHTML is replaced every render, so a <title> child would be wiped; the frame map below carries the meaning -->
-        <svg id="wavesvg" preserveAspectRatio="none"></svg>
-        <div id="feed">
-          <span class="ptitle" style="border:none;padding:0;background:none">stimulus →</span>
-          <input type="text" id="feedtxt" value="PIO!" maxlength="32" spellcheck="false">
-          <button type="button" id="bfeed">ENQUEUE</button>
-          <button type="button" id="bfeed55" title="one 0x55 word">0x55</button>
-          <span class="note" id="txnote">TX FIFO 4 deep — overflow is refused</span>
-        </div>
-        <div id="pattern">
-          <span class="ptitle" style="border:none;padding:0;background:none">pattern →</span>
-          <select
-            id="patmode"
-            title="the deterministic pattern generator — square period or a pasted bitstream, one pin, pure function of clks since arming"
-          >
-            <option value="off" selected>off</option>
-            <option value="square">square</option>
-            <option value="bits">bits</option>
-          </select>
-          <label id="patperwrap" hidden
-            >period <input type="number" id="patperiod" value="16" min="2" max="1024" step="2">
-          </label>
-          <label id="patbitswrap" hidden
-            >bits
-            <input type="text" id="patbits" value="01000011" maxlength="256" spellcheck="false">
-          </label>
-          <span>on pin</span>
-          <select id="patpin"></select>
-          <span class="note">drives gpio_in on step clks; reg-op clks hold the last level</span>
-        </div>
-      </section>
-
-      <!-- ================= registers ================= -->
-      <section id="regs">
-        <div id="xy">
-          <div class="ptitle">scratch</div>
-          <div class="kv">
-            <div class="k">X</div>
-            <div class="v" id="xval">0x00000000 <small>= 0</small></div>
-            <div class="k">Y</div>
-            <div class="v" id="yval" style="color:var(--dim)">0x00000000 <small>= 0</small></div>
-          </div>
-        </div>
-
-        <div id="irqpanel">
-          <div class="ptitle">
-            irq
-            <span class="aux"
-              >INTR <b id="intrhex">0x00F0</b>
-              <span
-                class="cfgtx"
-                title="config · the composed INTR (SPEC-7-12): SM flags 15:8, TXNFULL 7:4, RXNEMPTY 3:0"
-                >readback view</span
-              ></span
-            >
-          </div>
-          <div id="irqlamps"></div>
         </div>
 
         <div id="fifo">
@@ -435,6 +340,108 @@
             </span>
             <span class="flag" id="osre" title="osr_cnt ≥ pull threshold">OSRE</span>
           </div>
+        </div>
+        <div id="framemap">
+          <span class="fmlabel">frame map · 8N1</span>
+          <div id="fmcells"></div>
+        </div>
+        <div class="ptitle" style="border-top:1px solid var(--line)">
+          <span id="wavelabel">gpio0</span>
+          <span
+            class="cfgtag maptag"
+            title="config · OUT mapping (SPEC-7-26): OUT_BASE / OUT_COUNT — the steppers are real PINCTRL writes; counts cycle 1..32 (0 encodes 32)"
+          >
+            out
+            <button type="button" class="tstep" data-ctl="out-base" data-g="dec">−</button
+            ><b id="outbase">0</b
+            ><button type="button" class="tstep" data-ctl="out-base" data-g="inc">+</button>
+            ·<button type="button" class="tstep" data-ctl="out-cnt" data-g="dec">−</button
+            ><b id="outcnt">32</b
+            ><button type="button" class="tstep" data-ctl="out-cnt" data-g="inc">+</button>
+          </span>
+          <span
+            class="cfgtag maptag"
+            title="config · SIDESET mapping (SPEC-7-26): SIDESET_BASE — the steppers are real PINCTRL writes; the bit count is the ds-field allocator's shared budget (the pips in the program panel)"
+          >
+            side
+            <button type="button" class="tstep" data-ctl="side-base" data-g="dec">−</button
+            ><b id="sidebase">0</b
+            ><button type="button" class="tstep" data-ctl="side-base" data-g="inc">+</button>
+            · <span id="sidecnt">—</span>
+          </span>
+          <span
+            class="cfgtag maptag"
+            title="config · IN mapping (SPEC-7-26/21): IN_BASE / IN_COUNT — the steppers are real PINCTRL/SHIFTCTRL writes; counts cycle 1..32 (0 encodes 32)"
+          >
+            in
+            <button type="button" class="tstep" data-ctl="in-base" data-g="dec">−</button
+            ><b id="inbase">0</b
+            ><button type="button" class="tstep" data-ctl="in-base" data-g="inc">+</button>
+            ·<button type="button" class="tstep" data-ctl="in-cnt" data-g="dec">−</button
+            ><b id="incnt">32</b
+            ><button type="button" class="tstep" data-ctl="in-cnt" data-g="inc">+</button>
+          </span>
+          <span class="aux" id="wavewinaux"
+            >window <span id="wavewin">128</span> cycles · 8 cyc/grid</span
+          >
+        </div>
+        <!-- biome-ignore lint/a11y/noSvgWithoutTitle: the waveform svg is a live-drawn canvas — its innerHTML is replaced every render, so a <title> child would be wiped; the frame map below carries the meaning -->
+        <svg id="wavesvg" preserveAspectRatio="none"></svg>
+        <div id="feed">
+          <span class="ptitle" style="border:none;padding:0;background:none">stimulus →</span>
+          <input type="text" id="feedtxt" value="PIO!" maxlength="32" spellcheck="false">
+          <button type="button" id="bfeed">ENQUEUE</button>
+          <button type="button" id="bfeed55" title="one 0x55 word">0x55</button>
+          <span class="note" id="txnote">TX FIFO 4 deep — overflow is refused</span>
+        </div>
+        <div id="pattern">
+          <span class="ptitle" style="border:none;padding:0;background:none">pattern →</span>
+          <select
+            id="patmode"
+            title="the deterministic pattern generator — square period or a pasted bitstream, one pin, pure function of clks since arming"
+          >
+            <option value="off" selected>off</option>
+            <option value="square">square</option>
+            <option value="bits">bits</option>
+          </select>
+          <label id="patperwrap" hidden
+            >period <input type="number" id="patperiod" value="16" min="2" max="1024" step="2">
+          </label>
+          <label id="patbitswrap" hidden
+            >bits
+            <input type="text" id="patbits" value="01000011" maxlength="256" spellcheck="false">
+          </label>
+          <span>on pin</span>
+          <select id="patpin"></select>
+          <span class="note">drives gpio_in on step clks; reg-op clks hold the last level</span>
+        </div>
+      </section>
+
+      <!-- ================= registers ================= -->
+      <section id="regs">
+        <div id="xy">
+          <div class="ptitle">scratch</div>
+          <div class="kv">
+            <div class="k">X</div>
+            <div class="v" id="xval">0x00000000 <small>= 0</small></div>
+            <div class="k">Y</div>
+            <div class="v" id="yval" style="color:var(--dim)">0x00000000 <small>= 0</small></div>
+          </div>
+        </div>
+
+        <div id="irqpanel">
+          <div class="ptitle">
+            irq
+            <span class="aux"
+              >INTR <b id="intrhex">0x00F0</b>
+              <span
+                class="cfgtx"
+                title="config · the composed INTR (SPEC-7-12): SM flags 15:8, TXNFULL 7:4, RXNEMPTY 3:0"
+                >readback view</span
+              ></span
+            >
+          </div>
+          <div id="irqlamps"></div>
         </div>
 
         <div id="isr">

@@ -658,17 +658,30 @@ main > * {
   display: flex;
   flex-direction: column;
 }
-#execbody {
-  flex: 1;
+/* flex: none on the column's divs: a squeezed flex item spills over its
+   neighbors (the C22 class), so every fixed row keeps its content
+   height — the #regs idiom — and the wave is the one flexing child */
+#exec > div {
+  flex: none;
+}
+/* the exec echo, two lines (reprioritization pass 2): line 1 is the
+   ptitle (machine, instruction, monitor lens); line 2 the word/decode
+   + phase strip. The old execbody spent flex:1 blank around the same
+   text — the machines bar already carries per-SM PC + phase */
+#execslim {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 22px;
-  padding: 8px 14px;
+  gap: 3px 16px;
+  padding: 3px 14px 6px;
+  border-bottom: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
   min-height: 0;
 }
 #execins {
-  font-size: 19px;
+  font-size: 12.5px;
   color: var(--bright);
   letter-spacing: 0.02em;
 }
@@ -677,13 +690,13 @@ main > * {
 }
 #execins .pf {
   color: var(--dim);
-  font-size: 15px;
+  font-size: 11px;
 }
 #execfields {
   color: var(--dim);
   font-size: 10.5px;
   letter-spacing: 0.1em;
-  margin-top: 6px;
+  min-width: 0;
 }
 #execfields b {
   color: var(--txt);
@@ -691,8 +704,10 @@ main > * {
 }
 #phase {
   margin-left: auto;
-  text-align: right;
-  min-width: 180px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 #phasename {
   font-size: 12px;
@@ -708,10 +723,10 @@ main > * {
   color: var(--red);
 }
 #phasebar {
+  width: 64px;
   height: 5px;
   background: var(--panel2);
   border: 1px solid var(--line);
-  margin-top: 7px;
   position: relative;
 }
 #phasefill {
@@ -724,7 +739,22 @@ main > * {
 #phasesub {
   color: var(--dim);
   font-size: 10.5px;
-  margin-top: 5px;
+  white-space: nowrap;
+}
+/* the out datapath (moved in from the right column) reads as one group:
+   hairline above the tx fifo and the osr, the pull connector between */
+#fifo,
+#osr {
+  border-top: 1px solid var(--line);
+}
+/* below ~1520px of viewport the exec column can't hold the decorative
+   notes on one line; they yield so the wave keeps the vertical room —
+   the tx note stays (it is the overflow-refused flash) */
+@media (max-width: 1520px) {
+  #pattern .note,
+  #wavewinaux {
+    display: none;
+  }
 }
 #framemap {
   border-top: 1px solid var(--line);
@@ -815,15 +845,17 @@ main > * {
   gap: 1px;
   background: var(--line);
 }
+/* min-height stays content-based on the fixed rows: a track squeezed
+   below its panel's content paints the overflow over the panels below
+   (the C22 spill — drawn controls buried under it, found by the C22
+   browser session, gated by web/tests/layout.test.js). Only the
+   inspector may shrink — it scrolls internally. Since the out datapath
+   (tx fifo/pull/osr) moved to the exec column, the fixed rows here are
+   scratch, irq, isr and the rx fifo */
 #regs > div {
   background: var(--panel);
   min-width: 0;
 }
-/* min-height stays content-based on the seven fixed rows: a track
-   squeezed below its panel's content paints the overflow over the
-   panels below (the C22 spill — drawn controls buried under it, found
-   by the C22 browser session, gated by web/tests/layout.test.js). The
-   inspector is the one row allowed to shrink — it scrolls internally */
 #regs > div#inspector {
   min-height: 0;
 }
@@ -1053,9 +1085,9 @@ main > * {
   padding: 6px 10px;
   gap: 2px;
   /* join modes double the slots (8); the column caps at the split
-     posture's height and scrolls within itself, so the right column's
-     fit at a 13" laptop viewport survives every FIFO-mode write
-     (SPEC-6-2). scrollbar-width: the #progrows idiom */
+     posture's height and scrolls within itself, so the exec column's
+     fixed stack stays put through every FIFO-mode write (SPEC-6-2).
+     scrollbar-width: the #progrows idiom */
   max-height: 94px;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -1522,14 +1554,15 @@ input.ihex {
   top: 0;
   z-index: 2;
 }
-/* the seven fixed rows are content-sized and never shrink below their
+/* the four fixed rows are content-sized and never shrink below their
    panels (see #regs > div above); the inspector is the flexible one —
    it scrolls internally, so a squeezed column collapses it first and
-   only then scrolls. Content compaction keeps all seven rows inside a
-   13" laptop viewport (1280×800) in both FIFO postures, so the scroll
-   is a safety valve, not the design */
+   only then scrolls. With the datapath gone the four rows sit inside a
+   13" laptop viewport (1280×800) in both FIFO postures with hundreds
+   of pixels to spare for the inspector — the scroll is a safety valve,
+   not the design */
 #regs {
-  grid-template-rows: auto auto auto auto auto auto auto 1fr;
+  grid-template-rows: auto auto auto auto 1fr;
   overflow-y: auto;
 }
 

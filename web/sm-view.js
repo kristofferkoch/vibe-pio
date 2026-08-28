@@ -940,7 +940,7 @@ function renderMonitor(st) {
   // the frame-map + its legend entries exist only under the uart lens —
   // the sandbox chrome stays protocol-neutral otherwise
   const uart = mode === 'uart';
-  $('framemap').style.visibility = uart ? 'visible' : 'hidden';
+  $('framemap').hidden = !uart;
   for (const id of ['leg-ctrl', 'leg-data']) $(id).hidden = !uart;
 }
 

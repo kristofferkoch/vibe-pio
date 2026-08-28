@@ -731,6 +731,22 @@ flowchart TB
   Pinned by the layout gate's **Priority** class (column floor,
   single-line control rows, inspector ≥ 40px, and a 1920 leg asserting
   the 430 ceiling + natural-scale center).
+- **Layout reprioritization, pass 2 (2026-08-28)**: the exec body wall
+  came down. The instruction echo + phase block spent `flex: 1` blank
+  around three text lines the machines bar already shadows (per-SM PC +
+  phase chips), while the right column stacked eight panels over the
+  inspector. The echo is now two lines — title row (machine,
+  instruction, monitor lens) plus a word/decode + phase strip — and the
+  out datapath took the wall's place: tx fifo (with the join segments),
+  the pull connector, and the osr moved in from the right column, so
+  the exec column reads top-to-bottom as what runs → what it shifts
+  out → what the pins did (wave) → what feeds it (stimulus/pattern),
+  and the right column keeps the in-path (scratch, irq, isr, rx fifo)
+  over a ≥ 200px inspector. The uart frame map drops out of flow when
+  its lens is off (`hidden`, not `visibility`) and the decorative
+  notes (pattern, wave grid scale) yield below ~1520px — the tx note
+  stays, it *is* the overflow-refused flash. No JS structure changed:
+  every pane is ID-keyed and the control delegates are document-level.
 - **Gates**: `make web`'s client legs check the driver against the
   pio_model oracle over the sandbox surface (pin-identical samples,
   mirror↔tx_level agreement, the asm round-trip of the listing, five

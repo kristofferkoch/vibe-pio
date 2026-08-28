@@ -194,10 +194,13 @@ project has hit by hand:
 - **Hit targets** — every drawn control in the fixed rows is topmost at
   its center (`elementFromPoint`), the C22 buried-controls failure.
 - **Priority** — the register column is not the exec pane's leftover
-  (the layout reprioritization): at the 13" references its drawn
-  control rows render single-line (the measured wrapped values are
-  36–63px), the column holds its 356px floor, the inspector is never a
-  bare sliver (≥ 40px), and at 1920×1080 the app caps with the register
+  (the layout reprioritization, two passes): at the 13" references its
+  drawn control rows render single-line (the measured wrapped values
+  are 36–63px), the column holds its 356px floor, the inspector gets
+  real room (≥ 200px — the out datapath lives in the exec column, not
+  stacked over it), the exec echo is two lines rather than a flex:1
+  body wall, and the exec column's own residents get the same
+  honesty/spill/fit checks. At 1920×1080 the app caps with the register
   column at its 430px ceiling and the center at the waveform's natural
   896px scale.
 

@@ -17,9 +17,12 @@
 //   * the column priority (the layout reprioritization): the register
 //     column is not the exec waveform's leftover — at the reference
 //     viewports it gets its measured floor (its drawn control rows
-//     render single-line, the inspector never a bare sliver) and on a
-//     desktop the app caps with the center at the waveform's natural
-//     scale, not with the register column at its old 330px ceiling.
+//     render single-line, the inspector shows real room, never a
+//     sliver), the exec echo is two lines, and the out datapath
+//     (tx fifo → pull → osr) lives in the exec column, where the old
+//     blank execbody wall used to be. On a desktop the app caps with
+//     the center at the waveform's natural scale, not with the register
+//     column at its old 330px ceiling.
 //
 // Hermetic: the static server stubs build/web/pio_engine.js, so no wasm
 // build is needed — the view's geometry is complete at script load
@@ -107,7 +110,9 @@ async function load(state, width, height) {
 
 const GEO = `(() => {
   const regs = document.querySelector('#regs').getBoundingClientRect();
-  const rows = [...document.querySelectorAll('#regs > div')].map((d) => {
+  const exec = document.querySelector('main > section.panel:nth-of-type(2)');
+  const execRect = exec.getBoundingClientRect();
+  const row = (d) => {
     const b = d.getBoundingClientRect();
     return {
       id: d.id || d.className,
@@ -119,15 +124,18 @@ const GEO = `(() => {
       sw: d.scrollWidth,
       cw: d.clientWidth,
     };
-  });
+  };
+  const rows = [...document.querySelectorAll('#regs > div')].map(row);
+  const execRows = [...exec.querySelectorAll(':scope > div')].map(row);
   const h = (sel) => document.querySelector(sel).getBoundingClientRect().height;
   return {
     iw: innerWidth,
     ih: innerHeight,
     clip: regs.bottom, // #regs is overflow-y:auto — its bottom edge clips
+    execClip: execRect.bottom, // .panel is overflow:hidden — same idea here
     regsW: regs.width, // the register column's share (the priority check)
-    centerW: document.querySelector('main > section.panel:nth-of-type(2)').getBoundingClientRect()
-      .width,
+    centerW: execRect.width,
+    waveH: h('#wavesvg'),
     room: {
       // the drawn control rows whose single-line render is what "room on
       // the right side" means concretely (wrapped values are 36–63px)
@@ -137,6 +145,7 @@ const GEO = `(() => {
       insptitle: h('#inspector .ptitle'),
     },
     rows,
+    execRows,
     chrome: { header: h('header'), smsbar: h('#smsbar'), pinstrip: h('#pinstrip'), footer: h('footer') },
   };
 })()`;
@@ -211,16 +220,70 @@ function assertRoomy(geo, width, stateName) {
   }
   const insp = geo.rows.find((r) => r.id === 'inspector');
   assert(
-    insp && insp.h >= 40,
-    `register inspector is a sliver at ${width} (${stateName}): ${insp.h.toFixed(1)}px visible`,
+    insp && insp.h >= 200,
+    `register inspector is a sliver at ${width} (${stateName}): ${insp.h.toFixed(1)}px visible (floor 200 — the datapath panels must live in the exec column, not stacked over it)`,
   );
+}
+
+// pass 2 of the reprioritization: the exec column's blank body wall is
+// gone — its echo is two lines — and the out datapath took that space
+function assertExec(geo, width, height, stateName) {
+  for (const id of ['fifo', 'pullconn', 'osr']) {
+    assert(
+      geo.execRows.some((r) => r.id === id),
+      `#${id} is not in the exec column at ${width} (${stateName}) — the out datapath belongs where the exec body wall was`,
+    );
+  }
+  const title = geo.execRows[0];
+  assert(
+    title && title.h <= 44,
+    `exec echo title line is ${title ? title.h.toFixed(1) : 'absent'}px tall at ${width} (${stateName}) (bound 44 — two lines, not a body wall)`,
+  );
+  const slim = geo.execRows.find((r) => r.id === 'execslim');
+  assert(
+    slim && slim.h <= 44,
+    `exec echo second line is ${slim ? slim.h.toFixed(1) : 'absent'}px tall at ${width} (${stateName}) (bound 44 — two lines, not a body wall)`,
+  );
+  assert(
+    geo.waveH >= 100,
+    `waveform collapsed to ${geo.waveH.toFixed(1)}px at ${width}×${height} (${stateName})`,
+  );
+  // the same honesty the #regs rows get, now for the exec column's
+  // residents: nothing squeezed (the C22 class), nothing spilling past
+  // the panel's clip edge or its neighbors. Zero-height rows are
+  // display-none (the uart lens's frame map) — no layout, no claims.
+  const live = geo.execRows.filter((r) => r.h > 0);
+  for (const r of live) {
+    assert(
+      r.bottom <= geo.execClip + 0.5,
+      `exec column row ${r.id} below the fold at ${width}×${height} (${stateName}): bottom ${r.bottom.toFixed(1)} > panel edge ${geo.execClip.toFixed(1)}`,
+    );
+    assert(
+      r.sh <= r.ch + 1,
+      `exec column row ${r.id} is squeezed at ${width}×${height} (${stateName}): content ${r.sh}px in a ${r.ch}px box`,
+    );
+    assert(
+      r.sw <= r.cw + 1,
+      `exec column row ${r.id} overflows horizontally at ${width}×${height} (${stateName}): content ${r.sw}px in a ${r.cw}px box`,
+    );
+  }
+  for (let i = 1; i < live.length; i++) {
+    const prev = live[i - 1];
+    const cur = live[i];
+    assert(
+      cur.top >= prev.bottom - 0.51,
+      `exec column row ${cur.id} spills over ${prev.id}: top ${cur.top.toFixed(1)} < bottom ${prev.bottom.toFixed(1)} (the C22 spill class)`,
+    );
+  }
 }
 
 // every drawn control in the fixed rows must be topmost at its center —
 // the C22 failure mode was drawn controls buried under a spilled panel
 const HIT_SCAN = `(() => {
   const bad = [];
-  for (const el of document.querySelectorAll('#regs > div:not(#inspector) button')) {
+  for (const el of document.querySelectorAll(
+    '#regs > div:not(#inspector) button, main > section.panel:nth-of-type(2) > div button',
+  )) {
     const b = el.getBoundingClientRect();
     const name = el.id || el.textContent.trim().slice(0, 12);
     if (b.width < 2 || b.height < 2) { bad.push(name + ': collapsed'); continue; }
@@ -249,6 +312,7 @@ for (const [width, height] of VIEWPORTS) {
       assertFits(geo, width, height, stateName);
       assertNoSpill(geo);
       assertRoomy(geo, width, stateName);
+      assertExec(geo, width, height, stateName);
       const covered = await page.evaluate(HIT_SCAN);
       assert.deepStrictEqual(
         covered,
