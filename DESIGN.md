@@ -700,6 +700,20 @@ flowchart TB
   only under the uart lens, and the ISA notes dropped their uart_tx
   references — the lens stays a picked-pin instrument, off unless
   armed, and the demo remains the honest loadable uart_tx showpiece.
+- **Fun-gate pass 2 — the C24 layout regression**: adding the
+  machines bar (`#smsbar`) as a fifth in-flow body row without
+  growing the C21 grid template (`auto auto minmax(0,1fr) 30px`)
+  mis-assigned every row after it — the pin strip fell into the
+  `1fr` track (a 570px band at 720p, 1320px at 1440p) and `main`
+  into the 30px track, its panels painting past the crushed box and
+  clipping at the viewport ("why is the view so wide"). The template
+  is five tracks now, and the app caps at 1720px — the waveform's
+  natural scale (128 cycles × 7px ≈ 896 center view; the side
+  columns sit at their clamps 470/330) — centered on wider windows
+  instead of stretching. This also explains the fun-gate session's
+  "unreachable" drawn controls: the FIFO panel sat below the clip,
+  so locator clicks on it timed out (earlier blamed on renderer
+  throttling).
 - **Gates**: `make web`'s client legs check the driver against the
   pio_model oracle over the sandbox surface (pin-identical samples,
   mirror↔tx_level agreement, the asm round-trip of the listing, five

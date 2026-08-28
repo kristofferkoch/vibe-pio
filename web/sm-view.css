@@ -1175,8 +1175,26 @@ button:disabled:hover {
    IRQ lamps + INTR readback, the RX drain panel, and the register
    inspector. Same palette: amber control · green data · cyan config ·
    red stall · gray idle. */
+/* five in-flow rows since C24 (header, machines bar, pin strip, main,
+   footer): the template must grow with them — left at C21's four
+   tracks, the pin strip fell into the 1fr track (a 570px band at
+   720p) and main into the 30px one, its panels painting past the
+   crushed box and clipping (found by the fun-gate session) */
 body {
-  grid-template-rows: auto auto minmax(0, 1fr) 30px;
+  grid-template-rows: auto auto auto minmax(0, 1fr) 30px;
+}
+/* the app caps at the waveform's natural scale: 128 cycles × 7px =
+   896px of center view; at the 1720px cap the side columns sit at
+   their clamps (470/330) and the center lands ~918 — wider windows
+   center the app instead of stretching it */
+header,
+#smsbar,
+#pinstrip,
+main,
+footer {
+  width: 100%;
+  max-width: 1720px;
+  margin-inline: auto;
 }
 header .mini {
   background: var(--panel2);
