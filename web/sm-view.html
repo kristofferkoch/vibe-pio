@@ -234,51 +234,85 @@
           </span>
         </div>
 
-        <div id="fifo">
-          <div class="ptitle">
-            tx fifo
-            <span class="aux"
-              ><span
-                class="segjoin"
-                title="config · FIFO JOIN (SPEC-6-2/3) — pick the mode: a real SHIFTCTRL write that flushes the FIFOs. The aux modes (txput/txget/putget) stay inspector-set."
-              >
-                <button
-                  type="button"
-                  id="segsplit"
-                  data-ctl="fifo-mode"
-                  data-g="split"
-                  title="config · FIFO JOIN → split (SPEC-6-2): TX 4 deep + RX 4 deep — the reset posture"
+        <!-- the fifo twins: one row, even split — the tx/rx pair is the
+             machine's whole scratch storage surface, so it reads as one
+             band (pass 3 of the layout reprioritization) -->
+        <div id="fiforow">
+          <div id="fifo">
+            <div class="ptitle">
+              tx fifo
+              <span class="aux"
+                ><span
+                  class="segjoin"
+                  title="config · FIFO JOIN (SPEC-6-2/3) — pick the mode: a real SHIFTCTRL write that flushes the FIFOs. The aux modes (txput/txget/putget) stay inspector-set."
                 >
-                  split
-                </button>
-                <button
-                  type="button"
-                  id="segtx"
-                  data-ctl="fifo-mode"
-                  data-g="join-tx"
-                  title="config · FIFO JOIN → join TX (SPEC-6-2): both halves as one TX FIFO, 8 deep — RX goes dark"
-                >
-                  join tx
-                </button>
-                <button
-                  type="button"
-                  id="segrx"
-                  data-ctl="fifo-mode"
-                  data-g="join-rx"
-                  title="config · FIFO JOIN → join RX (SPEC-6-2): both halves as one RX FIFO, 8 deep — TX goes dark"
-                >
-                  join rx
-                </button>
+                  <button
+                    type="button"
+                    id="segsplit"
+                    data-ctl="fifo-mode"
+                    data-g="split"
+                    title="config · FIFO JOIN → split (SPEC-6-2): TX 4 deep + RX 4 deep — the reset posture"
+                  >
+                    split
+                  </button>
+                  <button
+                    type="button"
+                    id="segtx"
+                    data-ctl="fifo-mode"
+                    data-g="join-tx"
+                    title="config · FIFO JOIN → join TX (SPEC-6-2): both halves as one TX FIFO, 8 deep — RX goes dark"
+                  >
+                    join tx
+                  </button>
+                  <button
+                    type="button"
+                    id="segrx"
+                    data-ctl="fifo-mode"
+                    data-g="join-rx"
+                    title="config · FIFO JOIN → join RX (SPEC-6-2): both halves as one RX FIFO, 8 deep — TX goes dark"
+                  >
+                    join rx
+                  </button>
+                </span>
+                <span class="cfgtx on" id="txghost" hidden></span>
               </span>
-              <span class="cfgtx on" id="txghost" hidden></span>
-            </span>
+            </div>
+            <div id="fifobody">
+              <div id="fslots"></div>
+              <div id="fifometa">
+                <div id="fifolvltxt">LEVEL <b id="fifolvl">0</b>/<span id="txdepth2">4</span></div>
+                <div id="fifolvlbar"><div id="fifolvlfill"></div></div>
+                <div id="fifostall">EMPTY · SM STALLED</div>
+              </div>
+            </div>
           </div>
-          <div id="fifobody">
-            <div id="fslots"></div>
-            <div id="fifometa">
-              <div id="fifolvltxt">LEVEL <b id="fifolvl">0</b>/<span id="txdepth2">4</span></div>
-              <div id="fifolvlbar"><div id="fifolvlfill"></div></div>
-              <div id="fifostall">EMPTY · SM STALLED</div>
+
+          <div id="rxfifo">
+            <div class="ptitle">
+              rx fifo
+              <span class="aux"
+                ><span class="cfgtx on" id="rxghost" hidden></span>
+                learned only by draining</span
+              >
+            </div>
+            <div id="rxbody">
+              <div id="rxmeta">
+                <div id="rxlvltxt">LEVEL <b id="rxlvl">0</b>/<span id="rxdepth2">4</span></div>
+                <div id="rxlvlbar"><div id="rxlvlfill"></div></div>
+                <div id="rxbtns">
+                  <button
+                    type="button"
+                    id="bdrain"
+                    title="read RXF0 once — a queued reg read, one rendered clk"
+                  >
+                    DRAIN 1
+                  </button>
+                  <button type="button" id="bdrainall" title="drain every mirrored word">
+                    DRAIN ALL
+                  </button>
+                </div>
+              </div>
+              <div id="rxlog"><span class="note">drained words appear here</span></div>
             </div>
           </div>
         </div>
@@ -493,35 +527,6 @@
               </span>
             </span>
             <span class="flag" id="isrf">ISR Full</span>
-          </div>
-        </div>
-
-        <div id="rxfifo">
-          <div class="ptitle">
-            rx fifo
-            <span class="aux"
-              ><span class="cfgtx on" id="rxghost" hidden></span>
-              contents learned only by draining</span
-            >
-          </div>
-          <div id="rxbody">
-            <div id="rxmeta">
-              <div id="rxlvltxt">LEVEL <b id="rxlvl">0</b>/<span id="rxdepth2">4</span></div>
-              <div id="rxlvlbar"><div id="rxlvlfill"></div></div>
-              <div id="rxbtns">
-                <button
-                  type="button"
-                  id="bdrain"
-                  title="read RXF0 once — a queued reg read, one rendered clk"
-                >
-                  DRAIN 1
-                </button>
-                <button type="button" id="bdrainall" title="drain every mirrored word">
-                  DRAIN ALL
-                </button>
-              </div>
-            </div>
-            <div id="rxlog"><span class="note">drained words appear here</span></div>
           </div>
         </div>
 

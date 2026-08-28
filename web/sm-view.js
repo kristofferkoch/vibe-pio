@@ -1064,7 +1064,7 @@ function renderInspector() {
   let h = '';
   h += `<div class="igroup">block</div>`;
   h += `<div class="ireg" title="CTRL (SPEC-7-2..5): SM_ENABLE per machine + the SM_RESTART / CLKDIV_RESTART pulses (the selected machine's bits)">
-    <span class="irn">CTRL</span><span class="ira">0x000</span>
+    <div class="irhead"><span class="irn">CTRL</span><span class="ira">0x000</span></div>
     <div class="ifields">
       ${[0, 1, 2, 3]
         .map(
@@ -1076,40 +1076,43 @@ function renderInspector() {
       <button type="button" class="ipulse" data-wr="${regs.CTRL}" data-val="${1 << (8 + curSm)}" title="CLKDIV_RESTART bit${8 + curSm} (SPEC-7-4): SM${curSm}'s divider back to phase 0">SM${curSm}_DIVRST</button>
     </div></div>`;
   h += `<div class="ireg" title="FSTAT (SPEC-7-29) — live from the cycle sample">
-    <span class="irn">FSTAT</span><span class="ira">0x004</span><span class="iro">${fstatLive}</span>
-    <button type="button" class="ipulse" data-rd="${regs.FSTAT}">READ</button></div>`;
+    <div class="irhead"><span class="irn">FSTAT</span><span class="ira">0x004</span><span class="iro">${fstatLive}</span>
+    <button type="button" class="ipulse" data-rd="${regs.FSTAT}">READ</button></div></div>`;
   h += `<div class="ireg" title="FDEBUG (SPEC-7-29) — sticky flags, W1C; READ costs one rendered clk">
-    <span class="irn">FDEBUG</span><span class="ira">0x008</span><span class="iro" id="insp-fdebug">—</span>
-    <button type="button" class="ipulse" data-rd="${regs.FDEBUG}">READ</button>
+    <div class="irhead"><span class="irn">FDEBUG</span><span class="ira">0x008</span><span class="iro" id="insp-fdebug">—</span>
+    <button type="button" class="ipulse" data-rd="${regs.FDEBUG}">READ</button></div>
+    <div class="ifields btns">
     <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 24}" title="W1C TXSTALL">clr TXSTALL</button>
     <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 16}" title="W1C TXOVER">clr TXOVER</button>
     <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 8}" title="W1C RXUNDER">clr RXUNDER</button>
-    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1}" title="W1C RXSTALL">clr RXSTALL</button></div>`;
+    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1}" title="W1C RXSTALL">clr RXSTALL</button></div></div>`;
   h += `<div class="ireg" title="FLEVEL (SPEC-7-29) — live TX/RX nibbles">
-    <span class="irn">FLEVEL</span><span class="ira">0x00c</span><span class="iro">tx ${st.txLevel} rx ${st.rxLevel}</span>
-    <button type="button" class="ipulse" data-rd="${regs.FLEVEL}">READ</button></div>`;
+    <div class="irhead"><span class="irn">FLEVEL</span><span class="ira">0x00c</span><span class="iro">tx ${st.txLevel} rx ${st.rxLevel}</span>
+    <button type="button" class="ipulse" data-rd="${regs.FLEVEL}">READ</button></div></div>`;
   h += `<div class="ireg" title="TXF${curSm} (SPEC-7-28) — write pushes one 32-bit word into SM${curSm}'s TX FIFO (refused at full)">
-    <span class="irn">TXF${curSm}</span><span class="ira">${hex32(regs.TXF0 + 4 * curSm)}</span>
+    <div class="irhead"><span class="irn">TXF${curSm}</span><span class="ira">${hex32(regs.TXF0 + 4 * curSm)}</span></div>
     <div class="ifields"><div class="ifield"><span class="ifn">word</span><span class="ifb">31:0</span><input type="text" id="insp-txf0" class="ihex" placeholder="0x…" maxlength="10" /></div>
     <button type="button" id="insp-txf0go">FEED</button></div></div>`;
   h += `<div class="ireg" title="RXF${curSm} (SPEC-7-28) — read pops one word of SM${curSm}'s RX FIFO (the RX drain)">
-    <span class="irn">RXF${curSm}</span><span class="ira">${hex32(regs.RXF0 + 4 * curSm)}</span><span class="iro">level ${st.rxLevel}</span>
-    <button type="button" id="insp-rxf0">DRAIN</button></div>`;
-  h += `<div class="ireg" title="IRQ (SPEC-7-6) — 8 SM flags, W1C (the lamps above); IRQ_FORCE sets without side effects on pads">
-    <span class="irn">IRQ</span><span class="ira">0x030</span><span class="iro">w1c</span>
-    ${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<button type="button" class="ipulse" data-wr="${regs.IRQ}" data-val="${1 << i}" title="clear flag ${i}">clr f${i}</button>`).join('')}
-    <span class="irn">IRQ_FORCE</span><span class="ira">0x034</span>
-    ${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<button type="button" class="ipulse" data-wr="${regs.IRQ_FORCE}" data-val="${1 << i}" title="force flag ${i} (SPEC-7-6)">set f${i}</button>`).join('')}</div>`;
+    <div class="irhead"><span class="irn">RXF${curSm}</span><span class="ira">${hex32(regs.RXF0 + 4 * curSm)}</span><span class="iro">level ${st.rxLevel}</span>
+    <button type="button" id="insp-rxf0">DRAIN</button></div></div>`;
+  h += `<div class="ireg" title="IRQ (SPEC-7-6) — 8 SM flags, W1C (the lamps above)">
+    <div class="irhead"><span class="irn">IRQ</span><span class="ira">0x030</span><span class="iro">w1c — clear one flag</span></div>
+    <div class="ifields btns">${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<button type="button" class="ipulse" data-wr="${regs.IRQ}" data-val="${1 << i}" title="clear flag ${i}">clr f${i}</button>`).join('')}</div></div>`;
+  h += `<div class="ireg" title="IRQ_FORCE (SPEC-7-6) — set flag i without side effects on pads">
+    <div class="irhead"><span class="irn">IRQ_FORCE</span><span class="ira">0x034</span><span class="iro">set one flag</span></div>
+    <div class="ifields btns">${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<button type="button" class="ipulse" data-wr="${regs.IRQ_FORCE}" data-val="${1 << i}" title="force flag ${i} (SPEC-7-6)">set f${i}</button>`).join('')}</div></div>`;
   h += `<div class="ireg" title="INPUT_SYNC_BYPASS (SPEC-7-7) — per-GPIO: 1 bypasses the 2-FF input synchroniser (CC-23)">
-    <span class="irn">ISB</span><span class="ira">0x038</span><span class="iro" id="insp-isb">—</span>
+    <div class="irhead"><span class="irn">ISB</span><span class="ira">0x038</span><span class="iro" id="insp-isb">—</span></div>
     <div class="ifields"><div class="ifield"><span class="ifn">mask</span><span class="ifb">31:0</span><input type="text" id="insp-isbval" class="ihex" value="0x00000000" maxlength="10" /></div>
     <button type="button" id="insp-isbgo">WRITE</button>
     <button type="button" class="ipulse" data-rd="${regs.ISB}">READ</button></div></div>`;
-  h += `<div class="ireg" title="DBG_PADOUT / DBG_PADOE (SPEC-7-8) — the driven levels/output enables, live">
-    <span class="irn">PADOUT</span><span class="ira">0x03c</span><span class="iro">${hex32(st.gpioOut)}</span>
-    <span class="irn">PADOE</span><span class="ira">0x040</span><span class="iro">${hex32(st.gpioOe)}</span></div>`;
+  h += `<div class="ireg" title="DBG_PADOUT (SPEC-7-8) — the driven levels, live">
+    <div class="irhead"><span class="irn">PADOUT</span><span class="ira">0x03c</span><span class="iro">${hex32(st.gpioOut)}</span></div></div>`;
+  h += `<div class="ireg" title="DBG_PADOE (SPEC-7-8) — the output enables, live">
+    <div class="irhead"><span class="irn">PADOE</span><span class="ira">0x040</span><span class="iro">${hex32(st.gpioOe)}</span></div></div>`;
   h += `<div class="ireg" title="DBG_CFGINFO (SPEC-7-9) — constant">
-    <span class="irn">CFGINFO</span><span class="ira">0x044</span><span class="iro">0x10200404 · imem 32 · sm 4 · fifo 4</span></div>`;
+    <div class="irhead"><span class="irn">CFGINFO</span><span class="ira">0x044</span><span class="iro">0x10200404 · imem 32 · sm 4 · fifo 4</span></div></div>`;
 
   h += `<div class="igroup">SM${curSm} — the config overlay (settable; edits land as queued reg writes, SPEC-7-14..26 · the window follows the selected machine)</div>`;
   const groups = [
@@ -1123,19 +1126,19 @@ function renderInspector() {
     let fh = '';
     for (const [field, spec] of fields) fh += inspFieldRow(group, field, spec, OV[group][field]);
     h += `<div class="ireg" title="${regName} @ ${hex32(VD.overlayAddr(curSm, group))} — compose ${hex32(VD.composeOverlay(group, OV[group]))}">
-      <span class="irn">${label}</span><span class="ira">${group === 'clkdiv' ? '+0' : group === 'pinctrl' ? '+20' : group === 'execctrl' ? '+4' : '+8'}</span>
-      <span class="iro">${hex32(VD.composeOverlay(group, OV[group]))}</span>
+      <div class="irhead"><span class="irn">${label}</span><span class="ira">${group === 'clkdiv' ? '+0' : group === 'pinctrl' ? '+20' : group === 'execctrl' ? '+4' : '+8'}</span>
+      <span class="iro">${hex32(VD.composeOverlay(group, OV[group]))}</span></div>
       <div class="ifields">${fh}</div></div>`;
   }
   h += `<div class="ireg" title="SM${curSm}_ADDR (SPEC-7-22) — the live PC">
-    <span class="irn">ADDR</span><span class="ira">+12</span><span class="iro">${st.pc}</span></div>`;
+    <div class="irhead"><span class="irn">ADDR</span><span class="ira">+12</span><span class="iro">${st.pc}</span></div></div>`;
   h += `<div class="ireg" title="SM${curSm}_INSTR (SPEC-7-23/24) — read: imem[pc]; write: FORCE-execute a word on SM${curSm} (delay ignored, bypasses the divider)">
-    <span class="irn">INSTR</span><span class="ira">+16</span><span class="iro">0x${(BUILT[st.pc] || 0).toString(16).padStart(4, '0').toUpperCase()}</span>
+    <div class="irhead"><span class="irn">INSTR</span><span class="ira">+16</span><span class="iro">0x${(BUILT[st.pc] || 0).toString(16).padStart(4, '0').toUpperCase()}</span></div>
     <div class="ifields"><div class="ifield"><span class="ifn">force</span><span class="ifb">15:0</span><input type="text" id="insp-force" class="ihex" placeholder="0x…" maxlength="6" /></div>
     <button type="button" id="insp-forcego">FORCE</button></div></div>`;
   h += `<div class="ireg" title="RXF${curSm}_PUTGET0..3 (SPEC-7-13) — SM${curSm}'s aux-mode storage window (readable in txput, writable in txget)">
-    ${[0, 1, 2, 3].map((y) => `<button type="button" class="ipulse" data-rd="${regs.PUTGET0 + 0x10 * curSm + 4 * y}">PG${y}</button>`).join('')}
-    <span class="iro" id="insp-putget">—</span></div>`;
+    <div class="irhead"><span class="irn">PUTGET</span><span class="ira">${hex32(regs.PUTGET0 + 0x10 * curSm)}</span><span class="iro" id="insp-putget">—</span></div>
+    <div class="ifields btns">${[0, 1, 2, 3].map((y) => `<button type="button" class="ipulse" data-rd="${regs.PUTGET0 + 0x10 * curSm + 4 * y}">PG${y}</button>`).join('')}</div></div>`;
   h += `<div class="ireg"><span class="iro" id="insp-lastread">every READ/WRITE here retires one rendered clk</span></div>`;
   host.innerHTML = h;
   // wire the overlay field inputs (event delegation is awkward with

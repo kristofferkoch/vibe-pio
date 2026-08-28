@@ -747,6 +747,21 @@ flowchart TB
   notes (pattern, wave grid scale) yield below ~1520px — the tx note
   stays, it *is* the overflow-refused flash. No JS structure changed:
   every pane is ID-keyed and the control delegates are document-level.
+- **Layout reprioritization, pass 3 (2026-08-28)**: the fifo twins
+  share the exec column — `#fiforow` splits it evenly (`1fr 1fr`, the
+  1px-on-line hairline between), tx left, rx right, the pull connector
+  and osr below — because the pair at two different widths read as two
+  different machines. The rx half stacks (level/drains over the
+  drained-word log); the right column is down to scratch, irq, isr
+  over the inspector. The inspector itself became a ledger: one
+  register per row, a fixed name/address header line with the live
+  value pushed right, fields on a uniform chip grid (denser grid for
+  pure paddle rows), hairline separators — and the two
+  double-registers (IRQ/IRQ_FORCE, PADOUT/PADOE) split into their own
+  rows. All render-glue inside `renderInspector`; ids and delegates
+  unchanged. The gate pins the twins (residency in the exec column,
+  equal width within 2px, on-screen) and the ledger (register names
+  column-aligned at equal width, field chips at one height).
 - **Gates**: `make web`'s client legs check the driver against the
   pio_model oracle over the sandbox surface (pin-identical samples,
   mirror↔tx_level agreement, the asm round-trip of the listing, five

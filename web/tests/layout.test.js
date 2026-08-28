@@ -128,6 +128,19 @@ const GEO = `(() => {
   const rows = [...document.querySelectorAll('#regs > div')].map(row);
   const execRows = [...exec.querySelectorAll(':scope > div')].map(row);
   const h = (sel) => document.querySelector(sel).getBoundingClientRect().height;
+  const rectOf = (sel) => {
+    const e = document.querySelector(sel);
+    if (!e) return null;
+    const b = e.getBoundingClientRect();
+    return { w: b.width, bottom: b.bottom, inExec: !!e.closest('#exec') };
+  };
+  const irns = [...document.querySelectorAll('#inspbody .irn')].map((e) => {
+    const b = e.getBoundingClientRect();
+    return { l: b.left, w: b.width };
+  });
+  const chips = [...document.querySelectorAll('#inspbody .ifield')].map((e) =>
+    Math.round(e.getBoundingClientRect().height),
+  );
   return {
     iw: innerWidth,
     ih: innerHeight,
@@ -136,6 +149,9 @@ const GEO = `(() => {
     regsW: regs.width, // the register column's share (the priority check)
     centerW: execRect.width,
     waveH: h('#wavesvg'),
+    fifo: rectOf('#fifo'),
+    rxfifo: rectOf('#rxfifo'),
+    insp: { irns, chips },
     room: {
       // the drawn control rows whose single-line render is what "room on
       // the right side" means concretely (wrapped values are 36–63px)
@@ -153,18 +169,11 @@ const GEO = `(() => {
 function assertFits(geo, width, height, stateName) {
   assert.strictEqual(geo.iw, width, `viewport override failed: ${geo.iw} != ${width}`);
   assert.strictEqual(geo.ih, height, `viewport override failed: ${geo.ih} != ${height}`);
-  // the named check first — the user-visible symptom, stated plainly.
   // The test is against the column's clip edge, not the viewport: a row
   // ending between the clip edge and the viewport bottom renders under
-  // the footer — invisible just the same.
-  const rx = geo.rows.find((r) => r.id === 'rxfifo');
-  assert(
-    rx && rx.bottom <= geo.clip + 0.5,
-    `rx fifo below the fold at ${width}×${height} (${stateName}): bottom ${rx.bottom.toFixed(1)} > column edge ${geo.clip.toFixed(1)}\n` +
-      geo.rows
-        .map((r) => `  #${r.id}: ${r.top.toFixed(1)}..${r.bottom.toFixed(1)} (h=${r.h.toFixed(1)})`)
-        .join('\n'),
-  );
+  // the footer — invisible just the same. (The rx fifo's own named
+  // check lives with the fifo twins in assertExec — it left this
+  // column for the exec column's twin row.)
   for (const r of geo.rows) {
     if (r.id === 'inspector') continue; // the flexible row: scrolls internally by design
     assert(
@@ -223,17 +232,64 @@ function assertRoomy(geo, width, stateName) {
     insp && insp.h >= 200,
     `register inspector is a sliver at ${width} (${stateName}): ${insp.h.toFixed(1)}px visible (floor 200 — the datapath panels must live in the exec column, not stacked over it)`,
   );
+  // the ledger: every register's name sits in the same aligned column,
+  // and the field chips share one height — ragged name columns and
+  // mixed chip heights are the "jumbled" failure
+  const { irns, chips } = geo.insp;
+  assert(
+    irns.length >= 10,
+    `inspector ledger lost its registers at ${width} (${stateName}): ${irns.length} names`,
+  );
+  const l0 = irns[0].l;
+  const w0 = irns[0].w;
+  for (const r of irns) {
+    assert(
+      Math.abs(r.l - l0) <= 2,
+      `inspector register names are not column-aligned at ${width} (${stateName})`,
+    );
+    assert(
+      Math.abs(r.w - w0) <= 2,
+      `inspector register names are not equal width at ${width} (${stateName})`,
+    );
+  }
+  const hmin = Math.min(...chips);
+  const hmax = Math.max(...chips);
+  assert(
+    chips.length >= 10 && hmax - hmin <= 2,
+    `inspector field chips are ragged at ${width} (${stateName}): heights ${hmin}..${hmax}px across ${chips.length} chips — one chip grid, one height`,
+  );
 }
 
 // pass 2 of the reprioritization: the exec column's blank body wall is
-// gone — its echo is two lines — and the out datapath took that space
+// gone — its echo is two lines — and the out datapath took that space.
+// Pass 3: the fifo twins share the exec column too, side by side at
+// equal width, and the inspector reads as a ledger.
 function assertExec(geo, width, height, stateName) {
   for (const id of ['fifo', 'pullconn', 'osr']) {
     assert(
-      geo.execRows.some((r) => r.id === id),
+      geo.execRows.some((r) => r.id === id) || (id === 'fifo' && geo.fifo?.inExec),
       `#${id} is not in the exec column at ${width} (${stateName}) — the out datapath belongs where the exec body wall was`,
     );
   }
+  // the named check, stated plainly: both fifos on-screen, same side,
+  // same width
+  for (const [name, f] of [
+    ['tx fifo', geo.fifo],
+    ['rx fifo', geo.rxfifo],
+  ]) {
+    assert(
+      f?.inExec === true,
+      `${name} is not in the exec column at ${width} (${stateName}) — the fifos belong side by side in the middle pane`,
+    );
+    assert(
+      (f?.bottom ?? Infinity) <= geo.execClip + 0.5,
+      `${name} below the fold at ${width}×${height} (${stateName}): bottom ${f?.bottom.toFixed(1)} > panel edge ${geo.execClip.toFixed(1)}`,
+    );
+  }
+  assert(
+    Math.abs((geo.fifo?.w ?? NaN) - (geo.rxfifo?.w ?? NaN)) <= 2,
+    `tx/rx fifo widths differ at ${width} (${stateName}): ${geo.fifo?.w.toFixed(0)}px vs ${geo.rxfifo?.w.toFixed(0)}px — the twin row must split evenly`,
+  );
   const title = geo.execRows[0];
   assert(
     title && title.h <= 44,
@@ -306,7 +362,7 @@ for (const [width, height] of VIEWPORTS) {
     ['join tx', JOIN_TX],
     ['join rx', JOIN_RX],
   ]) {
-    test(`right column fits ${width}×${height} (${stateName}): rx fifo on-screen`, async () => {
+    test(`columns fit ${width}×${height} (${stateName}): fifos paired on-screen`, async () => {
       await load(state, width, height);
       const geo = await page.evaluate(GEO);
       assertFits(geo, width, height, stateName);

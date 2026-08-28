@@ -741,9 +741,20 @@ main > * {
   font-size: 10.5px;
   white-space: nowrap;
 }
-/* the out datapath (moved in from the right column) reads as one group:
-   hairline above the tx fifo and the osr, the pull connector between */
-#fifo,
+/* the fifo twins: one row, even split — the hairline between them is
+   the same 1px-on-line trick the main grid uses */
+#fiforow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line);
+  border-top: 1px solid var(--line);
+}
+#fiforow > div {
+  background: var(--panel);
+  min-width: 0;
+}
+/* the osr follows the twin row; the pull connector sits between */
 #osr {
   border-top: 1px solid var(--line);
 }
@@ -849,9 +860,9 @@ main > * {
    below its panel's content paints the overflow over the panels below
    (the C22 spill — drawn controls buried under it, found by the C22
    browser session, gated by web/tests/layout.test.js). Only the
-   inspector may shrink — it scrolls internally. Since the out datapath
-   (tx fifo/pull/osr) moved to the exec column, the fixed rows here are
-   scratch, irq, isr and the rx fifo */
+   inspector may shrink — it scrolls internally. Since the datapath and
+   the rx fifo moved to the exec column, the fixed rows here are
+   scratch, irq and isr */
 #regs > div {
   background: var(--panel);
   min-width: 0;
@@ -1394,9 +1405,13 @@ header .mini.imp {
   color: var(--green);
   border-color: var(--green-dim);
 }
+/* the rx half stacks (meta over the drained-word log): the twin row
+   gives each fifo half ~half the exec column, and side-by-side
+   meta/log would fight for ~250px */
 #rxbody {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   align-items: stretch;
 }
 #rxmeta {
@@ -1488,35 +1503,60 @@ header .mini.imp {
   margin: 8px 0 3px;
   border-bottom: 1px dashed var(--cfg-dim);
 }
+/* the ledger: one register per row — a fixed name/address header line
+   with the live value pushed right, then the register's fields on a
+   uniform chip grid (or its button paddles on a denser one). The old
+   ragged inline wraps — names at natural widths, chips at mixed
+   heights, two registers jammed in one row — were the jumbled look the
+   gate now pins against */
 .ireg {
-  margin: 4px 0;
+  padding: 5px 0 7px;
+  border-bottom: 1px dashed var(--line);
+}
+.irhead {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   gap: 4px 8px;
+  min-width: 0;
+}
+.irhead .iro {
+  margin-left: auto;
 }
 .irn {
+  flex: 0 0 62px;
   color: var(--bright);
   font-size: 11px;
 }
 .ira {
+  flex: 0 0 40px;
   color: var(--addr);
   font-size: 10px;
 }
 .iro {
   color: var(--green);
   font-size: 10px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ifields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 4px 10px;
   width: 100%;
+  margin-top: 5px;
+}
+/* pure-paddle rows (w/c clears, force sets, putget reads) run denser */
+.ifields.btns {
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
 }
 .ifield {
   display: flex;
   align-items: center;
   gap: 4px;
+  height: 22px;
+  min-width: 0;
   font-size: 10px;
   cursor: help;
 }
@@ -1527,13 +1567,20 @@ header .mini.imp {
   color: var(--dim);
 }
 .ifield input[type="number"] {
-  width: 52px;
+  width: 100%;
+  min-width: 0;
+  max-width: 54px;
 }
 .ifield input[type="checkbox"] {
   accent-color: var(--cfg);
+  width: 12px;
+  height: 12px;
+  flex: none;
 }
 input.ihex {
-  width: 90px;
+  width: 84px;
+  flex: 1 1 40px;
+  min-width: 0;
 }
 .ipulse {
   font: inherit;
@@ -1554,15 +1601,14 @@ input.ihex {
   top: 0;
   z-index: 2;
 }
-/* the four fixed rows are content-sized and never shrink below their
+/* the three fixed rows are content-sized and never shrink below their
    panels (see #regs > div above); the inspector is the flexible one —
    it scrolls internally, so a squeezed column collapses it first and
-   only then scrolls. With the datapath gone the four rows sit inside a
-   13" laptop viewport (1280×800) in both FIFO postures with hundreds
-   of pixels to spare for the inspector — the scroll is a safety valve,
-   not the design */
+   only then scrolls. With the datapath and the rx fifo in the exec
+   column, the rows here are scratch, irq and isr over a tall
+   inspector — the scroll is a safety valve, not the design */
 #regs {
-  grid-template-rows: auto auto auto auto 1fr;
+  grid-template-rows: auto auto auto 1fr;
   overflow-y: auto;
 }
 
