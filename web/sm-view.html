@@ -234,6 +234,62 @@
           </span>
         </div>
 
+        <!-- pass 4: the shift registers sandwich the fifo pair — isr
+             above (its push arrow feeds the rx half below), osr below
+             (the pull connector feeds it from the tx half). In on top,
+             out on the bottom, storage in the middle. -->
+        <div id="isr">
+          <div class="ptitle">
+            isr · in shift register <span class="aux" id="isrnote">idle</span>
+          </div>
+          <div class="bits" id="isrbits"></div>
+          <button
+            type="button"
+            class="shiftviz"
+            id="isrviz"
+            data-ctl="isr-dir"
+            data-g="toggle"
+            title="config · IN_SHIFTDIR (SPEC-7-21): click flips which ISR end IN feeds — the arrow is the register's shift direction"
+          >
+            <span class="sv-end" id="isrdir">pins → in</span>
+            <span class="sv-arrow" id="israrr"></span>
+            <span class="sv-end">push ⇣ rx</span>
+          </button>
+          <div class="shbar">
+            <div class="shfill" id="isrfill"></div>
+            <div
+              class="shnotch"
+              id="isrnotch"
+              title="PUSH_THRESH — autopush fires as the counter crosses it"
+            ></div>
+          </div>
+          <div class="shiftnote">
+            <span>shift <b id="isrcnt">0</b>/32</span>
+            <span class="cfgdraw">
+              <button
+                type="button"
+                class="ctgl"
+                id="aptg2"
+                data-ctl="autopush"
+                data-g="toggle"
+                title="config · AUTOPUSH (SPEC-5-9): on IN reaching the threshold, push ISR to the RX FIFO in the same cycle"
+              >
+                autopush
+              </button>
+              <span
+                class="thrctl"
+                title="config · PUSH_THRESH (SPEC-5-7): 1–32, steppers wrap; 0 encodes 32"
+              >
+                thr
+                <button type="button" class="cstep" data-ctl="push-thr" data-g="dec">−</button>
+                <b id="apthr2">32</b>
+                <button type="button" class="cstep" data-ctl="push-thr" data-g="inc">+</button>
+              </span>
+            </span>
+            <span class="flag" id="isrf">ISR Full</span>
+          </div>
+        </div>
+
         <!-- the fifo twins: one row, even split — the tx/rx pair is the
              machine's whole scratch storage surface, so it reads as one
              band (pass 3 of the layout reprioritization) -->
@@ -284,6 +340,12 @@
                 <div id="fifolvlbar"><div id="fifolvlfill"></div></div>
                 <div id="fifostall">EMPTY · SM STALLED</div>
               </div>
+            </div>
+            <!-- the depth/overflow note lives on the fifo it describes
+                 (the stimulus row stays one line); refuseFlash blinks
+                 the meta column beside it -->
+            <div id="txnote" title="writes are refused while the FIFO is full">
+              TX FIFO 4 deep — overflow is refused
             </div>
           </div>
 
@@ -379,7 +441,7 @@
           <span class="fmlabel">frame map · 8N1</span>
           <div id="fmcells"></div>
         </div>
-        <div class="ptitle" style="border-top:1px solid var(--line)">
+        <div class="ptitle wavetitle" style="border-top:1px solid var(--line)">
           <span id="wavelabel">gpio0</span>
           <span
             class="cfgtag maptag"
@@ -426,7 +488,6 @@
           <input type="text" id="feedtxt" value="PIO!" maxlength="32" spellcheck="false">
           <button type="button" id="bfeed">ENQUEUE</button>
           <button type="button" id="bfeed55" title="one 0x55 word">0x55</button>
-          <span class="note" id="txnote">TX FIFO 4 deep — overflow is refused</span>
         </div>
         <div id="pattern">
           <span class="ptitle" style="border:none;padding:0;background:none">pattern →</span>
@@ -476,58 +537,6 @@
             >
           </div>
           <div id="irqlamps"></div>
-        </div>
-
-        <div id="isr">
-          <div class="ptitle">
-            isr · in shift register <span class="aux" id="isrnote">idle</span>
-          </div>
-          <div class="bits" id="isrbits"></div>
-          <button
-            type="button"
-            class="shiftviz"
-            id="isrviz"
-            data-ctl="isr-dir"
-            data-g="toggle"
-            title="config · IN_SHIFTDIR (SPEC-7-21): click flips which ISR end IN feeds — the arrow is the register's shift direction"
-          >
-            <span class="sv-end" id="isrdir">pins → in</span>
-            <span class="sv-arrow" id="israrr"></span>
-            <span class="sv-end">push ⇣ rx</span>
-          </button>
-          <div class="shbar">
-            <div class="shfill" id="isrfill"></div>
-            <div
-              class="shnotch"
-              id="isrnotch"
-              title="PUSH_THRESH — autopush fires as the counter crosses it"
-            ></div>
-          </div>
-          <div class="shiftnote">
-            <span>shift <b id="isrcnt">0</b>/32</span>
-            <span class="cfgdraw">
-              <button
-                type="button"
-                class="ctgl"
-                id="aptg2"
-                data-ctl="autopush"
-                data-g="toggle"
-                title="config · AUTOPUSH (SPEC-5-9): on IN reaching the threshold, push ISR to the RX FIFO in the same cycle"
-              >
-                autopush
-              </button>
-              <span
-                class="thrctl"
-                title="config · PUSH_THRESH (SPEC-5-7): 1–32, steppers wrap; 0 encodes 32"
-              >
-                thr
-                <button type="button" class="cstep" data-ctl="push-thr" data-g="dec">−</button>
-                <b id="apthr2">32</b>
-                <button type="button" class="cstep" data-ctl="push-thr" data-g="inc">+</button>
-              </span>
-            </span>
-            <span class="flag" id="isrf">ISR Full</span>
-          </div>
         </div>
 
         <div id="inspector">

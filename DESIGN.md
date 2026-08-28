@@ -762,6 +762,20 @@ flowchart TB
   unchanged. The gate pins the twins (residency in the exec column,
   equal width within 2px, on-screen) and the ledger (register names
   column-aligned at equal width, field chips at one height).
+- **Layout reprioritization, pass 4 (2026-08-28)**: the isr joined the
+  exec column above the fifo twins — the shift registers now sandwich
+  the storage pair (isr above, osr below, the pull connector between
+  twin row and osr), and the exec column reads as the whole datapath:
+  in on top, storage in the middle, out at the bottom, pins (wave)
+  under that, feeds at the foot. The right column is scratch + irq
+  over the inspector. The wave paid for the isr as the owner directed:
+  the tx depth/refusal note moved onto the fifo panel it describes
+  (the stimulus row stays one line; `refuseFlash` still blinks the
+  meta column), the slot cap dropped to 88px, the bits/shift-note
+  rows densified, the wave-header mapping tags compacted to one line
+  down to the 13" column, and the wave's gate floor moved 100 → 64px
+  (measured minimum ~75 at 1366×768; it collapsed to 21px before the
+  reclaims). The gate pins the isr above the twins.
 - **Gates**: `make web`'s client legs check the driver against the
   pio_model oracle over the sandbox surface (pin-identical samples,
   mirror↔tx_level agreement, the asm round-trip of the listing, five

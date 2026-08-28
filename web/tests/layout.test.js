@@ -263,7 +263,10 @@ function assertRoomy(geo, width, stateName) {
 // pass 2 of the reprioritization: the exec column's blank body wall is
 // gone — its echo is two lines — and the out datapath took that space.
 // Pass 3: the fifo twins share the exec column too, side by side at
-// equal width, and the inspector reads as a ledger.
+// equal width, and the inspector reads as a ledger. Pass 4: the isr
+// joins the exec column above the twins — the shift registers sandwich
+// the fifo pair (osr below like isr above) — leaving the right column
+// to scratch, irq and the inspector ledger.
 function assertExec(geo, width, height, stateName) {
   for (const id of ['fifo', 'pullconn', 'osr']) {
     assert(
@@ -271,6 +274,11 @@ function assertExec(geo, width, height, stateName) {
       `#${id} is not in the exec column at ${width} (${stateName}) — the out datapath belongs where the exec body wall was`,
     );
   }
+  const isr = geo.execRows.find((r) => r.id === 'isr');
+  assert(
+    isr && isr.top < (geo.fifo?.bottom ?? 0),
+    `#isr is not above the fifo twins in the exec column at ${width} (${stateName}) — the shift registers sandwich the fifo pair`,
+  );
   // the named check, stated plainly: both fifos on-screen, same side,
   // same width
   for (const [name, f] of [
@@ -301,8 +309,8 @@ function assertExec(geo, width, height, stateName) {
     `exec echo second line is ${slim ? slim.h.toFixed(1) : 'absent'}px tall at ${width} (${stateName}) (bound 44 — two lines, not a body wall)`,
   );
   assert(
-    geo.waveH >= 100,
-    `waveform collapsed to ${geo.waveH.toFixed(1)}px at ${width}×${height} (${stateName})`,
+    geo.waveH >= 64,
+    `waveform collapsed to ${geo.waveH.toFixed(1)}px at ${width}×${height} (${stateName}) — the shift registers sandwiching the fifo pair buy their room from the wave, but it keeps a floor`,
   );
   // the same honesty the #regs rows get, now for the exec column's
   // residents: nothing squeezed (the C22 class), nothing spilling past
