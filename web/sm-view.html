@@ -35,14 +35,19 @@
   the C19 port — CI-checked bit-equal against pio_model).
 
   Legend: amber = control · green = data · cyan = config/wiring ·
-  red = stall · gray = idle. The C22 drawn-config grammar rides the
+  red = stall · gray = idle (the amber/green frame-map legend exists only
+  under the uart lens — the sandbox chrome stays protocol-neutral). The
+  C22 drawn-config grammar rides the
   cyan layer: shift-direction arrows over OSR/ISR, autopull/autopush
   toggles + threshold steppers (notch on the fill bar), the FIFO join
-  chip (ticked borrowed TX slots, ghost panels), wrap steppers on the
-  arc, and base·count steppers on the waveform's pin-mapping tags —
+  segments (direct split/join-tx/join-rx; ticked borrowed TX slots,
+  ghost panels), wrap steppers on
+  the arc, and base·count steppers on the waveform's pin-mapping tags —
   every drawn control a real reg write through the selected SM's
-  overlay. Serve from the repo root (web/serve.py) so the engine
-  resolves at build/web/.
+  overlay. The listing editor previews the row's machine code live
+  (the strip atop the candidate popup — the word, or the assembly
+  error, before the commit). Serve from the repo root (web/serve.py)
+  so the engine resolves at build/web/.
 -->
     <link rel="stylesheet" href="sm-view.css">
   </head>
@@ -69,7 +74,7 @@
         type="button"
         id="bdemo"
         class="mini"
-        title="load the uart_tx demo program + config (the old level 02)"
+        title="load the demo program + config — uart_tx, an 8N1 transmitter on pin 0"
       >
         ▶ DEMO
       </button>
@@ -328,16 +333,38 @@
           <div class="ptitle">
             tx fifo
             <span class="aux"
-              ><button
-                type="button"
-                id="joinchip"
-                class="cjoin"
-                data-ctl="fifo-join"
-                data-g="inc"
-                title="config · FIFO JOIN (SPEC-6-2/3) — click cycles split → join TX → join RX: a real SHIFTCTRL write (flushes the FIFOs); the aux modes (txput/txget/putget) are inspector-set, one click from split"
+              ><span
+                class="segjoin"
+                title="config · FIFO JOIN (SPEC-6-2/3) — pick the mode: a real SHIFTCTRL write that flushes the FIFOs. The aux modes (txput/txget/putget) stay inspector-set."
               >
-                split
-              </button>
+                <button
+                  type="button"
+                  id="segsplit"
+                  data-ctl="fifo-mode"
+                  data-g="split"
+                  title="config · FIFO JOIN → split (SPEC-6-2): TX 4 deep + RX 4 deep — the reset posture"
+                >
+                  split
+                </button>
+                <button
+                  type="button"
+                  id="segtx"
+                  data-ctl="fifo-mode"
+                  data-g="join-tx"
+                  title="config · FIFO JOIN → join TX (SPEC-6-2): both halves as one TX FIFO, 8 deep — RX goes dark"
+                >
+                  join tx
+                </button>
+                <button
+                  type="button"
+                  id="segrx"
+                  data-ctl="fifo-mode"
+                  data-g="join-rx"
+                  title="config · FIFO JOIN → join RX (SPEC-6-2): both halves as one RX FIFO, 8 deep — TX goes dark"
+                >
+                  join rx
+                </button>
+              </span>
               <span class="cfgtx on" id="txghost" hidden></span>
               · <b id="txdepth">4</b> deep</span
             >
@@ -504,9 +531,13 @@
     </main>
 
     <footer>
-      <span><span class="sw" style="background:var(--amber)"></span>control (start/stop/idle)</span>
-      <span
-        ><span class="sw" style="background:var(--green)"></span>data bits D0..D7 (LSB first)</span
+      <span id="leg-ctrl" hidden
+        ><span class="sw" style="background:var(--amber)"></span>frame control
+        (start/stop/idle)</span
+      >
+      <span id="leg-data" hidden
+        ><span class="sw" style="background:var(--green)"></span>frame data bits D0..D7 (LSB
+        first)</span
       >
       <span
         ><span class="sw" style="background:var(--cfg)"></span>config — where the machine is
@@ -520,8 +551,11 @@
     </footer>
 
     <div id="edpop" hidden>
-      <div id="edcands"></div>
-      <div id="eddetail"></div>
+      <div id="edcode"></div>
+      <div id="edmain">
+        <div id="edcands"></div>
+        <div id="eddetail"></div>
+      </div>
     </div>
 
     <div id="boot"><span class="lamp on"></span>loading wasm engine…</div>

@@ -528,9 +528,34 @@ main > * {
   position: absolute;
   z-index: 50;
   display: flex;
+  flex-direction: column;
   background: var(--panel2);
   border: 1px solid var(--line2);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+#edmain {
+  display: flex;
+}
+/* the live machine-code strip: the editing row's word (or its error)
+   before the commit — the top edge of the editor popup */
+#edcode {
+  padding: 3px 10px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--line2);
+  white-space: nowrap;
+}
+#edcode:empty {
+  display: none;
+}
+#edcode .ok {
+  color: var(--green);
+}
+#edcode .bad {
+  color: var(--red);
+}
+#edcode .dim {
+  color: var(--dimmer);
 }
 #edcands {
   min-width: 118px;
@@ -1539,24 +1564,33 @@ button.shiftviz:hover .sv-end {
   color: var(--cfg);
 }
 /* the FIFO join chip (the cycle control) + the borrowed-slot tick */
-.cjoin {
-  font: inherit;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  background: none;
+/* the FIFO-mode segmented control: the drawn join, direct — one button
+   per reachable mode (SPEC-6-2/3), the active one lit; aux modes are
+   inspector-set and light none */
+.segjoin {
+  display: inline-flex;
   border: 1px solid var(--line2);
   border-radius: 8px;
+  overflow: hidden;
+}
+.segjoin button {
+  font: inherit;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  background: none;
+  border: none;
   color: var(--cfg-dim);
   padding: 0 7px;
   cursor: pointer;
 }
-.cjoin:hover {
-  border-color: var(--cfg);
+.segjoin button + button {
+  border-left: 1px solid var(--line2);
+}
+.segjoin button:hover {
   color: var(--cfg);
 }
-.cjoin.on {
+.segjoin button.on {
   color: var(--cfg);
-  border-color: var(--cfg-dim);
   background: rgba(90, 200, 216, 0.08);
 }
 .fslot .idx {

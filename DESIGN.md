@@ -684,7 +684,22 @@ flowchart TB
   words}` patches the **live** imem image (driver `setProgram`: one
   rendered clk per changed slot, 0 clears a slot — writing imem of a
   running SM is legal), and on failure the "unbuilt edits" chip names
-  the row error while the machine keeps the last good build.
+  the row error while the machine keeps the last good build. While a
+  row is open, the editor popup carries a live machine-code strip —
+  the row assembles exactly as the commit will compose it (`edRowText`
+  is the one composer both share), so the word (hex + bits) or the
+  assembly error is visible before committing; with no completion
+  candidates the popup persists as that strip alone.
+- **Fun-gate feedback pass (2026-08-28)**: the FIFO join became a
+  segmented control — split / join tx / join rx as direct random-access
+  targets (driver `fifo-mode`, one atomic SHIFTCTRL write from any
+  state, aux bits clearing in it; the re-click of an already-held mode
+  is a no-op) — because the cycling chip read as a status label and
+  the autosaved demo (fjoinTx) made the sandbox feel permanently
+  joined. The chrome de-UARTed: the frame-map footer legend exists
+  only under the uart lens, and the ISA notes dropped their uart_tx
+  references — the lens stays a picked-pin instrument, off unless
+  armed, and the demo remains the honest loadable uart_tx showpiece.
 - **Gates**: `make web`'s client legs check the driver against the
   pio_model oracle over the sandbox surface (pin-identical samples,
   mirror↔tx_level agreement, the asm round-trip of the listing, five

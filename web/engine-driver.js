@@ -35,7 +35,8 @@
 //     are session state and stay out);
 //   - maps the C22 drawn-config grammar (DESIGN-NOTES: shift-direction
 //     arrows, autopull/autopush toggles + threshold steppers, the FIFO
-//     join cycle, wrap steppers, pin-mapping base·count steppers) onto
+//     join cycle + its direct segmented form, wrap steppers, pin-mapping
+//     base·count steppers) onto
 //     overlay edits of ONE SM — every drawn control is a real reg write
 //     to that SM's window, nothing is display-only. controlEdit is the
 //     pure gesture→edits table; setOverlayFields lands a multi-field
@@ -248,6 +249,7 @@
     'pull-thr': { kind: 'thr', group: 'shiftctrl', field: 'pullThr' }, // SPEC-5-7
     'push-thr': { kind: 'thr', group: 'shiftctrl', field: 'pushThr' }, // SPEC-5-7
     'fifo-join': { kind: 'join' }, // SPEC-6-2/3
+    'fifo-mode': { kind: 'joinset' }, // SPEC-6-2/3 — direct, the segmented control
     'wrap-top': { kind: 'range', group: 'execctrl', field: 'wrapTop', max: 31 }, // SPEC-7-19
     'wrap-bot': { kind: 'range', group: 'execctrl', field: 'wrapBot', max: 31 }, // SPEC-7-19
     'out-base': { kind: 'range', group: 'pinctrl', field: 'outBase', max: 31 }, // SPEC-7-26
@@ -262,23 +264,26 @@
   // GET, inspector-set) is one cycle from split — the drawn grammar owns
   // join, and the aux bits clear in the same single write.
   function cfgJoinEdits(sc, gesture, defects) {
-    const edits = [];
-    const setBit = (field, v) => {
-      if (sc[field] !== v) edits.push(['shiftctrl', field, v]);
-    };
-    if (sc.fjoinRxPut || sc.fjoinRxGet) {
-      setBit('fjoinRxPut', false);
-      setBit('fjoinRxGet', false);
-      setBit('fjoinTx', false);
-      setBit('fjoinRx', false);
-      return edits;
-    }
+    if (sc.fjoinRxPut || sc.fjoinRxGet) return cfgJoinSetEdits(sc, [false, false]);
     const dir = gesture === 'dec' ? 2 : 1; // +1 / −1 mod 3
     const cur = sc.fjoinTx ? 1 : sc.fjoinRx ? 2 : 0;
     const nxt = (cur + dir) % 3;
     let tx = nxt === 1,
       rx = nxt === 2;
     if (defects?.cfgctrl) [tx, rx] = [rx, tx]; // defect: the TX/RX bits swap
+    return cfgJoinSetEdits(sc, [tx, rx]);
+  }
+
+  // The direct form (the segmented control): name the target mode, from
+  // ANY current state — aux bits always clear (the drawn grammar owns
+  // join), and an already-held target yields no edits (minimal writes).
+  function cfgJoinSetEdits(sc, [tx, rx]) {
+    const edits = [];
+    const setBit = (field, v) => {
+      if (sc[field] !== v) edits.push(['shiftctrl', field, v]);
+    };
+    setBit('fjoinRxPut', false);
+    setBit('fjoinRxGet', false);
     setBit('fjoinTx', tx);
     setBit('fjoinRx', rx);
     return edits;
@@ -293,6 +298,13 @@
     if (c.kind === 'join') {
       if (gesture !== 'inc' && gesture !== 'dec') throw new Error(`control: ${id} wants inc/dec`);
       return cfgJoinEdits(ov.shiftctrl, gesture, defects);
+    }
+    if (c.kind === 'joinset') {
+      const want = { split: [false, false], 'join-tx': [true, false], 'join-rx': [false, true] }[
+        gesture
+      ];
+      if (!want) throw new Error(`control: ${id} wants split/join-tx/join-rx`);
+      return cfgJoinSetEdits(ov.shiftctrl, want);
     }
     if (c.kind === 'toggle') {
       if (gesture !== 'toggle') throw new Error(`control: ${id} wants toggle`);
@@ -952,10 +964,12 @@
 
     // The drawn-control entry point (the worker's {cmd:'control'}): the
     // shared controlEdit table decides the edits, setOverlayFields lands
-    // them on SM `sm`. The defect hook re-injects the FJOIN TX/RX swap
-    // here.
+    // them on SM `sm` (an already-held mode edits nothing — the segmented
+    // control's re-click is a no-op, not setOverlayFields' empty-edits
+    // error). The defect hook re-injects the FJOIN TX/RX swap here.
     function applyControl(sm, id, gesture) {
-      setOverlayFields(sm, controlEdit(ovs[sm], id, gesture, { cfgctrl: DEFECT_CFGCTRL }));
+      const edits = controlEdit(ovs[sm], id, gesture, { cfgctrl: DEFECT_CFGCTRL });
+      if (edits.length) setOverlayFields(sm, edits);
     }
 
     // Hold-latch a manual pin drive (null releases the pin). The level

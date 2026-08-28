@@ -43,6 +43,7 @@ test('CFG_CONTROLS covers the DESIGN-NOTES grammar and nothing else', () => {
     'autopull',
     'autopush',
     'fifo-join',
+    'fifo-mode',
     'in-base',
     'in-cnt',
     'isr-dir',
@@ -151,6 +152,46 @@ test('fifo-join cycles split → tx → rx → split, clearing aux bits', () => 
   }
 });
 
+// ---- the direct FIFO-mode set (SPEC-6-2/3): the segmented control ------
+// The fun-gate ask: the join chip's blind cycle reads as a status label,
+// so the drawn grammar grows a random-access form — gesture names the
+// target mode, from ANY current state (aux included), minimal edits only.
+test('fifo-mode sets the join mode directly from any state (SPEC-6-2/3)', () => {
+  const ov = resetOverlay();
+  // split → join TX
+  assert.deepEqual(VibeDriver.controlEdit(ov, 'fifo-mode', 'join-tx'), [
+    ['shiftctrl', 'fjoinTx', true],
+  ]);
+  // join TX → split
+  ov.shiftctrl.fjoinTx = true;
+  assert.deepEqual(VibeDriver.controlEdit(ov, 'fifo-mode', 'split'), [
+    ['shiftctrl', 'fjoinTx', false],
+  ]);
+  // join TX → join RX: both bits in one edit set
+  ov.shiftctrl.fjoinTx = true;
+  assert.deepEqual(VibeDriver.controlEdit(ov, 'fifo-mode', 'join-rx'), [
+    ['shiftctrl', 'fjoinTx', false],
+    ['shiftctrl', 'fjoinRx', true],
+  ]);
+  // already there → no edits (the idempotent re-click)
+  const ovRx = resetOverlay();
+  ovRx.shiftctrl.fjoinRx = true;
+  assert.deepEqual(VibeDriver.controlEdit(ovRx, 'fifo-mode', 'join-rx'), []);
+  // from an aux mode (SPEC-6-3): the aux bits clear in the same write
+  const ovAux = resetOverlay();
+  ovAux.shiftctrl.fjoinRxPut = true;
+  assert.deepEqual(VibeDriver.controlEdit(ovAux, 'fifo-mode', 'split'), [
+    ['shiftctrl', 'fjoinRxPut', false],
+  ]);
+  assert.deepEqual(VibeDriver.controlEdit(ovAux, 'fifo-mode', 'join-tx'), [
+    ['shiftctrl', 'fjoinRxPut', false],
+    ['shiftctrl', 'fjoinTx', true],
+  ]);
+  // bogus target
+  assert.throws(() => VibeDriver.controlEdit(ov, 'fifo-mode', 'join'));
+  assert.throws(() => VibeDriver.controlEdit(ov, 'fifo-mode', 'inc'));
+});
+
 // ---- setOverlayFields: atomic — one composed write per group ----------
 test('setOverlayFields composes ONE write per touched group', () => {
   const { M, drv } = freshDriver();
@@ -219,6 +260,17 @@ test('applyControl lands the drawn gesture as the composed reg write', () => {
     { addr: REG.SM0 + 8, data: 0x00040000 }, // OUT_SHIFTDIR left, thr still 32-encoded-0
     { addr: REG.SM0 + 8, data: 0x02040000 }, // + PULL_THRESH 1<<25 (SPEC-5-7)
   ]);
+});
+
+test('applyControl on an already-held mode is a no-op, not an error', () => {
+  // the segmented control re-clicks its active segment; the empty edit
+  // set must not reach setOverlayFields (which rejects empty edits)
+  const { M, drv } = freshDriver();
+  drv.load(VibeDriver.EMPTY);
+  const n0 = M.writes.length;
+  drv.applyControl(0, 'fifo-mode', 'split'); // EMPTY is split — nothing to do
+  drv.run(1);
+  assert.equal(M.writes.length, n0);
 });
 
 // ---- the cfgctrl defect hook: red/green in process --------------------

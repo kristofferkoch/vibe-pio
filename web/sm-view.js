@@ -763,20 +763,19 @@ function renderRegs(st) {
     d.innerHTML = `<span class="idx">${i}${borrowed ? '<i class="tick">✓</i>' : ''}</span><span class="hexv">${full ? hex32(st.txWords[i]) : '········'}</span><span class="chv">${full ? ascii(st.txWords[i]) : ''}</span>`;
     slots.appendChild(d);
   }
-  const joinChip = $('joinchip');
-  const mode = sc.fjoinRxPut
-    ? sc.fjoinRxGet
-      ? 'putget'
-      : 'txput'
-    : sc.fjoinRxGet
-      ? 'txget'
-      : sc.fjoinTx
-        ? 'join TX'
-        : sc.fjoinRx
-          ? 'join RX'
-          : 'split';
-  joinChip.textContent = mode;
-  joinChip.classList.toggle('on', mode !== 'split');
+  // the FIFO-mode segmented control: the active segment is the drawn
+  // truth (an aux mode lights none — those are inspector-set)
+  let joinActive = null;
+  if (!sc.fjoinRxPut && !sc.fjoinRxGet)
+    joinActive = sc.fjoinTx ? 'tx' : sc.fjoinRx ? 'rx' : 'split';
+  for (const [k, id] of [
+    ['split', 'segsplit'],
+    ['tx', 'segtx'],
+    ['rx', 'segrx'],
+  ]) {
+    const seg = $(id);
+    if (seg) seg.classList.toggle('on', k === joinActive);
+  }
   $('txdepth').textContent = depth;
   $('txdepth2').textContent = depth;
   $('fifolvl').textContent = st.txLevel;
@@ -938,7 +937,11 @@ function renderMonitor(st) {
     $('monbuf').textContent = '—';
     $('moncnt').textContent = '';
   }
-  $('framemap').style.visibility = mode === 'uart' ? 'visible' : 'hidden';
+  // the frame-map + its legend entries exist only under the uart lens —
+  // the sandbox chrome stays protocol-neutral otherwise
+  const uart = mode === 'uart';
+  $('framemap').style.visibility = uart ? 'visible' : 'hidden';
+  for (const id of ['leg-ctrl', 'leg-data']) $(id).hidden = !uart;
 }
 
 // ---- waveform (svg): true engine pin samples, lens-derived tags --------
@@ -1375,7 +1378,7 @@ const ISA = {
       ['dst', 'pins · x · y · pindirs'],
       ['data', '5-bit immediate 0–31'],
     ],
-    desc: 'Write a constant. uart_tx uses it as the bit counter.',
+    desc: 'Write a 5-bit constant to the destination.',
     spec: 'SPEC-3.9',
     args: ['pins', 'x', 'y', 'pindirs'],
   },
@@ -1474,6 +1477,46 @@ function hlLine(l) {
 }
 function renderED() {
   HL.innerHTML = hlLine(ED.value) || ' ';
+  renderEdCode();
+}
+// The row text exactly as commitRow will compose it (ins + side + [dly])
+// — the preview assembles this, so it can never disagree with the commit.
+function edRowText() {
+  const ins = ED.value.trim().replace(/\s+/g, ' ');
+  const sv = SIDE.value.trim(),
+    dv = DLY.value.trim();
+  const side = /^\d+$/.test(sv) ? ` side ${sv}` : '';
+  const dly = /^\d+$/.test(dv) ? ` [${dv}]` : '';
+  return (ins + side + dly).trim();
+}
+// The live machine-code preview: the editing row assembles under the
+// CURRENT ds allocation, so the word — or the reason there is none — is
+// visible before the commit, not only as the row tooltip afterwards.
+function renderEdCode() {
+  const host = $('edcode');
+  if (curRow < 0) {
+    host.innerHTML = '';
+    return;
+  }
+  const text = edRowText();
+  let html;
+  if (!text) {
+    html = '<span class="dim">empty — commit clears the slot to 0x0000 · jmp 0</span>';
+  } else {
+    try {
+      const w = PioAsm.assembleInstruction(text, ASM_PROG, {}, 'editor preview');
+      const hex = `0x${w.toString(16).padStart(4, '0').toUpperCase()}`;
+      const bin = w
+        .toString(2)
+        .padStart(16, '0')
+        .replace(/(\d{4})(?=\d)/g, '$1 ');
+      html = `<span class="ok">→ ${hex} · ${bin}</span>`;
+    } catch (e) {
+      html = `<span class="bad">✗ ${esc(String(e.message))}</span>`;
+    }
+  }
+  host.innerHTML = html;
+  RE.title = html.replace(/<[^>]+>/g, '');
 }
 function openRow(i, focus) {
   if (curRow >= 0) commitRow();
@@ -1495,12 +1538,7 @@ function openRow(i, focus) {
 }
 function commitRow() {
   if (curRow < 0) return;
-  const ins = ED.value.trim().replace(/\s+/g, ' ');
-  const sv = SIDE.value.trim(),
-    dv = DLY.value.trim();
-  const side = /^\d+$/.test(sv) ? ` side ${sv}` : '';
-  const dly = /^\d+$/.test(dv) ? ` [${dv}]` : '';
-  ROWS[curRow] = (ins + side + dly).trim();
+  ROWS[curRow] = edRowText(); // the preview showed exactly this assembly
   curRow = -1;
   RE.hidden = true;
   popupHide();
@@ -1657,23 +1695,29 @@ function detailHTML(c) {
 }
 function popupShow() {
   edCands = computeCands();
-  if (!edCands.length) {
+  // no candidates but a non-empty row: the popup stays as the machine-code
+  // strip alone (the pick prompt's digit dismissal must not kill the
+  // preview); fully empty — nothing to say — stands down
+  if (!edCands.length && !edRowText()) {
     popupHide();
     HOST.classList.remove('picking');
     return;
   }
-  edSel = Math.min(edSel, edCands.length - 1);
+  edSel = Math.min(edSel, Math.max(0, edCands.length - 1));
   HOST.classList.toggle(
     'picking',
     edCands.some((c) => c.kind === 'pick'),
   );
-  $('edcands').innerHTML = edCands
-    .map(
-      (c, i) =>
-        `<div class="ecand${i === edSel ? ' sel' : ''}" data-i="${i}">${esc(c.t)}${c.kind ? `<span class="kind">${esc(c.kind)}</span>` : ''}</div>`,
-    )
-    .join('');
-  $('eddetail').innerHTML = detailHTML(edCands[edSel]);
+  $('edmain').style.display = edCands.length ? '' : 'none';
+  if (edCands.length) {
+    $('edcands').innerHTML = edCands
+      .map(
+        (c, i) =>
+          `<div class="ecand${i === edSel ? ' sel' : ''}" data-i="${i}">${esc(c.t)}${c.kind ? `<span class="kind">${esc(c.kind)}</span>` : ''}</div>`,
+      )
+      .join('');
+    $('eddetail').innerHTML = detailHTML(edCands[edSel]);
+  }
   POP.hidden = false;
   const mir = document.createElement('div');
   const cs = getComputedStyle(ED);
@@ -1729,6 +1773,8 @@ ED.addEventListener('input', () => {
 ED.addEventListener('scroll', () => {
   HL.scrollLeft = ED.scrollLeft;
 });
+SIDE.addEventListener('input', renderEdCode);
+DLY.addEventListener('input', renderEdCode);
 ED.addEventListener('blur', () => popupHide());
 RE.addEventListener('focusout', (e) => {
   if (HOST.classList.contains('picking')) return;
@@ -1743,7 +1789,7 @@ addEventListener('resize', () => popupHide());
 SIDE.addEventListener('focus', () => HOST.classList.remove('picking'));
 DLY.addEventListener('focus', () => HOST.classList.remove('picking'));
 ED.addEventListener('keydown', (e) => {
-  if (!POP.hidden) {
+  if (!POP.hidden && edCands.length) {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       edSel = (edSel + 1) % edCands.length;
