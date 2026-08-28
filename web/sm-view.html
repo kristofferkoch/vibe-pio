@@ -366,8 +366,7 @@
                 </button>
               </span>
               <span class="cfgtx on" id="txghost" hidden></span>
-              · <b id="txdepth">4</b> deep</span
-            >
+            </span>
           </div>
           <div id="fifobody">
             <div id="fslots"></div>
@@ -495,24 +494,25 @@
             rx fifo
             <span class="aux"
               ><span class="cfgtx on" id="rxghost" hidden></span>
-              <b id="rxdepth">4</b>
-              deep · contents learned only by draining</span
+              contents learned only by draining</span
             >
           </div>
           <div id="rxbody">
             <div id="rxmeta">
               <div id="rxlvltxt">LEVEL <b id="rxlvl">0</b>/<span id="rxdepth2">4</span></div>
               <div id="rxlvlbar"><div id="rxlvlfill"></div></div>
-              <button
-                type="button"
-                id="bdrain"
-                title="read RXF0 once — a queued reg read, one rendered clk"
-              >
-                DRAIN 1
-              </button>
-              <button type="button" id="bdrainall" title="drain every mirrored word">
-                DRAIN ALL
-              </button>
+              <div id="rxbtns">
+                <button
+                  type="button"
+                  id="bdrain"
+                  title="read RXF0 once — a queued reg read, one rendered clk"
+                >
+                  DRAIN 1
+                </button>
+                <button type="button" id="bdrainall" title="drain every mirrored word">
+                  DRAIN ALL
+                </button>
+              </div>
             </div>
             <div id="rxlog"><span class="note">drained words appear here</span></div>
           </div>

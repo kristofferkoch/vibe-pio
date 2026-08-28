@@ -79,7 +79,11 @@
 #            web/tests/pio-asm-golden.json — needs python3, stdlib only)
 #            plus the bare node --test unit suite under web/tests/
 #            (hermetic — the fake engine replaces the wasm build; it
-#            also runs under the container's bare node). Runtime JS
+#            also runs under the container's bare node), including the
+#            headless-Chromium layout gate web/tests/layout.test.js
+#            (real page geometry at 13"-laptop viewports; needs a
+#            chromium on PATH or $PIO_BROWSER — docs/js-tooling.md).
+#            Runtime JS
 #            stays dependency-free: node_modules exists only for the
 #            biome gate.
 

@@ -776,7 +776,8 @@ function renderRegs(st) {
     const seg = $(id);
     if (seg) seg.classList.toggle('on', k === joinActive);
   }
-  $('txdepth').textContent = depth;
+  // depth lives in the LEVEL line (fifometa/rxmeta); the panel titles
+  // stay single-line so the right column keeps its 13"-viewport fit
   $('txdepth2').textContent = depth;
   $('fifolvl').textContent = st.txLevel;
   $('fifolvlfill').style.height = `${depth ? (100 * st.txLevel) / depth : 0}%`;
@@ -788,7 +789,6 @@ function renderRegs(st) {
 
   // RX panel: the level is engine truth; contents appear only by draining
   const rdepth = st.fifoDepths.rx;
-  $('rxdepth').textContent = rdepth;
   $('rxdepth2').textContent = rdepth;
   $('rxlvl').textContent = st.rxLevel;
   $('rxlvlfill').style.height = `${rdepth ? (100 * st.rxLevel) / rdepth : 0}%`;

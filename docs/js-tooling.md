@@ -16,7 +16,7 @@ behavior change.
 | `web/sm-view.js` | the view's DOM glue (**extract-on-touch**: lint/format always; logic migrates into require-able tested modules only as it is touched) — the listing itself is assembler-derived: rows disassemble from the loaded words and committed edits re-assemble through `pio-asm.js` into a live imem patch |
 | `web/sm-view.html` / `web/sm-view.css` | the shipped page and its stylesheet (the `<style>` extracted so css joins the gate) |
 | `web/node_gate.js` / `web/node_client_gate.js` | the headless `make web` runners (wasm engine / client-vs-oracle; the client gate also round-trips the level listing through `pio-asm.js`) |
-| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface) |
+| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface), `browser.js` + `layout.test.js` (the headless-Chromium layout gate — see below) |
 | `tools/gen_pio_asm_golden.py` | generates `web/tests/pio-asm-golden.json` from pio_model (stdlib-only; `--check` is the drift gate in `make js`) |
 | `biome.json` | the format+lint configuration (waivers documented below) |
 | `package.json` + `package-lock.json` | dev-only dependency: `@biomejs/biome` |
@@ -49,7 +49,7 @@ make js         # the full gate: biome ci + node --test
 | install | `npm ci` | dev-only, from the committed lockfile |
 | format + lint | `biome ci web` | js + css + html + json under `web/` (incl. `web/tests/`); `mockups/` is outside `files.includes` and stays free-form |
 | golden drift | `python3 tools/gen_pio_asm_golden.py --check` | the committed `pio-asm-golden.json` must deep-equal fresh pio_model asm/disasm output (content-wise — biome owns the file's layout, so regenerate then `npx biome format --write` it) |
-| tests | `node --test web/tests/*.test.js` | hermetic unit suite — no wasm build, no model, no network |
+| tests | `node --test web/tests/*.test.js` | hermetic unit suite — no wasm build, no model, no network; the one exception is `layout.test.js` (below), which needs a headless Chromium on the machine but still no wasm/model |
 
 JS changes are not done until `make js` is green. The heavier gates
 stay separate: `make web` (the wasm engine build, the three-way trace
@@ -170,6 +170,59 @@ green. The classic JS trap was demonstrated by injection: swapping the
 evaluator's C truncating division for native floor division turned
 `golden exprs` red on `-7/2` (expected -3, floor gives -4); restored,
 27/27 green.
+
+## The layout gate: `web/tests/layout.test.js`
+
+The unit suite is DOM-free by design; the *geometry* a user gets is
+gated at the browser level instead. `layout.test.js` loads the real
+`sm-view.html` in a headless Chromium driven over CDP by
+`web/tests/browser.js` — a zero-dependency client (Node ≥ 22's global
+WebSocket; no puppeteer/playwright), so the runtime-stays-depend-free
+rule holds even for this. It pins the layout-defect classes the
+project has hit by hand:
+
+- **Fit** — every fixed right-column panel (all of `#regs` except the
+  inspector) ends above the column's clip edge at 13"-laptop viewports
+  (1280×800, 1366×768) in all three FIFO postures (split / join tx /
+  join rx): the rx fifo never drops below the fold. The edge, not the
+  viewport, is the honest bound — a row ending between the two renders
+  under the footer, invisible just the same.
+- **Honesty** — no panel is squeezed below its content
+  (`scrollHeight ≤ clientHeight`, both axes): the C22 spill mechanism,
+  where `min-height: 0` let a track shrink and the overflow painted
+  over the panels below while the boxes "fit" any viewport.
+- **Hit targets** — every drawn control in the fixed rows is topmost at
+  its center (`elementFromPoint`), the C22 buried-controls failure.
+
+Practicalities:
+
+- The browser is found via `$PIO_BROWSER`, else `chromium` /
+  `chromium-browser` / `google-chrome` / `chrome` / `headless_shell` on
+  PATH; a missing browser fails the gate loudly. Firefox cannot drive
+  this gate: it dropped CDP support in 2024 (its automation surface is
+  WebDriver BiDi — a second driver would slot in behind the same
+  launch/evaluate shape if ever needed).
+- The suite stays hermetic even though this file leaves it: the test's
+  static server *holds the engine request open forever* — the worker's
+  `importScripts` blocks, so no wasm build is needed and no `werr`/`ready`
+  race can mutate the page mid-measurement. The view's geometry is
+  complete at script load (`render(V.state)` runs before the worker
+  answers); join postures are driven by calling `render()` with a
+  doctored `fifoDepths`.
+- Container use: the runner is stdlib node, so it runs unchanged inside
+  the vibe-pio image once a chromium exists there
+  (`apt-get install -y chromium`; the image ships emsdk's node ≥ 22,
+  which has the global WebSocket).
+
+Worked example (this gate's first commit): the shipped page squeezed
+every `#regs` track below its content — `#xy` measured 85px of content
+in a 79px box painting over the irq panel, the OSR/ISR controls were
+buried under the spill, and the tx fifo's 96px level gauge pushed the
+rx fifo below the fold at 1280×800. Red: all six checks, first failing
+`#xy is squeezed at 1280×800 (split): content 85px in a 79px box`.
+Green after the fix (content-based `min-height` on the fixed rows +
+panel compaction + the level gauge and join slots capped so the slots
+column, not a gauge, sets the tx-fifo height): 6/6.
 
 ## Conventions for new JS code (future levels)
 
