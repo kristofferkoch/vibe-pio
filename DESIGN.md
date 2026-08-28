@@ -714,6 +714,23 @@ flowchart TB
   "unreachable" drawn controls: the FIFO panel sat below the clip,
   so locator clicks on it timed out (earlier blamed on renderer
   throttling).
+- **Layout reprioritization (2026-08-28)**: the exec pane stopped
+  absorbing every spare pixel. The register column's drawn controls
+  measure 308–361px unwrapped, but the old `clamp(290px, 23vw, 330px)`
+  capped the column at 330 — at 13" viewports the ISR/IRQ/RX control
+  rows wrapped and the inspector (the one flexible row) showed a
+  28–46px sliver. The column is now `clamp(356px, 28vw, 430px)` (356 =
+  the widest control row single-line plus slack; 28vw lands 358/382 on
+  the two 13" references; 430 = the comfort ceiling), the program
+  column is untouched (the owner's call), and the app cap moved
+  1720 → 1798 so the center still lands exactly on the waveform's
+  natural 896px scale at the cap: the surplus goes to the register
+  column up to its ceiling before the waveform grows past natural
+  scale. The inspector title dropped its long aux pitch — at these
+  widths it wrapped to three lines and ate the settings it names.
+  Pinned by the layout gate's **Priority** class (column floor,
+  single-line control rows, inspector ≥ 40px, and a 1920 leg asserting
+  the 430 ceiling + natural-scale center).
 - **Gates**: `make web`'s client legs check the driver against the
   pio_model oracle over the sandbox surface (pin-identical samples,
   mirror↔tx_level agreement, the asm round-trip of the listing, five

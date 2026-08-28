@@ -188,9 +188,15 @@ select {
 }
 
 /* ---------- main grid ---------- */
+/* column priority (the layout reprioritization): the program column
+   keeps its allocation; the register column gets what its drawn
+   controls measure (356px floor = the widest control row single-line
+   plus slack; 28vw so 13" panels land 358/382; 430px comfort ceiling);
+   the exec pane — instruction echo, phase, waveform, stimulus — takes
+   the remainder and stops growing first */
 main {
   display: grid;
-  grid-template-columns: clamp(330px, 32vw, 470px) minmax(338px, 1fr) clamp(290px, 23vw, 330px);
+  grid-template-columns: clamp(330px, 32vw, 470px) minmax(338px, 1fr) clamp(356px, 28vw, 430px);
   gap: 1px;
   background: var(--line);
   min-height: 0;
@@ -1207,17 +1213,19 @@ button:disabled:hover {
 body {
   grid-template-rows: auto auto auto minmax(0, 1fr) 30px;
 }
-/* the app caps at the waveform's natural scale: 128 cycles × 7px =
-   896px of center view; at the 1720px cap the side columns sit at
-   their clamps (470/330) and the center lands ~918 — wider windows
-   center the app instead of stretching it */
+/* the app caps when the waveform reaches its natural scale: 128 cycles
+   × 7px = 896px of center view; at the 1798px cap the side columns sit
+   at their clamps (470/430) and the center lands 896 — wider windows
+   center the app instead of stretching it. The surplus goes to the
+   register column up to its ceiling before the waveform grows past its
+   natural scale, and never past it */
 header,
 #smsbar,
 #pinstrip,
 main,
 footer {
   width: 100%;
-  max-width: 1720px;
+  max-width: 1798px;
   margin-inline: auto;
 }
 header .mini {

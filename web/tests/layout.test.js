@@ -14,6 +14,12 @@
 //     minimum once spilled the join-deep FIFO row over the panels below
 //     and made the drawn controls unclickable), and every drawn control
 //     must actually be under the pointer (elementFromPoint).
+//   * the column priority (the layout reprioritization): the register
+//     column is not the exec waveform's leftover — at the reference
+//     viewports it gets its measured floor (its drawn control rows
+//     render single-line, the inspector never a bare sliver) and on a
+//     desktop the app caps with the center at the waveform's natural
+//     scale, not with the register column at its old 330px ceiling.
 //
 // Hermetic: the static server stubs build/web/pio_engine.js, so no wasm
 // build is needed — the view's geometry is complete at script load
@@ -119,6 +125,17 @@ const GEO = `(() => {
     iw: innerWidth,
     ih: innerHeight,
     clip: regs.bottom, // #regs is overflow-y:auto — its bottom edge clips
+    regsW: regs.width, // the register column's share (the priority check)
+    centerW: document.querySelector('main > section.panel:nth-of-type(2)').getBoundingClientRect()
+      .width,
+    room: {
+      // the drawn control rows whose single-line render is what "room on
+      // the right side" means concretely (wrapped values are 36–63px)
+      irqlamps: h('#irqlamps'),
+      osrnote: h('#osr .shiftnote'),
+      isrnote: h('#isr .shiftnote'),
+      insptitle: h('#inspector .ptitle'),
+    },
     rows,
     chrome: { header: h('header'), smsbar: h('#smsbar'), pinstrip: h('#pinstrip'), footer: h('footer') },
   };
@@ -171,6 +188,34 @@ function assertNoSpill(geo) {
   }
 }
 
+// the column priority: the register column is wide enough that its drawn
+// control rows render on one line and the inspector shows real content,
+// not the exec column's leftover. Bounds are the measured single-line /
+// min-visible values of the rebalanced split (+ slack); the wrapped
+// values they fail against are 36–63px and 28px.
+function assertRoomy(geo, width, stateName) {
+  assert(
+    geo.regsW >= 350,
+    `register column squeezed at ${width} (${stateName}): ${geo.regsW.toFixed(0)}px — the exec pane is hogging the row (floor 350)`,
+  );
+  for (const [name, h, bound] of [
+    ['irq lamps', geo.room.irqlamps, 26],
+    ['osr shift note', geo.room.osrnote, 26],
+    ['isr shift note', geo.room.isrnote, 26],
+    ['inspector title', geo.room.insptitle, 26],
+  ]) {
+    assert(
+      h <= bound,
+      `${name} wraps at ${width} (${stateName}): ${h.toFixed(1)}px tall — the register column has no room for its controls on one line`,
+    );
+  }
+  const insp = geo.rows.find((r) => r.id === 'inspector');
+  assert(
+    insp && insp.h >= 40,
+    `register inspector is a sliver at ${width} (${stateName}): ${insp.h.toFixed(1)}px visible`,
+  );
+}
+
 // every drawn control in the fixed rows must be topmost at its center —
 // the C22 failure mode was drawn controls buried under a spilled panel
 const HIT_SCAN = `(() => {
@@ -203,6 +248,7 @@ for (const [width, height] of VIEWPORTS) {
       const geo = await page.evaluate(GEO);
       assertFits(geo, width, height, stateName);
       assertNoSpill(geo);
+      assertRoomy(geo, width, stateName);
       const covered = await page.evaluate(HIT_SCAN);
       assert.deepStrictEqual(
         covered,
@@ -212,3 +258,21 @@ for (const [width, height] of VIEWPORTS) {
     });
   }
 }
+
+// the desktop cap: the app stops growing with the center at the
+// waveform's natural scale (128 cycles × 7px = 896px) and the register
+// column at its 430px comfort ceiling — not with the register column at
+// the old 330px clamp while the exec pane absorbs the surplus
+test(`desktop cap 1920×1080: center at natural scale, register column at its ceiling`, async () => {
+  await load(null, 1920, 1080);
+  const geo = await page.evaluate(GEO);
+  assertFits(geo, 1920, 1080, 'split');
+  assert(
+    geo.regsW >= 424,
+    `register column below its ceiling at 1920: ${geo.regsW.toFixed(0)}px (want the 430px clamp)`,
+  );
+  assert(
+    geo.centerW <= 904,
+    `exec column above the waveform's natural scale at 1920: ${geo.centerW.toFixed(0)}px (cap 904)`,
+  );
+});
