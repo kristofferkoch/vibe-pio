@@ -1091,7 +1091,7 @@ function renderInspector() {
     <button type="button" class="ipulse" data-rd="${regs.FLEVEL}">READ</button></div></div>`;
   h += `<div class="ireg" title="TXF${curSm} (SPEC-7-28) — write pushes one 32-bit word into SM${curSm}'s TX FIFO (refused at full)">
     <div class="irhead"><span class="irn">TXF${curSm}</span><span class="ira">${hex32(regs.TXF0 + 4 * curSm)}</span></div>
-    <div class="ifields"><div class="ifield"><span class="ifn">word</span><span class="ifb">31:0</span><input type="text" id="insp-txf0" class="ihex" placeholder="0x…" maxlength="10" /></div>
+    <div class="ifields"><div class="ifield hex"><span class="ifn">word</span><span class="ifb">31:0</span><input type="text" id="insp-txf0" class="ihex" placeholder="0x…" maxlength="10" /></div>
     <button type="button" id="insp-txf0go">FEED</button></div></div>`;
   h += `<div class="ireg" title="RXF${curSm} (SPEC-7-28) — read pops one word of SM${curSm}'s RX FIFO (the RX drain)">
     <div class="irhead"><span class="irn">RXF${curSm}</span><span class="ira">${hex32(regs.RXF0 + 4 * curSm)}</span><span class="iro">level ${st.rxLevel}</span>
@@ -1104,7 +1104,7 @@ function renderInspector() {
     <div class="ifields btns">${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<button type="button" class="ipulse" data-wr="${regs.IRQ_FORCE}" data-val="${1 << i}" title="force flag ${i} (SPEC-7-6)">set f${i}</button>`).join('')}</div></div>`;
   h += `<div class="ireg" title="INPUT_SYNC_BYPASS (SPEC-7-7) — per-GPIO: 1 bypasses the 2-FF input synchroniser (CC-23)">
     <div class="irhead"><span class="irn">ISB</span><span class="ira">0x038</span><span class="iro" id="insp-isb">—</span></div>
-    <div class="ifields"><div class="ifield"><span class="ifn">mask</span><span class="ifb">31:0</span><input type="text" id="insp-isbval" class="ihex" value="0x00000000" maxlength="10" /></div>
+    <div class="ifields"><div class="ifield hex"><span class="ifn">mask</span><span class="ifb">31:0</span><input type="text" id="insp-isbval" class="ihex" value="0x00000000" maxlength="10" /></div>
     <button type="button" id="insp-isbgo">WRITE</button>
     <button type="button" class="ipulse" data-rd="${regs.ISB}">READ</button></div></div>`;
   h += `<div class="ireg" title="DBG_PADOUT (SPEC-7-8) — the driven levels, live">
@@ -1134,7 +1134,7 @@ function renderInspector() {
     <div class="irhead"><span class="irn">ADDR</span><span class="ira">+12</span><span class="iro">${st.pc}</span></div></div>`;
   h += `<div class="ireg" title="SM${curSm}_INSTR (SPEC-7-23/24) — read: imem[pc]; write: FORCE-execute a word on SM${curSm} (delay ignored, bypasses the divider)">
     <div class="irhead"><span class="irn">INSTR</span><span class="ira">+16</span><span class="iro">0x${(BUILT[st.pc] || 0).toString(16).padStart(4, '0').toUpperCase()}</span></div>
-    <div class="ifields"><div class="ifield"><span class="ifn">force</span><span class="ifb">15:0</span><input type="text" id="insp-force" class="ihex" placeholder="0x…" maxlength="6" /></div>
+    <div class="ifields"><div class="ifield hex"><span class="ifn">force</span><span class="ifb">15:0</span><input type="text" id="insp-force" class="ihex" placeholder="0x…" maxlength="6" /></div>
     <button type="button" id="insp-forcego">FORCE</button></div></div>`;
   h += `<div class="ireg" title="RXF${curSm}_PUTGET0..3 (SPEC-7-13) — SM${curSm}'s aux-mode storage window (readable in txput, writable in txget)">
     <div class="irhead"><span class="irn">PUTGET</span><span class="ira">${hex32(regs.PUTGET0 + 0x10 * curSm)}</span><span class="iro" id="insp-putget">—</span></div>

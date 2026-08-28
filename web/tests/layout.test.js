@@ -141,6 +141,21 @@ const GEO = `(() => {
   const chips = [...document.querySelectorAll('#inspbody .ifield')].map((e) =>
     Math.round(e.getBoundingClientRect().height),
   );
+  // the field grid: each chip's value input must end flush at the
+  // chip's right edge — name/bits/value on three aligned columns.
+  // Inputs that stop wherever the name happened to end are the jumble.
+  // (Checkboxes are toggles, not value fields — they sit at the start
+  // of the value column by design.)
+  const chipAlign = [...document.querySelectorAll('#inspbody .ifield')]
+    .map((chip) => {
+      const inp = chip.querySelector('input[type="number"], input[type="text"]');
+      if (!inp) return null;
+      return Math.round(chip.getBoundingClientRect().right - inp.getBoundingClientRect().right);
+    })
+    .filter((d) => d !== null);
+  const inputW = [
+    ...document.querySelectorAll('#inspbody .ifield input[type="number"]'),
+  ].map((e) => Math.round(e.getBoundingClientRect().width));
   return {
     iw: innerWidth,
     ih: innerHeight,
@@ -151,7 +166,7 @@ const GEO = `(() => {
     waveH: h('#wavesvg'),
     fifo: rectOf('#fifo'),
     rxfifo: rectOf('#rxfifo'),
-    insp: { irns, chips },
+    insp: { irns, chips, chipAlign, inputW },
     room: {
       // the drawn control rows whose single-line render is what "room on
       // the right side" means concretely (wrapped values are 36–63px)
@@ -257,6 +272,21 @@ function assertRoomy(geo, width, stateName) {
   assert(
     chips.length >= 10 && hmax - hmin <= 2,
     `inspector field chips are ragged at ${width} (${stateName}): heights ${hmin}..${hmax}px across ${chips.length} chips — one chip grid, one height`,
+  );
+  // the field grid: name/bits/value on three aligned columns, the value
+  // input ending flush at every chip's right edge at one width
+  const { chipAlign, inputW } = geo.insp;
+  assert(
+    chipAlign.length >= 8,
+    `inspector lost its field inputs at ${width} (${stateName}): ${chipAlign.length} chips with inputs`,
+  );
+  assert(
+    Math.min(...chipAlign) >= -2 && Math.max(...chipAlign) - Math.min(...chipAlign) <= 2,
+    `inspector field values are not grid-aligned at ${width} (${stateName}): inputs end ${Math.min(...chipAlign)}..${Math.max(...chipAlign)}px short of their chip edges — name/bits/value must sit on three fixed columns`,
+  );
+  assert(
+    inputW.length >= 8 && Math.max(...inputW) - Math.min(...inputW) <= 2,
+    `inspector value inputs are not one width at ${width} (${stateName}): ${Math.min(...inputW)}..${Math.max(...inputW)}px`,
   );
 }
 

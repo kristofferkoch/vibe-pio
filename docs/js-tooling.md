@@ -204,7 +204,9 @@ project has hit by hand:
   in the exec column at equal width (±2px), the isr must ride above
   them (the shift registers sandwich the pair, osr below), and the
   inspector reads as a ledger: register names column-aligned at equal
-  width, field chips at one height. The wave keeps a 64px floor — the
+  width, field chips at one height, and every field's value input
+  ending flush at its chip's right edge — name/bits/value on three
+  fixed columns. The wave keeps a 64px floor — the
   sandwich buys its room from the wave, but it never collapses. At
   1920×1080 the app caps with the register column at its 430px ceiling
   and the center at the waveform's natural 896px scale.

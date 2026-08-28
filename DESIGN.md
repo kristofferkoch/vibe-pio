@@ -776,6 +776,13 @@ flowchart TB
   down to the 13" column, and the wave's gate floor moved 100 → 64px
   (measured minimum ~75 at 1366×768; it collapsed to 21px before the
   reclaims). The gate pins the isr above the twins.
+- **Inspector field grid (2026-08-28)**: the overlay chips stopped
+  being inline flexes — each is now a three-column grid (name | bits |
+  value) with the bits and value columns fixed, so value inputs align
+  vertically across the whole panel regardless of name length; the hex
+  word/mask/force chips span two outer cells for their 90px input. The
+  gate pins it: every value input ends flush at its chip's right edge
+  (±2px) at one width.
 - **Gates**: `make web`'s client legs check the driver against the
   pio_model oracle over the sandbox surface (pin-identical samples,
   mirror↔tx_level agreement, the asm round-trip of the listing, five
