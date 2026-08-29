@@ -433,4 +433,67 @@ test(`desktop cap 1920×1080: center at natural scale, register column at its ce
     geo.centerW <= 904,
     `exec column above the waveform's natural scale at 1920: ${geo.centerW.toFixed(0)}px (cap 904)`,
   );
+  // the pin strip must show all 32 pins at the cap: the narrated legend
+  // that used to lead the strip measured 828px (scrollWidth 2043 in a
+  // 1798px box), so the top-numbered pins sat scrolled away on every
+  // window — the legend shows the marks now, not the sentence
+  const strip = await page.evaluate(`(() => {
+    const s = document.querySelector('#pinstrip');
+    return { sw: s.scrollWidth, cw: s.clientWidth, cells: s.querySelectorAll('.pcell').length };
+  })()`);
+  assert.strictEqual(strip.cells, 32, 'pin strip lost cells');
+  assert(
+    strip.sw <= strip.cw + 1,
+    `pin strip overflows at the cap: content ${strip.sw}px in a ${strip.cw}px box — the legend is squeezing pins behind the scroll`,
+  );
 });
+
+// the wrap arc's steppers in the degenerate WRAP_TOP == WRAP_BOTTOM state
+// (a fresh SM stepped to 0/0): the WRAP_TOP pair used to land 11px above
+// the listing's scroll origin — clipped out of a scroll container, so
+// the one gesture that re-stretches the arc was unreachable. The pins:
+// nothing above the content origin, no pair overlapping another, and
+// everything on-screen topmost under the pointer. The drawn state is
+// reached the way the sandbox reaches it — overlay fields, then the
+// program rebuild (the same path a real stepper write takes).
+const WRAP_SCAN = `(() => {
+  Object.assign(curState.sms[0].execctrl, { wrapTop: 0, wrapBot: 0 });
+  OV = overlayOf(0);
+  buildProgram();
+  const host = document.querySelector('#progrows');
+  const hb = host.getBoundingClientRect();
+  const steps = [...host.querySelectorAll('.wstep')];
+  const bad = [];
+  if (steps.length !== 4) bad.push('expected 4 wrap steppers, found ' + steps.length);
+  const name = (b) => b.dataset.ctl + '/' + b.dataset.g;
+  const rects = steps.map((b) => b.getBoundingClientRect());
+  for (const [i, r] of rects.entries()) {
+    if (r.top < hb.top - 0.5)
+      bad.push(
+        'stepper ' + name(steps[i]) + ' clipped above the listing scroll origin (' +
+          (r.top - hb.top).toFixed(1) + 'px) — unreachable in a scroll container',
+      );
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!hit || !(hit === steps[i] || steps[i].contains(hit)))
+      bad.push('stepper ' + name(steps[i]) + ' covered by ' + (hit ? hit.id || hit.className : 'nothing'));
+  }
+  for (let i = 1; i < rects.length; i++)
+    for (let j = 0; j < i; j++) {
+      const a = rects[i], b = rects[j];
+      if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)
+        bad.push('steppers ' + name(steps[j]) + ' and ' + name(steps[i]) + ' overlap');
+    }
+  return bad;
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`wrap 0/0: all four arc steppers stay reachable ${width}×${height}`, async () => {
+    await load(null, width, height);
+    const bad = await page.evaluate(WRAP_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `broken wrap steppers at ${width}×${height} (wrap-top inc is the arc's only stretch gesture)`,
+    );
+  });
+}

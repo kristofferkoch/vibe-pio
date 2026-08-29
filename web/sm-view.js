@@ -474,25 +474,57 @@ function buildProgram() {
   ah.title = arc.title;
   ah.style.top = `${wrapBot * 20 + 6}px`;
   nodes.push(ah);
-  // wrap steppers on the arc (C22): WRAP_TOP at the top end, WRAP_BOTTOM
-  // at the arrow end — cycling EXECCTRL writes (the ds-allocator precedent)
+  // wrap steppers on the arc (C22): WRAP_TOP at the arc's top end,
+  // WRAP_BOTTOM beside the return arrow. The glyphs are the direction
+  // the end moves — ▲ the end rises (inc), ▼ it falls (dec) — so both
+  // pairs read [▲][▼] and mean it the same way. The pairs sit right of
+  // the margin's arrow lane (x ≥ 15) so the arrowhead stays visible,
+  // and each hugs its end vertically. When the ends coincide (a fresh
+  // SM stepped to 0/0) the arc collapses and the pairs bracket the one
+  // wrapped row — never the clipped-above-the-scroll-origin state the
+  // layout gate caught (wrap-top inc is the arc's only stretch gesture).
   const wrapStep = (field, g, y, label) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = `wstep ${g}`;
     b.dataset.ctl = field;
     b.dataset.g = g;
-    b.textContent = g === 'inc' ? '+' : '−';
+    b.textContent = g === 'inc' ? '▲' : '▼';
     b.title = `config · ${field === 'wrap-top' ? 'WRAP_TOP' : 'WRAP_BOTTOM'} (SPEC-7-19): ${label} — cycles 0..31, a real EXECCTRL write`;
     b.style.top = `${y}px`;
     nodes.push(b);
   };
-  const tY = wrapTop * 20 + (wrapTop === wrapBot ? -11 : 3),
-    bY = wrapBot * 20 + 3; // the arc ends' rows (20px rows; 13px buttons)
-  wrapStep('wrap-top', 'dec', tY, `after-insn ${wrapTop} −1`);
-  wrapStep('wrap-top', 'inc', tY, `after-insn ${wrapTop} +1`);
-  wrapStep('wrap-bot', 'dec', bY, `target ${wrapBot} −1`);
-  wrapStep('wrap-bot', 'inc', bY, `target ${wrapBot} +1`);
+  const tY = wrapTop * 20 + 7, // flush under the after-insn boundary
+    bY =
+      wrapTop === wrapBot
+        ? wrapBot > 0
+          ? wrapBot * 20 - 13 // bracket the wrapped row: handle above
+          : (wrapBot + 1) * 20 + 3 // row 0 has no row above — handle below
+        : wrapBot * 20 + 3; // inside the return row, beside the arrow
+  wrapStep(
+    'wrap-top',
+    'inc',
+    tY,
+    `raise the top end — after-insn ${wrapTop} → ${(wrapTop + 1) & 31}`,
+  );
+  wrapStep(
+    'wrap-top',
+    'dec',
+    tY,
+    `lower the top end — after-insn ${wrapTop} → ${(wrapTop + 31) & 31}`,
+  );
+  wrapStep(
+    'wrap-bot',
+    'inc',
+    bY,
+    `raise the return row — target ${wrapBot} → ${(wrapBot + 1) & 31}`,
+  );
+  wrapStep(
+    'wrap-bot',
+    'dec',
+    bY,
+    `lower the return row — target ${wrapBot} → ${(wrapBot + 31) & 31}`,
+  );
   const arcs = [];
   for (let i = 0; i < 32; i++) {
     if (!ROWS[i]) continue;

@@ -121,10 +121,16 @@
     </div>
 
     <!-- ============ pin I/O strip: drives, hold latches, pattern ============ -->
+    <!-- the legend shows the marks, not the sentence: three color-echoed
+         tokens (amber ▲ · cyan · the corner chip) — the full narration
+         lives in the title, and the strip's room belongs to the pins -->
     <div id="pinstrip">
-      <span class="pslabel"
-        >pins · click cycles the drive latch <b>Z→1→0</b> · cyan = driven · ▲ = engine output · the
-        colored corner names the owning SM (last writer, CC-7)</span
+      <span
+        class="pslabel"
+        title="pins — click cycles the drive latch: released (Z) → held 1 → held 0. cyan = a held latch (the digit is the driven level) · ▲ = the engine drives the pad (OE) · the colored corner names the owning SM — the last writer, highest-numbered on a same-clk conflict (CC-7)"
+        >pins · click cycles the drive latch <b>Z→1→0</b> · <span class="pk out">▲</span> out ·
+        <span class="pk drv">driven</span>
+        · <span class="pk own">0</span> owner SM</span
       >
       <div id="pincells"></div>
     </div>

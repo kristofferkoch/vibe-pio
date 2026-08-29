@@ -1315,6 +1315,25 @@ header .mini.imp {
   font-size: 10px;
   white-space: nowrap;
 }
+/* the legend's three tokens echo the marks they name — amber ▲ = engine
+   output · cyan = a held latch · the corner chip = the owning SM (the
+   828px narration this replaced pushed the top pins behind the strip's
+   scroll; gated at the desktop cap) */
+#pinstrip .pk.out {
+  color: var(--amber);
+}
+#pinstrip .pk.drv {
+  color: var(--cfg);
+}
+#pinstrip .pk.own {
+  color: var(--sm0);
+  font-size: 7px;
+  line-height: 1;
+  padding: 1px 2px;
+  border: 1px solid currentColor;
+  border-radius: 0 3px 0 3px;
+  vertical-align: 1px;
+}
 #pincells {
   display: flex;
   gap: 3px;
@@ -1767,11 +1786,13 @@ button.shiftviz:hover .sv-end {
   color: var(--cfg);
   font-size: 9px;
 }
-/* the wrap steppers on the arc (WRAP_TOP at the top end, WRAP_BOTTOM
-   at the arrow end) */
+/* the wrap steppers on the arc (WRAP_TOP at the top end, WRAP_BOTTOM at
+   the arrow end): ▲/▼ point the direction the end moves, both pairs
+   read [▲][▼]; x ≥ 15 keeps them clear of the margin's arrow lane so
+   the wrap arrowhead stays visible (the layout gate pins the geometry) */
 .wstep {
   position: absolute;
-  left: 2px;
+  left: 15px;
   width: 12px;
   height: 13px;
   padding: 0;
@@ -1792,8 +1813,8 @@ button.shiftviz:hover .sv-end {
   border-color: var(--cfg);
   color: var(--bright);
 }
-.wstep.inc {
-  left: 16px;
+.wstep.dec {
+  left: 29px;
 }
 /* the pin-mapping tags on the waveform header: base·count steppers */
 .maptag {
