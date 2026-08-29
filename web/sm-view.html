@@ -21,7 +21,7 @@
   The sandbox is "everything unlocked" on all four SMs: one shared
   instruction memory with four PC cursors, per-SM config overlays (the
   inspector panel follows the selected machine — every datasheet field
-  readable and settable, tooltips citing SPEC-7-x), per-SM FIFOs and
+  readable and settable), per-SM FIFOs and
   entry points, pad ownership on the pin strip (the last SM to write a
   pin, highest-numbered on same-clk conflicts — CC-7), pin drives +
   hold latches + a pattern generator, the RX drain, IRQ flags, real
@@ -58,7 +58,7 @@
       <span
         class="cfgtag"
         id="clkdivtag"
-        title="config · SMx_CLKDIV — the real divider (SPEC-7-14); set it in the inspector"
+        title="config · SMx_CLKDIV — the real divider; set it in the inspector"
         >clkdiv ÷1.0</span
       >
       <div class="spacer"></div>
@@ -127,7 +127,7 @@
     <div id="pinstrip">
       <span
         class="pslabel"
-        title="pins — click cycles the drive latch: released (Z) → held 1 → held 0. cyan = a held latch (the digit is the driven level) · ▲ = the engine drives the pad (OE) · the colored corner names the owning SM — the last writer, highest-numbered on a same-clk conflict (CC-7)"
+        title="pins — click cycles the drive latch: released (Z) → held 1 → held 0. cyan = a held latch (the digit is the driven level) · ▲ = the engine drives the pad (OE) · the colored corner names the owning SM — the last writer, highest-numbered on a same-clk conflict"
         >pins · click cycles the drive latch <b>Z→1→0</b> · <span class="pk out">▲</span> out ·
         <span class="pk drv">driven</span>
         · <span class="pk own">0</span> owner SM</span
@@ -147,16 +147,14 @@
         </div>
         <div
           id="dsalloc"
-          title="the ds field (bits 12:8) is one shared budget: side-set bits steal delay range. This allocation is PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, program-wide (SPEC-4-1..3)."
+          title="the ds field (bits 12:8) is one shared budget: side-set bits steal delay range. This allocation is PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, program-wide."
         >
           <div class="dsrow1">
             <span>ds 5b</span>
             <button type="button" id="ssminus" title="fewer side bits → more delay range">−</button>
             <div id="dspips"></div>
             <button type="button" id="ssplus" title="more side bits → less delay range">+</button>
-            <label
-              class="opttgl"
-              title="OPT: an enable bit so instructions may skip the side-set (SPEC-4-2)"
+            <label class="opttgl" title="OPT: an enable bit so instructions may skip the side-set"
               ><input type="checkbox" id="ssopt">opt</label
             >
           </div>
@@ -255,7 +253,7 @@
             id="isrviz"
             data-ctl="isr-dir"
             data-g="toggle"
-            title="config · IN_SHIFTDIR (SPEC-7-21): click flips which ISR end IN feeds — the arrow is the register's shift direction"
+            title="config · IN_SHIFTDIR: click flips which ISR end IN feeds — the arrow is the register's shift direction"
           >
             <span class="sv-end" id="isrdir">pins → in</span>
             <span class="sv-arrow" id="israrr"></span>
@@ -278,14 +276,11 @@
                 id="aptg2"
                 data-ctl="autopush"
                 data-g="toggle"
-                title="config · AUTOPUSH (SPEC-5-9): on IN reaching the threshold, push ISR to the RX FIFO in the same cycle"
+                title="config · AUTOPUSH: on IN reaching the threshold, push ISR to the RX FIFO in the same cycle"
               >
                 autopush
               </button>
-              <span
-                class="thrctl"
-                title="config · PUSH_THRESH (SPEC-5-7): 1–32, steppers wrap; 0 encodes 32"
-              >
+              <span class="thrctl" title="config · PUSH_THRESH: 1–32, steppers wrap; 0 encodes 32">
                 thr
                 <button type="button" class="cstep" data-ctl="push-thr" data-g="dec">−</button>
                 <b id="apthr2">32</b>
@@ -306,14 +301,14 @@
               <span class="aux"
                 ><span
                   class="segjoin"
-                  title="config · FIFO JOIN (SPEC-6-2/3) — pick the mode: a real SHIFTCTRL write that flushes the FIFOs. The aux modes (txput/txget/putget) stay inspector-set."
+                  title="config · FIFO JOIN — pick the mode: a real SHIFTCTRL write that flushes the FIFOs. The aux modes (txput/txget/putget) stay inspector-set."
                 >
                   <button
                     type="button"
                     id="segsplit"
                     data-ctl="fifo-mode"
                     data-g="split"
-                    title="config · FIFO JOIN → split (SPEC-6-2): TX 4 deep + RX 4 deep — the reset posture"
+                    title="config · FIFO JOIN → split: TX 4 deep + RX 4 deep — the reset posture"
                   >
                     split
                   </button>
@@ -322,7 +317,7 @@
                     id="segtx"
                     data-ctl="fifo-mode"
                     data-g="join-tx"
-                    title="config · FIFO JOIN → join TX (SPEC-6-2): both halves as one TX FIFO, 8 deep — RX goes dark"
+                    title="config · FIFO JOIN → join TX: both halves as one TX FIFO, 8 deep — RX goes dark"
                   >
                     join tx
                   </button>
@@ -331,7 +326,7 @@
                     id="segrx"
                     data-ctl="fifo-mode"
                     data-g="join-rx"
-                    title="config · FIFO JOIN → join RX (SPEC-6-2): both halves as one RX FIFO, 8 deep — TX goes dark"
+                    title="config · FIFO JOIN → join RX: both halves as one RX FIFO, 8 deep — TX goes dark"
                   >
                     join rx
                   </button>
@@ -403,7 +398,7 @@
             id="osrviz"
             data-ctl="osr-dir"
             data-g="toggle"
-            title="config · OUT_SHIFTDIR (SPEC-7-21): click flips which OSR end feeds OUT — the arrow is the register's shift direction"
+            title="config · OUT_SHIFTDIR: click flips which OSR end feeds OUT — the arrow is the register's shift direction"
           >
             <span class="sv-end">fifo ⇣</span>
             <span class="sv-arrow" id="osrarr"></span>
@@ -426,14 +421,11 @@
                 id="aptgl"
                 data-ctl="autopull"
                 data-g="toggle"
-                title="config · AUTOPULL (SPEC-5-8): between OUTs, reload OSR from the TX FIFO once the counter crosses the threshold"
+                title="config · AUTOPULL: between OUTs, reload OSR from the TX FIFO once the counter crosses the threshold"
               >
                 autopull
               </button>
-              <span
-                class="thrctl"
-                title="config · PULL_THRESH (SPEC-5-7): 1–32, steppers wrap; 0 encodes 32"
-              >
+              <span class="thrctl" title="config · PULL_THRESH: 1–32, steppers wrap; 0 encodes 32">
                 thr
                 <button type="button" class="cstep" data-ctl="pull-thr" data-g="dec">−</button>
                 <b id="apthr">32</b>
@@ -451,7 +443,7 @@
           <span id="wavelabel">gpio0</span>
           <span
             class="cfgtag maptag"
-            title="config · OUT mapping (SPEC-7-26): OUT_BASE / OUT_COUNT — the steppers are real PINCTRL writes; counts cycle 1..32 (0 encodes 32)"
+            title="config · OUT mapping: OUT_BASE / OUT_COUNT — the steppers are real PINCTRL writes; counts cycle 1..32 (0 encodes 32)"
           >
             out
             <button type="button" class="tstep" data-ctl="out-base" data-g="dec">−</button
@@ -463,7 +455,7 @@
           </span>
           <span
             class="cfgtag maptag"
-            title="config · SIDESET mapping (SPEC-7-26): SIDESET_BASE — the steppers are real PINCTRL writes; the bit count is the ds-field allocator's shared budget (the pips in the program panel)"
+            title="config · SIDESET mapping: SIDESET_BASE — the steppers are real PINCTRL writes; the bit count is the ds-field allocator's shared budget (the pips in the program panel)"
           >
             side
             <button type="button" class="tstep" data-ctl="side-base" data-g="dec">−</button
@@ -473,7 +465,7 @@
           </span>
           <span
             class="cfgtag maptag"
-            title="config · IN mapping (SPEC-7-26/21): IN_BASE / IN_COUNT — the steppers are real PINCTRL/SHIFTCTRL writes; counts cycle 1..32 (0 encodes 32)"
+            title="config · IN mapping: IN_BASE / IN_COUNT — the steppers are real PINCTRL/SHIFTCTRL writes; counts cycle 1..32 (0 encodes 32)"
           >
             in
             <button type="button" class="tstep" data-ctl="in-base" data-g="dec">−</button
@@ -537,7 +529,7 @@
               >INTR <b id="intrhex">0x00F0</b>
               <span
                 class="cfgtx"
-                title="config · the composed INTR (SPEC-7-12): SM flags 15:8, TXNFULL 7:4, RXNEMPTY 3:0"
+                title="config · the composed INTR: SM flags 15:8, TXNFULL 7:4, RXNEMPTY 3:0"
                 >readback view</span
               ></span
             >
