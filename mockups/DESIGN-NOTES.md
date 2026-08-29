@@ -5,6 +5,108 @@ for the TIS-100-style PIO game (IDEAS.md, "SSH game" entry). The mock-up
 is the design spec for whatever client ships (web or fat TUI); the
 simulator inside it is throwaway — the real referee is `tools/pio_model`.
 
+## The era skin (C26, 2026-08-29): SerenityOS's take on Win3.11
+
+Re-skinned 2026-08-29 after the C26 grilling (owner decisions: light
+skin, one master window, hue-true light-tuned semantics, two bitmap
+fonts, no CRT). This section is the spec the shipped client implements;
+`web/sm-view.css` is the same token sheet.
+
+### One master window
+
+The viewport is the vibe-pio window; teal `#008080` shows only as the
+desktop edge around it. Anatomy, top to bottom: a navy `#000080` title
+bar (bold white 11px caption, centered, Win3.11-style; the live CYCLE
+readout sits at its right), a silver toolbar band (the transport and
+load/store buttons), the three panel columns, and a silver status bar.
+**Nothing decorative lies**: no control-menu box, no min/max/close
+buttons — the bar carries only the caption and the real cycle counter.
+Panels are group frames (a 1px etched groove: `#808080` TL / white BR);
+anything textual that holds data is a sunken white well (listing, wave,
+inputs, FIFO slots, frame-map cells); anything clickable is a raised
+silver push button.
+
+### Hue-true, light-tuned semantics
+
+The five semantic hues keep their identities from the dark mock-up —
+they are hand-darkened for silver, not snapped to the VGA-16 palette:
+
+| token | value | role |
+|---|---|---|
+| `--amber` | `#8F5000` | control (PC, exec, delay, jump arcs) |
+| `--green` | `#0D6E0D` | data (OSR bits, FIFO words, data bits) |
+| `--cfg` | `#006A78` | config/wiring (distinct enough from the teal desktop, which lives only outside the window) |
+| `--red` | `#A31414` | stall/error |
+| `--dimmer` | `#808080` | idle/disabled — the era's exact gray, visible not hidden |
+| `--addr` | `#6E4F1A` | addresses (tan italic, shared with the gutter) |
+| `--navy` | `#000080` | title bar + **selection** (candidates, active radio) |
+| `--sm0..3` | amber/green/cyan/dark-purple | per-SM identity |
+
+Dark `--*-dim` variants carry borders and secondary text. The footer
+legend swatches read the same variables, so the legend retunes itself.
+
+### Two bitmap fonts, integer sizes only
+
+- **"Pixelated MS Sans Serif" 11px** — all chrome: caption, panel
+  titles, buttons, labels, notes, the footer (bold where emphasis is
+  needed; the face ships a real bold).
+- **Px437 IBM VGA9 16px** (int10h's IBM VGA 8x16 text-mode face) — the
+  code/data font: the listing, the row editor, bitfields, FIFO words,
+  scratch/level values, waveform annotations. 16px is its native cell —
+  pixel-exact there, never scaled.
+- Cozette was the other candidate and lost at mockup: its
+  browser-shippable forms are a vector outline (antialiases — not
+  era-crisp) or bitmap .otb/.bdf (no browser loads them). Tamzen went
+  unbuilt for the same outline-vs-bitmap risk; the VGA face was picked
+  because it is *the* era text-mode font and needed no compromise.
+  Provenance and licenses:
+  `web/fonts/README.md`; the files ship in-repo (the runtime stays
+  dependency-free — no font CDN).
+- **Integer sizes only**: chrome is 11px, mono is 16px, and that is the
+  whole scale. Fractional px sizes (10.5px & co.) rendered soft and are
+  gone.
+
+### Crispness mechanics
+
+- 2px bevels as inset box-shadows (white TL / `#808080` BR on raised
+  controls; swapped on pressed/active and on stuck toggles, label
+  nudged 1px via padding). Sunken wells are the same shadow reversed.
+- No border-radius, no gradients, no blur, no glow text-shadows, no
+  subpixel motion (all transitions removed — state changes are palette
+  swaps; the `blink` keyframes stay, they are hard steps(2) toggles).
+- The ds-allocator's "opt" pip keeps a repeating hard-stop 2px hatch —
+  a dither, not a gradient; every stop is a solid pixel column.
+- Focus is the era rect: `outline: 1px dotted #000`, offset inside the
+  bevel. Disabled controls keep their bevel and paint `#808080` text —
+  visible, never hidden.
+- Popup + tooltip shadow is the hard kind: `2px 2px 0 #000`, no blur.
+- Spacing sits on the dialog-unit grid: at the 11px chrome face,
+  1 h-dlu ≈ ¼ avg char width and 1 v-dlu ≈ ⅛ char height both round to
+  ~2px, so paddings/margins/gaps are even pixel counts.
+- Era scrollbars: silver thumb with a raised bevel over a sunken white
+  track (`::-webkit-scrollbar`; the gate's browser is Chromium).
+- The waveform snaps where drawing can reach: `shape-rendering:
+  crispEdges`, integer stroke widths, integer font sizes, integer grid
+  constants (7px/cycle). The svg still stretches anisotropically into
+  its flexed box — the annotations scale with it (a live scope, not a
+  printed plot); snapping the box itself per-viewport is machinery, not
+  skin.
+- **CRT/scanline effects: none** (owner 2026-08-29). At most sparing
+  game-transition effects much later; never WebGL simulations of the
+  UI itself.
+
+### Tooltips: one narration, two mouths
+
+The narration (formerly `title=`) moved to `data-tip=` — native
+tooltips can't be suppressed, and the skin renders its own: hover
+waits ~350ms, then a **cream card** (`#FFFFE1`, 1px black border, hard
+2px black offset shadow, chrome font) portals to `<body>` near the
+pointer (the scrollable-ancestor lesson again). The **focus path is
+the C25 status line**: the same `data-tip` string is what the status
+line narrates when a group takes the keyboard — one mechanism, not a
+duplicate store. Tooltips die on mousedown/keydown/scroll, era-style.
+
+
 ## Layout
 
 - **Not 80×25.** One SM wants ~1440px in three columns: program listing

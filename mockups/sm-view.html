@@ -29,91 +29,160 @@
   red = stall · gray = idle.
 -->
 <style>
-  :root{
-    --bg:#0a0d0e; --panel:#0e1315; --panel2:#12191c;
-    --line:#1c262a; --line2:#2a373d;
-    --txt:#c6d3d7; --bright:#eef4f5;
-    --dim:#5f7076; --dimmer:#39474c;
-    --amber:#ffb454; --amber-dim:#9c713a;
-    --green:#8ee08a; --green-dim:#4e7a52;
-    --red:#ff6f6f;
-    --cfg:#5ac8d8; --cfg-dim:#2f7c8a;
-    --addr:#c39a6b;
-    --mono:"Berkeley Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  /* ---------- C26 era skin: SerenityOS's take on Win3.11 ----------
+     One master window on a teal desktop. Silver #C0C0C0 chrome, navy
+     #000080 title bar, 2px bevels (white TL / #808080 BR; pressed =
+     swapped, label nudged 1px), no radius/gradient/blur, integer font
+     sizes only: "Pixelated MS Sans Serif" 11px for chrome, Px437 IBM
+     VGA9 16px (its native cell) for code/data. Semantics keep their
+     hues, hand-darkened for silver: amber control · green data ·
+     cyan config · red stall · gray idle. Spacing sits on the dlu grid
+     (1 h-dlu ≈ ¼ avg char width ≈ 2px, 1 v-dlu ≈ ⅛ char height ≈ 2px
+     at the 11px chrome size — all margins/paddings are even px). */
+  @font-face{
+    font-family:"Pixelated MS Sans Serif";
+    src:url("../web/fonts/ms_sans_serif.woff2") format("woff2");
+    font-weight:normal;font-display:block;
   }
-  *{box-sizing:border-box;margin:0;padding:0}
+  @font-face{
+    font-family:"Pixelated MS Sans Serif";
+    src:url("../web/fonts/ms_sans_serif_bold.woff2") format("woff2");
+    font-weight:bold;font-display:block;
+  }
+  @font-face{
+    font-family:"Px437 IBM VGA9";
+    src:url("../web/fonts/px437-ibm-vga9.woff") format("woff");
+    font-weight:normal;font-display:block;
+  }
+  :root{
+    --desk:#008080;                    /* teal — the desktop edge only */
+    --panel:#C0C0C0;                   /* silver chrome */
+    --well:#FFFFFF;                    /* sunken content well */
+    --line:#808080;                    /* bevel shadow gray / hairlines */
+    --hi:#FFFFFF;                      /* bevel highlight white */
+    --navy:#000080;                    /* title bar + selection */
+    --txt:#000000; --bright:#000000;
+    --dim:#5A5A5A; --dimmer:#808080;   /* disabled/idle = #808080, visible */
+    --amber:#8F5000; --amber-dim:#6B3D00;
+    --wave-data:#1F9119; --wave-ctrl:#B26A00; --wave-idle:#909090;
+    --green:#0D6E0D; --green-dim:#3F6B3F;
+    --red:#A31414;
+    --cfg:#006A78; --cfg-dim:#00505C;
+    --addr:#6E4F1A;
+    --sm0:#8F5000; --sm1:#0D6E0D; --sm2:#006A78; --sm3:#6A2F8E;
+    --cream:#FFFFE1;                   /* the tooltip card */
+    --sans:"Pixelated MS Sans Serif",Tahoma,sans-serif;
+    --mono:"Px437 IBM VGA9","Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;border-radius:0}
   [hidden]{display:none!important}   /* author display rules must not defeat [hidden] */
   html,body{height:100%}
+  html{-webkit-font-smoothing:none;font-synthesis:none}
   body{
-    background:var(--bg);color:var(--txt);font-family:var(--mono);
-    font-size:13px;line-height:1.45;
-    display:grid;grid-template-rows:auto 1fr 30px;min-height:100%;
+    background:var(--desk);color:var(--txt);font-family:var(--sans);
+    font-size:11px;line-height:1.45;
+    padding:8px;min-height:100%;
     overflow-x:auto;overflow-y:hidden;
   }
-  .panel{background:var(--panel);min-width:0;min-height:0;overflow:hidden;position:relative}
+  /* the one master window: the viewport is the vibe-pio window, the teal
+     showing only as the desktop edge around it */
+  #win{
+    display:grid;grid-template-rows:auto auto minmax(0,1fr) 26px;
+    height:calc(100% - 16px);max-width:1440px;margin:0 auto;
+    background:var(--panel);
+    box-shadow:inset 2px 2px 0 var(--hi),inset -2px -2px 0 var(--line);
+    padding:2px;min-height:0;
+  }
+  /* ---------- title bar ---------- */
+  #titlebar{
+    display:flex;align-items:center;padding:2px 6px;
+    background:var(--navy);color:#fff;user-select:none;
+  }
+  #titlebar .caption{
+    flex:1;text-align:center;font-weight:bold;font-size:11px;
+    letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  #titlebar .cyc{white-space:nowrap;font-weight:bold;color:#fff}
+  #titlebar .cyc b{font-family:var(--mono);font-size:16px;color:#fff}
+  /* nothing decorative lies: no control-menu box, no min/max buttons —
+     the bar carries only the caption and the live cycle readout */
+  .panel{background:var(--panel);min-width:0;min-height:0;overflow:hidden;position:relative;
+    box-shadow:inset 1px 1px 0 var(--line),inset -1px -1px 0 var(--hi)}
   .ptitle{
     display:flex;align-items:center;gap:8px;flex-wrap:wrap;
-    padding:7px 10px 5px;color:var(--dim);
-    font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+    padding:3px 8px 2px;color:var(--txt);
+    font-size:11px;font-weight:bold;letter-spacing:.02em;
     border-bottom:1px solid var(--line);
+    box-shadow:inset 0 -1px 0 var(--hi);
     user-select:none;min-width:0;
   }
-  .ptitle::before{content:"";width:3px;height:10px;background:var(--amber-dim);flex:none}
-  .ptitle .aux{margin-left:auto;letter-spacing:.06em;text-transform:none;font-size:10.5px;color:var(--dim);min-width:0}
+  .ptitle .aux{margin-left:auto;letter-spacing:0;font-weight:normal;font-size:11px;color:var(--dim);min-width:0}
   .ptitle .aux b{color:var(--green);font-weight:normal}
 
-  /* ---------- header ---------- */
+  /* ---------- toolbar (the old header row, now the window's menu band) ---------- */
   header{
-    display:flex;align-items:center;flex-wrap:wrap;gap:8px 18px;
-    padding:6px 14px;min-height:34px;
-    border-bottom:1px solid var(--line);background:var(--panel);
+    display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;
+    padding:4px 8px;min-height:30px;
+    border-bottom:1px solid var(--line);
+    background:var(--panel);
     white-space:nowrap;
   }
-  .brand{color:var(--bright);font-size:15px;letter-spacing:.04em;flex:none}
-  .brand em{font-style:normal;color:var(--amber)}
-  .lvl{color:var(--dim);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  .lvl{color:var(--dim);font-size:11px;
     min-width:0;overflow:hidden;text-overflow:ellipsis}
   @media (max-width:1150px){
     .lvl .tail{display:none}
     header>.cfgtag{display:none}
   }
   @media (max-width:1020px){
-    header{gap:6px 10px}
+    header{gap:6px 8px}
   }
-  .lvl b{color:var(--txt);font-weight:normal}
+  .lvl b{color:var(--txt);font-weight:bold}
   .spacer{flex:1}
   .cyc{color:var(--dim);font-size:11px}
-  .cyc b{color:var(--amber);font-weight:normal;font-size:14px}
-  .ctrl{display:flex;gap:6px}
+  .cyc b{color:var(--txt);font-weight:normal;font-size:16px;font-family:var(--mono)}
+  .ctrl{display:flex;gap:4px}
   button{
-    font-family:var(--mono);font-size:11px;letter-spacing:.06em;
-    color:var(--txt);background:var(--panel2);
-    border:1px solid var(--line2);padding:4px 10px;cursor:pointer;
+    font-family:var(--sans);font-size:11px;letter-spacing:.02em;
+    color:var(--txt);background:var(--panel);border:0;
+    padding:2px 12px;cursor:pointer;
+    box-shadow:inset 2px 2px 0 var(--hi),inset -2px -2px 0 var(--line);
   }
-  button:hover{border-color:var(--amber-dim);color:var(--bright)}
-  button.primary{color:var(--amber);border-color:var(--amber-dim)}
-  button.on{background:var(--amber);border-color:var(--amber);color:#141008}
-  select{font-family:var(--mono);font-size:11px;color:var(--txt);background:var(--panel2);
-    border:1px solid var(--line2);padding:3px 4px}
+  button:hover{color:var(--txt);font-weight:bold}
+  button:active{
+    box-shadow:inset 2px 2px 0 var(--line),inset -2px -2px 0 var(--hi);
+    padding:3px 11px 1px 13px;
+  }
+  button.primary{font-weight:bold}
+  button.on{
+    box-shadow:inset 2px 2px 0 var(--line),inset -2px -2px 0 var(--hi);
+    padding:3px 11px 1px 13px;font-weight:bold;
+  }
+  select{font-family:var(--sans);font-size:11px;color:var(--txt);background:var(--panel);
+    border:1px solid var(--line);padding:1px 2px}
+  :focus{outline:1px dotted #000;outline-offset:-3px}
+  button:disabled{color:var(--dimmer);cursor:default;font-weight:normal}
 
   /* ---------- main grid ---------- */
   main{
     display:grid;
     grid-template-columns:clamp(330px,32vw,470px) minmax(338px,1fr) clamp(290px,23vw,330px);
-    gap:1px;background:var(--line);min-height:0;
+    gap:2px;background:var(--line);min-height:0;
   }
   main>*{min-width:0;min-height:0}
 
   /* ---------- program ---------- */
-  #progrows{overflow-y:auto;flex:1; scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+  #progrows{overflow-y:auto;flex:1;background:var(--well);
+    box-shadow:inset 2px 2px 0 var(--line),inset -2px -2px 0 var(--hi);
+    scrollbar-width:thin;scrollbar-color:var(--line) var(--panel)}
   .prow{
     display:grid;grid-template-columns:30px 1fr auto;
     align-items:center;height:20px;padding:0 8px 0 48px;
-    color:var(--dim);white-space:nowrap;
+    color:var(--dim);white-space:nowrap;line-height:16px;
+    font-family:var(--mono);font-size:16px;
   }
   /* addresses and their label aliases share one typographic class */
   .prow .addr,.pcaddr,.lbldef{
-    font-style:italic;color:var(--addr);font-size:11px;
+    font-style:italic;color:var(--addr);font-size:16px;
   }
   .lbldef:hover{color:var(--amber)}
   .prow .addr{text-align:right;padding-right:6px}
@@ -124,27 +193,26 @@
   .prow .chips{display:flex;gap:4px;align-items:center}
   .prow.empty .ins{color:var(--dimmer)}
   .prow.empty .addr{color:var(--dimmer);font-style:normal}
-  .prow.cur{background:linear-gradient(90deg,rgba(255,180,84,.17),rgba(255,180,84,.04));color:var(--bright)}
-  .prow.cur .addr{color:var(--amber);font-style:normal;font-size:12px}
+  .prow.cur{background:rgba(143,80,0,.14);color:var(--txt)}
+  .prow.cur .addr{color:var(--amber);font-style:normal}
   .prow.cur .ins .op{color:var(--amber)}
   .prow{position:relative}
   .prow.cur::before{content:"";position:absolute;left:43px;width:3px;height:20px;background:var(--amber)}
   .chip{
-    font-size:10px;padding:0 6px;border:1px solid var(--line2);color:var(--dim);
-    letter-spacing:.05em;
+    font-size:11px;font-family:var(--sans);padding:0 6px;border:1px solid var(--line);color:var(--dim);
+    letter-spacing:.02em;background:var(--panel);
   }
   .chip.dly{color:var(--amber);border-color:var(--amber-dim)}
-  .chip.stall{color:var(--red);border-color:#5e3232;animation:blink 1s steps(2) infinite}
+  .chip.stall{color:var(--red);border-color:var(--red);animation:blink 1s steps(2) infinite}
   @keyframes blink{50%{opacity:.45}}
-  /* config-as-structure: wrap arc in the listing margin */
+  /* config-as-structure: wrap arc in the listing margin (square bracket —
+     the era draws no curves) */
   #progrows{position:relative}
   #wraparc{
     position:absolute;left:1px;width:7px;pointer-events:none;
     border:1px solid var(--cfg-dim);border-right:none;
-    border-radius:7px 0 0 7px;
-    transition:border-color .45s,box-shadow .45s;
   }
-  #wraparc.flash{border-color:var(--cfg);box-shadow:0 0 7px rgba(90,200,216,.55);transition:none}
+  #wraparc.flash{border-color:var(--cfg);box-shadow:1px 1px 0 var(--line)}
   #wraparrow{
     position:absolute;left:8px;width:0;height:0;pointer-events:none;
     border-top:4px solid transparent;border-bottom:4px solid transparent;
@@ -155,10 +223,8 @@
   .jparc{
     position:absolute;width:6px;pointer-events:none;
     border:1px solid var(--amber-dim);border-right:none;
-    border-radius:6px 0 0 6px;
-    transition:border-color .45s,box-shadow .45s;
   }
-  .jparc.flash{border-color:var(--amber);box-shadow:0 0 7px rgba(255,180,84,.55);transition:none}
+  .jparc.flash{border-color:var(--amber);box-shadow:1px 1px 0 var(--line)}
   .jparr{
     position:absolute;width:0;height:0;pointer-events:none;
     border-top:4px solid transparent;border-bottom:4px solid transparent;
@@ -166,181 +232,185 @@
   }
   /* ds-field allocator: the side/delay VLIW-ish split, program-wide */
   #dsalloc{
-    display:flex;flex-direction:column;gap:4px;padding:6px 10px;
+    display:flex;flex-direction:column;gap:4px;padding:6px 8px;
     border-bottom:1px solid var(--line);color:var(--dim);
-    font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    font-size:11px;letter-spacing:.02em;
   }
   .dsrow1{display:flex;align-items:center;gap:8px}
-  #dsalloc button{padding:1px 8px}
+  #dsalloc button{padding:0 10px}
   #dspips{display:flex;gap:2px}
-  .pip{width:11px;height:11px;border:1px solid var(--line2)}
-  .pip.en{border-color:var(--cfg);background:repeating-linear-gradient(45deg,transparent,transparent 2px,rgba(90,200,216,.35) 2px,rgba(90,200,216,.35) 4px)}
+  .pip{width:11px;height:11px;border:1px solid var(--line);background:var(--well)}
+  .pip.en{border-color:var(--cfg);background:repeating-linear-gradient(45deg,transparent,transparent 2px,rgba(0,106,120,.45) 2px,rgba(0,106,120,.45) 4px)}
   .pip.s{background:var(--cfg-dim);border-color:var(--cfg-dim)}
   .pip.d{background:var(--amber-dim);border-color:var(--amber-dim)}
   .opttgl{display:flex;gap:4px;align-items:center;cursor:pointer}
-  .opttgl input{accent-color:var(--amber);width:11px;height:11px}
-  #dsinfo{text-transform:none;letter-spacing:.04em;font-size:10.5px;line-height:1.4;
+  .opttgl input{accent-color:var(--navy);width:11px;height:11px}
+  #dsinfo{letter-spacing:.02em;font-size:11px;line-height:1.4;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .phead,.prow{
     display:grid;grid-template-columns:30px 1fr 50px 38px auto;
   }
   .phead{
-    padding:3px 8px 3px 48px;color:var(--dimmer);font-size:9px;
-    letter-spacing:.16em;text-transform:uppercase;
+    padding:2px 8px 2px 48px;color:var(--dim);font-size:11px;
+    letter-spacing:.02em;
     border-bottom:1px solid var(--line);
   }
-  .cside{color:var(--cfg-dim);font-size:11px}
+  .cside{color:var(--cfg-dim);font-size:16px;font-family:var(--mono)}
   .cside b{color:var(--amber);font-weight:normal}
-  .cdly{color:var(--amber-dim);font-size:11px}
+  .cdly{color:var(--amber-dim);font-size:16px;font-family:var(--mono)}
   /* ---------- modeless row editor: the listing IS the source ---------- */
   #rowedit{
     position:absolute;left:78px;right:8px;height:20px;z-index:6;
-    background:var(--panel2);border:1px solid var(--amber-dim);
+    background:var(--well);
+    box-shadow:inset 1px 1px 0 var(--line),inset -1px -1px 0 var(--hi);
+    border:1px solid var(--amber-dim);
     display:flex;align-items:stretch;overflow:visible;
   }
-  #rowedit>*:focus-within{background:rgba(255,180,84,.07)}
+  #rowedit>*:focus-within{background:rgba(0,106,120,.08)}
   .recell{display:flex;align-items:center;min-width:0}
   .reins{flex:1;position:relative}
   #edside,#eddly{
     width:58px;border:0;border-left:1px solid var(--line);background:transparent;
-    color:var(--txt);font:12px/18px var(--mono);padding:0 6px;outline:none;
+    color:var(--txt);font:16px/18px var(--mono);padding:0 6px;outline:none;
     caret-color:var(--amber);resize:none;overflow:hidden;
   }
   #edside::placeholder,#eddly::placeholder{color:var(--dimmer)}
   #edithl,#edittxt{
     position:absolute;left:0;top:0;right:0;bottom:0;margin:0;border:0;padding:0 4px;
-    font:13px/20px var(--mono);letter-spacing:0;white-space:pre;overflow:hidden;
+    font:16px/18px var(--mono);letter-spacing:0;white-space:pre;overflow:hidden;
   }
   #edithl{color:var(--txt);pointer-events:none}
   #edittxt{
     background:transparent;color:transparent;caret-color:var(--amber);
     resize:none;outline:none;
   }
-  #edittxt::selection{background:rgba(90,200,216,.28)}
+  #edittxt::selection{background:rgba(0,106,120,.25)}
   #edpop{
     position:absolute;z-index:50;display:flex;
-    background:var(--panel2);border:1px solid var(--line2);
-    box-shadow:0 6px 24px rgba(0,0,0,.5);
+    background:var(--well);border:1px solid #000;
+    box-shadow:2px 2px 0 #000;
   }
-  #edcands{min-width:118px;max-height:220px;overflow-y:auto;padding:3px 0}
-  .ecand{padding:1px 10px;font-size:12px;color:var(--txt);white-space:nowrap;cursor:pointer}
-  .ecand.sel{background:var(--amber);color:#141008}
-  .ecand .kind{color:var(--dimmer);font-size:9px;margin-left:7px}
-  .ecand.sel .kind{color:#5a4014}
+  #edcands{min-width:118px;max-height:220px;overflow-y:auto;padding:2px 0}
+  .ecand{padding:0 10px;font-size:16px;line-height:18px;font-family:var(--mono);color:var(--txt);white-space:nowrap;cursor:pointer}
+  .ecand.sel{background:var(--navy);color:#fff}
+  .ecand .kind{color:var(--dimmer);font-family:var(--sans);font-size:11px;margin-left:7px}
+  .ecand.sel .kind{color:#fff}
   #eddetail{
     width:330px;max-width:46vw;border-left:1px solid var(--line);padding:8px 12px 10px;
     font-size:11px;color:var(--dim);line-height:1.5;overflow-y:auto;max-height:220px;
   }
-  #eddetail .sig{font-size:12.5px;color:var(--bright);margin-bottom:6px}
+  #eddetail .sig{font-size:16px;font-family:var(--mono);color:var(--txt);margin-bottom:6px}
   #eddetail .sig b{color:var(--amber);font-weight:normal}
   #eddetail table{border-collapse:collapse;margin:4px 0}
   #eddetail td{vertical-align:top;padding:1px 10px 1px 0}
   #eddetail td.k{color:var(--txt);white-space:nowrap}
-  #eddetail tr.curp td{background:rgba(255,180,84,.08)}
+  #eddetail tr.curp td{background:rgba(0,106,120,.1)}
   #eddetail tr.curp td.k{color:var(--amber)}
-  #eddetail .spec{color:var(--cfg-dim);font-size:9.5px;letter-spacing:.08em;margin-top:6px}
+  #eddetail .spec{color:var(--cfg-dim);font-size:11px;letter-spacing:.04em;margin-top:6px}
   #progrows.picking .addr{color:var(--amber);cursor:crosshair}
-  #progrows.picking .addr:hover{outline:1px solid var(--amber);background:rgba(255,180,84,.18)}
-  #progfoot{border-top:1px solid var(--line);padding:5px 10px;color:var(--dim);font-size:10.5px;display:flex;gap:14px}
-  #progfoot b{color:var(--txt);font-weight:normal}
+  #progrows.picking .addr:hover{outline:1px solid var(--amber);background:rgba(143,80,0,.18)}
+  #progfoot{border-top:1px solid var(--line);padding:3px 8px;color:var(--dim);font-size:11px;display:flex;gap:14px}
+  #progfoot b{color:var(--txt);font-weight:normal;font-family:var(--mono);font-size:16px}
 
   /* ---------- exec ---------- */
   #exec{display:flex;flex-direction:column}
-  #execbody{flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;padding:8px 14px;min-height:0}
-  #execins{font-size:19px;color:var(--bright);letter-spacing:.02em}
+  #execbody{flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:8px 12px;min-height:0}
+  #execins{font-size:16px;color:var(--txt);letter-spacing:0;font-family:var(--mono)}
   #execins .op{color:var(--amber)}
-  #execins .pf{color:var(--dim);font-size:15px}
-  #execfields{color:var(--dim);font-size:10.5px;letter-spacing:.1em;margin-top:6px}
+  #execins .pf{color:var(--dim);font-size:16px}
+  #execfields{color:var(--dim);font-size:11px;letter-spacing:.02em;margin-top:4px}
   #execfields b{color:var(--txt);font-weight:normal}
   #phase{margin-left:auto;text-align:right;min-width:180px}
-  #phasename{font-size:12px;letter-spacing:.14em}
+  #phasename{font-size:11px;font-weight:bold;letter-spacing:.04em}
   #phasename.st{color:var(--green)} #phasename.dl{color:var(--amber)} #phasename.wa{color:var(--red)}
-  #phasebar{height:5px;background:var(--panel2);border:1px solid var(--line);margin-top:7px;position:relative}
-  #phasefill{position:absolute;inset:0;width:0%;background:var(--amber);transition:width .08s}
-  #phasesub{color:var(--dim);font-size:10.5px;margin-top:5px}
-  #framemap{border-top:1px solid var(--line);padding:6px 14px 9px;display:flex;align-items:center;gap:12px}
-  .fmlabel{color:var(--dim);font-size:10px;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap}
+  #phasebar{height:6px;background:var(--well);box-shadow:inset 1px 1px 0 var(--line),inset -1px -1px 0 var(--hi);margin-top:6px;position:relative}
+  #phasefill{position:absolute;inset:0;width:0%;background:var(--amber)}
+  #phasesub{color:var(--dim);font-size:11px;margin-top:4px}
+  #framemap{border-top:1px solid var(--line);padding:4px 12px 8px;display:flex;align-items:center;gap:12px}
+  .fmlabel{color:var(--dim);font-size:11px;letter-spacing:.02em;white-space:nowrap}
   #fmcells{display:flex;gap:3px;flex:1}
-  .fmcell{flex:1;height:18px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
-    font-size:9.5px;color:var(--dimmer);letter-spacing:.05em}
-  .fmcell.past{color:var(--green-dim);border-color:#33513a}
-  .fmcell.now{color:var(--amber);border-color:var(--amber-dim);background:rgba(255,180,84,.12)}
+  .fmcell{flex:1;height:18px;border:1px solid var(--line);background:var(--well);display:flex;align-items:center;justify-content:center;
+    font-size:11px;font-family:var(--sans);color:var(--dimmer);letter-spacing:.02em}
+  .fmcell.past{color:var(--green-dim);border-color:var(--green-dim)}
+  .fmcell.now{color:var(--amber);border-color:var(--amber-dim);background:rgba(143,80,0,.12)}
 
   /* ---------- wave ---------- */
   #wave{display:flex;flex-direction:column}
-  #wavesvg{flex:1;width:100%;display:block;min-height:0}
+  #wavesvg{flex:1;width:100%;display:block;min-height:0;background:var(--well);
+    box-shadow:inset 2px 2px 0 var(--line),inset -2px -2px 0 var(--hi);
+    shape-rendering:crispedges}
   #feed{
-    border-top:1px solid var(--line);padding:9px 12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap
+    border-top:1px solid var(--line);padding:8px 12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap
   }
   #feed input[type=text]{
-    font-family:var(--mono);font-size:12px;color:var(--bright);
-    background:var(--panel2);border:1px solid var(--line2);padding:4px 8px;width:190px;
+    font-family:var(--mono);font-size:16px;color:var(--txt);
+    background:var(--well);border:0;padding:1px 6px;width:190px;
+    box-shadow:inset 2px 2px 0 var(--line),inset -2px -2px 0 var(--hi);
   }
-  #feed input:focus{outline:none;border-color:var(--amber-dim)}
-  #feed .note{color:var(--dim);font-size:10.5px;margin-left:auto}
+  #feed input:focus{outline:1px dotted #000;outline-offset:-3px}
+  #feed .note{color:var(--dim);font-size:11px;margin-left:auto}
   .fifofull{animation:blink .5s steps(2) 2;color:var(--red)!important}
 
   /* ---------- right column ---------- */
-  #regs{display:grid;grid-template-rows:auto 1fr auto auto auto auto;gap:1px;background:var(--line)}
+  #regs{display:grid;grid-template-rows:auto 1fr auto auto auto auto;gap:2px;background:var(--line)}
   #regs>div{background:var(--panel);min-height:0;min-width:0}
-  .kv{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:8px 12px 10px}
-  .kv .k{color:var(--dim);font-size:10.5px;letter-spacing:.08em}
-  .kv .v{text-align:right;color:var(--bright);font-size:13px}
-  .kv .v small{color:var(--dim);font-weight:normal;font-size:11px}
-  .bits{display:flex;gap:1.5px;padding:2px 12px 8px;align-items:center}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:6px 12px 8px}
+  .kv .k{color:var(--dim);font-size:11px;letter-spacing:.02em}
+  .kv .v{text-align:right;color:var(--txt);font-size:16px;line-height:16px;font-family:var(--mono)}
+  .kv .v small{color:var(--dim);font-weight:normal;font-size:11px;font-family:var(--sans)}
+  .bits{display:flex;gap:1px;padding:2px 8px 6px;align-items:center}
   .bit{
     flex:1 1 0;min-width:0;height:16px;
     display:flex;align-items:center;justify-content:center;
-    font-size:9px;color:#0c110d;background:var(--green);
+    font-size:16px;line-height:16px;font-family:var(--mono);color:#fff;background:var(--green);
   }
-  .bit.z{background:var(--panel2);color:var(--dimmer);border:1px solid var(--line)}
-  .bit.spent{opacity:.22}
-  .bitmark{font-size:9px;color:var(--dim);width:26px;text-align:center}
-  .shiftnote{padding:0 12px 9px;color:var(--dim);font-size:10.5px;display:flex;gap:10px;align-items:center}
-  .shiftnote .flag{border:1px solid var(--line2);padding:0 5px}
+  .bit.z{background:var(--well);color:var(--dimmer);border:1px solid var(--line)}
+  .bit.spent{opacity:.3}
+  .bitmark{font-size:11px;color:var(--dim);width:26px;text-align:center}
+  .shiftnote{padding:0 12px 6px;color:var(--dim);font-size:11px;display:flex;gap:10px;align-items:center}
+  .shiftnote .flag{border:1px solid var(--line);padding:0 5px;background:var(--panel)}
   .shiftnote .flag.lit{color:var(--amber);border-color:var(--amber-dim)}
   .cfgtx{color:var(--cfg-dim)}
   .cfgtx.on{color:var(--cfg)}
   .cfgtag{
-    border:1px solid #23444c;color:var(--cfg);font-size:9.5px;padding:1px 6px;
-    letter-spacing:.08em;white-space:nowrap;
+    border:1px solid var(--cfg-dim);color:var(--cfg);font-size:11px;padding:0 6px;
+    letter-spacing:.02em;white-space:nowrap;background:var(--panel);
   }
   /* shift-flow visualization: entry ⇒ arrow ⇒ exit, then fill/threshold bar */
-  .shiftviz{display:flex;align-items:center;padding:0 12px 5px}
-  .sv-end{color:var(--cfg-dim);font-size:9.5px;letter-spacing:.06em;white-space:nowrap}
+  .shiftviz{display:flex;align-items:center;padding:0 12px 4px}
+  .sv-end{color:var(--cfg-dim);font-size:11px;letter-spacing:.02em;white-space:nowrap}
   .sv-arrow{flex:1;height:0;border-top:2px solid var(--cfg-dim);position:relative;margin:0 7px}
   .sv-arrow::after{content:"";position:absolute;right:-2px;top:-4px;border:3px solid transparent;border-left:6px solid var(--cfg-dim)}
   .sv-arrow.l::after{right:auto;left:-2px;border-left:none;border-right:6px solid var(--cfg-dim)}
-  .shbar{height:5px;margin:0 12px 6px;background:var(--panel2);border:1px solid var(--line);position:relative}
-  .shfill{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--amber-dim);transition:width .08s}
+  .shbar{height:6px;margin:0 12px 4px;background:var(--well);box-shadow:inset 1px 1px 0 var(--line),inset -1px -1px 0 var(--hi);position:relative}
+  .shfill{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--amber-dim)}
   .shnotch{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--cfg)}
   /* datapath connectors: FIFO ⇣pull⇣ OSR, ISR ⇣push⇣ RX FIFO */
   .flowconn{
     display:flex;align-items:center;justify-content:center;gap:7px;
     background:var(--panel);color:var(--dim);height:18px;
-    font-size:10px;letter-spacing:.14em;text-transform:uppercase;
-    transition:color .5s;
+    font-size:11px;letter-spacing:.02em;
   }
   .flowconn .gly{color:var(--cfg-dim);letter-spacing:0}
-  .flowconn.flash{color:var(--amber);transition:none}
+  .flowconn.flash{color:var(--amber)}
   .flowconn.flash .gly{color:var(--amber)}
-  #rxfifo #rxrow{display:flex;gap:4px;padding:6px 12px 10px}
+  #rxfifo #rxrow{display:flex;gap:4px;padding:6px 12px 8px}
   #rxfifo .rxslot{
-    width:34px;height:14px;border:1px dashed var(--line2);
-    border-left:3px solid var(--cfg-dim);
+    width:34px;height:14px;border:1px dashed var(--line);
+    border-left:3px solid var(--cfg-dim);background:var(--well);
   }
   #rxfifo{opacity:.55}
   .lamp{display:inline-block;width:7px;height:7px;margin-right:5px;background:var(--dimmer);vertical-align:1px}
-  .lamp.on{background:var(--amber);box-shadow:0 0 6px rgba(255,180,84,.8)}
+  .lamp.on{background:var(--amber)}
   #isr .bits,#isr .shiftnote,#isr .kv,#isr .shiftviz,#isr .shbar{opacity:.55}
-  #isr .bit.z{border-color:var(--line2)}
+  #isr .bit.z{border-color:var(--line)}
   #fifobody{display:grid;grid-template-columns:1fr 86px;min-height:0}
-  #fslots{display:flex;flex-direction:column;padding:6px 10px;gap:2px}
+  #fslots{display:flex;flex-direction:column;padding:4px 10px;gap:2px}
   .fslot{
-    display:grid;grid-template-columns:16px 1fr 34px;height:19px;
-    align-items:center;border:1px dashed transparent;color:var(--dimmer);font-size:11.5px;
+    display:grid;grid-template-columns:16px 1fr 34px;height:20px;
+    align-items:center;border:1px dashed transparent;color:var(--dimmer);font-size:16px;line-height:16px;font-family:var(--mono);
   }
-  .fslot.full{border:1px solid var(--line2);background:var(--panel2);color:var(--txt)}
+  .fslot.full{border:1px solid var(--line);background:var(--well);color:var(--txt)}
   .fslot.full .hexv{color:var(--green)}
   .fslot.full .chv{color:var(--dim)}
   .fslot .hexv{padding-left:8px}
@@ -348,42 +418,60 @@
   .fslot.next.full{border-color:var(--amber-dim)}
   .fslot.next.full .idx{color:var(--amber)}
   .fslot.borrowed{border-left:3px solid var(--cfg-dim)}
-  #fifometa{border-left:1px solid var(--line);padding:8px 10px;display:flex;flex-direction:column;gap:6px}
-  #fifolvltxt{color:var(--dim);font-size:10.5px;letter-spacing:.08em}
-  #fifolvltxt b{color:var(--green);font-weight:normal}
-  #fifolvlbar{height:96px;width:12px;background:var(--panel2);border:1px solid var(--line);position:relative}
-  #fifolvlfill{position:absolute;left:0;right:0;bottom:0;background:var(--green);opacity:.75;transition:height .1s}
-  #fifostall{color:var(--red);font-size:10px;letter-spacing:.06em;display:none}
+  #fifometa{border-left:1px solid var(--line);padding:6px 8px;display:flex;flex-direction:column;gap:6px}
+  #fifolvltxt{color:var(--dim);font-size:11px;letter-spacing:.02em}
+  #fifolvltxt b{color:var(--green);font-weight:normal;font-family:var(--mono);font-size:16px}
+  #fifolvlbar{height:96px;width:12px;background:var(--well);box-shadow:inset 1px 1px 0 var(--line),inset -1px -1px 0 var(--hi);position:relative}
+  #fifolvlfill{position:absolute;left:0;right:0;bottom:0;background:var(--green);opacity:.75}
+  #fifostall{color:var(--red);font-size:11px;letter-spacing:.02em;display:none}
   #fifostall.show{display:block;animation:blink 1s steps(2) infinite}
 
   /* ---------- footer ---------- */
   footer{
-    display:flex;align-items:center;gap:20px;padding:0 14px;
+    display:flex;align-items:center;gap:16px;padding:0 8px;
     border-top:1px solid var(--line);background:var(--panel);
-    color:var(--dim);font-size:10.5px;white-space:nowrap;overflow:hidden;
+    color:var(--dim);font-size:11px;white-space:nowrap;overflow:hidden;
   }
   footer .sw{display:inline-block;width:14px;height:3px;vertical-align:2px;margin-right:5px}
   footer .right{margin-left:auto}
+  /* ---------- era scrollbars: silver thumb, beveled track ---------- */
+  ::-webkit-scrollbar{width:14px;height:14px}
+  ::-webkit-scrollbar-track{background:var(--well);box-shadow:inset 1px 1px 0 var(--line),inset -1px -1px 0 var(--hi)}
+  ::-webkit-scrollbar-thumb{background:var(--panel);box-shadow:inset 2px 2px 0 var(--hi),inset -2px -2px 0 var(--line)}
+  /* ---------- era tooltip: the title= narration's mouse path ----------
+     A cream card with a hard 2px black offset shadow, portaled to body
+     so scrollable ancestors can't clip it. (Its keyboard path is the
+     status line the real page carries — one narration, two mouths.) */
+  #tip{
+    position:fixed;z-index:99;max-width:420px;
+    background:var(--cream);color:#000;border:1px solid #000;
+    box-shadow:2px 2px 0 #000;
+    font:11px/1.4 var(--sans);padding:2px 6px;pointer-events:none;
+    white-space:pre-wrap;
+  }
 </style>
 </head>
 <body>
 
+<div id="win">
+<div id="titlebar">
+  <span class="caption">vibe-pio — SM0 · <b>LEVEL 02 “IDLE HANDS”</b><span class="tail"> · uart_tx 8N1 · 8 cyc/bit</span></span>
+  <span class="cyc">CYCLE <b id="cyc">0</b></span>
+</div>
+
 <header>
-  <div class="brand">vibe<em>-</em>pio</div>
-  <div class="lvl">SM0 · <b>LEVEL 02 “IDLE HANDS”</b><span class="tail"> · uart_tx 8N1 · 8 cyc/bit</span></div>
-  <span class="cfgtag" title="config · clock divider (abstracted at game scale)">clkdiv ÷1.0</span>
+  <span class="cfgtag" data-tip="config · clock divider (abstracted at game scale)">clkdiv ÷1.0</span>
   <div class="spacer"></div>
-  <div class="cyc">CYCLE <b id="cyc">0</b></div>
   <div class="ctrl">
-    <button id="breset" title="reset SM (0)">⟲</button>
-    <button id="brun" class="primary" title="run / pause (R)">▶ RUN</button>
-    <select id="speed" title="run speed">
+    <button id="breset" data-tip="reset SM (0)">⟲</button>
+    <button id="brun" class="primary" data-tip="run / pause (R)">▶ RUN</button>
+    <select id="speed" data-tip="run speed">
       <option value="120">×1</option>
       <option value="30" selected>×4</option>
       <option value="8">×16</option>
     </select>
-    <button id="bstep" title="single cycle (SPACE)">⏭ CYCLE</button>
-    <button id="binsn" title="step one instruction (I)">⏭ INSN</button>
+    <button id="bstep" data-tip="single cycle (SPACE)">⏭ CYCLE</button>
+    <button id="binsn" data-tip="step one instruction (I)">⏭ INSN</button>
   </div>
 </header>
 
@@ -394,13 +482,13 @@
     <div class="ptitle">program memory · 32 × 16b
       <span class="aux">canonical C12 · <b id="usedct">4/32</b> used · click a row · Tab crosses ins/side/delay</span>
     </div>
-    <div id="dsalloc" title="the ds field (bits 12:8) is one shared budget: side-set bits steal delay range. This allocation is the .side_set directive, program-wide.">
+    <div id="dsalloc" data-tip="the ds field (bits 12:8) is one shared budget: side-set bits steal delay range. This allocation is the .side_set directive, program-wide.">
       <div class="dsrow1">
         <span>ds 5b</span>
-        <button id="ssminus" title="fewer side bits → more delay range">−</button>
+        <button id="ssminus" data-tip="fewer side bits → more delay range">−</button>
         <div id="dspips"></div>
-        <button id="ssplus" title="more side bits → less delay range">+</button>
-        <label class="opttgl" title="OPT: an enable bit so instructions may skip the side-set (out/jmp here rely on it)"><input type="checkbox" id="ssopt" checked>opt</label>
+        <button id="ssplus" data-tip="more side bits → less delay range">+</button>
+        <label class="opttgl" data-tip="OPT: an enable bit so instructions may skip the side-set (out/jmp here rely on it)"><input type="checkbox" id="ssopt" checked>opt</label>
       </div>
       <div id="dsinfo"></div>
     </div>
@@ -441,8 +529,8 @@
       <div id="fmcells"></div>
     </div>
     <div class="ptitle" style="border-top:1px solid var(--line)">gpio0 · uart tx line
-      <span class="cfgtag" title="config · OUT mapping: out pins drives gpio0, 1 pin">out gpio0·1</span>
-      <span class="cfgtag" id="sidetag" title="config · SIDESET allocation shown in the program panel">side gpio0·1+opt</span>
+      <span class="cfgtag" data-tip="config · OUT mapping: out pins drives gpio0, 1 pin">out gpio0·1</span>
+      <span class="cfgtag" id="sidetag" data-tip="config · SIDESET allocation shown in the program panel">side gpio0·1+opt</span>
       <span class="aux">window <span id="wavewin">128</span> cycles · 8 cyc/grid</span>
     </div>
     <svg id="wavesvg" preserveAspectRatio="none"></svg>
@@ -450,7 +538,7 @@
       <span class="ptitle" style="border:none;padding:0;background:none">stimulus →</span>
       <input type="text" id="feedtxt" value="PIO!" maxlength="32" spellcheck="false">
       <button id="bfeed">ENQUEUE</button>
-      <button id="bfeed55" title="one 0x55 word">0x55</button>
+      <button id="bfeed55" data-tip="one 0x55 word">0x55</button>
       <span class="note">TX FIFO is 8 deep (join TX) — overflow is refused</span>
     </div>
   </section>
@@ -466,7 +554,7 @@
     </div>
 
     <div id="fifo">
-      <div class="ptitle">tx fifo <span class="aux"><span class="cfgtx on" title="config · FIFO JOIN TX: the RX storage is borrowed as extra TX depth">join TX</span> · 8 deep</span></div>
+      <div class="ptitle">tx fifo <span class="aux"><span class="cfgtx on" data-tip="config · FIFO JOIN TX: the RX storage is borrowed as extra TX depth">join TX</span> · 8 deep</span></div>
       <div id="fifobody">
         <div id="fslots"></div>
         <div id="fifometa">
@@ -477,7 +565,7 @@
       </div>
     </div>
 
-    <div class="flowconn" id="pullconn" title="PULL / autopull moves a word from the TX FIFO into the OSR">
+    <div class="flowconn" id="pullconn" data-tip="PULL / autopull moves a word from the TX FIFO into the OSR">
       <span class="gly">⇣</span> pull <span class="gly">⇣</span>
     </div>
 
@@ -491,8 +579,8 @@
       <div class="shbar"><div class="shfill" id="osrfill"></div></div>
       <div class="shiftnote">
         <span>shift <span id="osrcnt" style="color:var(--txt)">0</span>/32</span>
-        <span class="cfgtx" title="config · autopull reloads OSR from TX FIFO at threshold">autopull — thr 32</span>
-        <span class="flag" id="osre" title="osr_cnt ≥ pull threshold">OSRE</span>
+        <span class="cfgtx" data-tip="config · autopull reloads OSR from TX FIFO at threshold">autopull — thr 32</span>
+        <span class="flag" id="osre" data-tip="osr_cnt ≥ pull threshold">OSRE</span>
       </div>
     </div>
 
@@ -507,18 +595,18 @@
       <div class="shbar"><div class="shfill" id="isrfill"></div></div>
       <div class="shiftnote">
         <span>shift 0/32</span>
-        <span class="cfgtx" title="config · autopush writes ISR to RX FIFO at threshold">autopush — thr 32</span>
+        <span class="cfgtx" data-tip="config · autopush writes ISR to RX FIFO at threshold">autopush — thr 32</span>
         <span class="flag">ISR Full</span>
       </div>
     </div>
 
     <div id="rxfifo">
-      <div class="ptitle">rx fifo <span class="aux"><span class="cfgtx on" title="config · its 4 slots live upstairs, borrowed into the TX FIFO">joined → tx</span></span></div>
+      <div class="ptitle">rx fifo <span class="aux"><span class="cfgtx on" data-tip="config · its 4 slots live upstairs, borrowed into the TX FIFO">joined → tx</span></span></div>
       <div id="rxrow">
-        <div class="rxslot" title="borrowed into TX slot 4"></div>
-        <div class="rxslot" title="borrowed into TX slot 5"></div>
-        <div class="rxslot" title="borrowed into TX slot 6"></div>
-        <div class="rxslot" title="borrowed into TX slot 7"></div>
+        <div class="rxslot" data-tip="borrowed into TX slot 4"></div>
+        <div class="rxslot" data-tip="borrowed into TX slot 5"></div>
+        <div class="rxslot" data-tip="borrowed into TX slot 6"></div>
+        <div class="rxslot" data-tip="borrowed into TX slot 7"></div>
       </div>
     </div>
   </section>
@@ -531,6 +619,9 @@
   <span>keys: SPACE cycle · I insn · R run · 0 reset — outside the editor</span>
   <span class="right">mock-up · semantics pinned to tools/pio_model — the game's referee</span>
 </footer>
+</div><!-- /#win -->
+
+<div id="tip" hidden></div>
 
 <div id="edpop" hidden>
   <div id="edcands"></div>
@@ -677,7 +768,7 @@ function buildProgram(){
     const r=document.createElement("div");
     if(!ROWS[i]){
       r.className="prow empty";r.id="pr"+i;
-      r.title="0x0000 · jmp 0 — untouched memory (all-zero reset); if executed, control jumps to slot 00";
+      r.dataset.tip="0x0000 · jmp 0 — untouched memory (all-zero reset); if executed, control jumps to slot 00";
       r.innerHTML=`<span class="addr">${i.toString().padStart(2,"0")}</span><span class="ins">·</span><span></span><span></span><span class="chips"></span>`;
       nodes.push(r);
       continue;
@@ -687,10 +778,10 @@ function buildProgram(){
     const eff=orig?EFF[i]:null;          // the slider re-decodes virgin words only
     const side=eff?eff.side:p.side, dly=eff?eff.delay:p.delay;
     const sideHtml=side==null
-      ?`<span title="${ALLOC.opt?'opt enable bit is 0 — no side applied':'no side-set allocated (ds is all delay)'}">—</span>`
+      ?`<span data-tip="${ALLOC.opt?'opt enable bit is 0 — no side applied':'no side-set allocated (ds is all delay)'}">—</span>`
       :`<span>side <b>${side}</b></span>`;
-    const dlyHtml=dly?`<span>[${dly}]</span>`:`<span title="delay 0">—</span>`;
-    r.title=(orig?"0x"+PROG[i].w.toString(16).padStart(4,"0").toUpperCase()+" · ":"")+ROWS[i];
+    const dlyHtml=dly?`<span>[${dly}]</span>`:`<span data-tip="delay 0">—</span>`;
+    r.dataset.tip=(orig?"0x"+PROG[i].w.toString(16).padStart(4,"0").toUpperCase()+" · ":"")+ROWS[i];
     r.className="prow";r.id="pr"+i;
     const tgtHtml=p.tgt!=null?`${p.args?", ":""}<span class="pcaddr">${p.tgt}</span>`:"";
     r.innerHTML=`<span class="addr">${i.toString().padStart(2,"0")}</span>`+
@@ -703,12 +794,12 @@ function buildProgram(){
   // arcs run row-middle to row-middle, arrowhead at the destination middle
   const arc=document.createElement("div");
   arc.id="wraparc";
-  arc.title=`config · WRAP: after insn ${WRAP_LAST} the PC returns to ${WRAP_TARGET} instead of falling through`;
+  arc.dataset.tip=`config · WRAP: after insn ${WRAP_LAST} the PC returns to ${WRAP_TARGET} instead of falling through`;
   arc.style.top=(WRAP_TARGET*20+10)+"px";
   arc.style.height=((WRAP_LAST-WRAP_TARGET)*20)+"px";
   nodes.push(arc);
   const ah=document.createElement("div");
-  ah.id="wraparrow"; ah.title=arc.title;
+  ah.id="wraparrow"; ah.dataset.tip=arc.title;
   ah.style.top=(WRAP_TARGET*20+6)+"px";
   nodes.push(ah);
   // jump arcs: collect spans, then assign one of 4 margin lanes by greedy
@@ -731,13 +822,13 @@ function buildProgram(){
     const x=laneX(a.lane);
     const el=document.createElement("div");
     el.className="jparc"; el.id="jp"+a.i;
-    el.title=`jmp: ${a.i.toString().padStart(2,"0")} ↷ ${a.tgt.toString().padStart(2,"0")}`;
+    el.dataset.tip=`jmp: ${a.i.toString().padStart(2,"0")} ↷ ${a.tgt.toString().padStart(2,"0")}`;
     el.style.left=x+"px";
     el.style.top=(a.lo*20+10)+"px";
     el.style.height=((a.hi-a.lo)*20)+"px";
     nodes.push(el);
     const t=document.createElement("div");
-    t.className="jparr"; t.title=el.title;
+    t.className="jparr"; t.dataset.tip=el.title;
     t.style.left=(x+7)+"px";
     t.style.top=(a.tgt*20+6)+"px";
     nodes.push(t);
@@ -756,7 +847,7 @@ function renderAlloc(){
   for(let k=0;k<5;k++){
     const d=document.createElement("div");
     d.className="pip"+(k<total?(k===0&&ALLOC.opt?" en":" s"):" d");
-    d.title=k<total
+    d.dataset.tip=k<total
       ?(k===0&&ALLOC.opt?"opt-enable bit — per-instruction side on/off":"side data bit → gpio")
       :"delay bit (max delay "+maxDelay()+")";
     h.appendChild(d);
@@ -769,7 +860,7 @@ function renderAlloc(){
   const redecoded=ALLOC.sideBits!==PROGRAM_OWN.sideBits||ALLOC.opt!==PROGRAM_OWN.opt;
   const info=$("dsinfo");
   info.innerHTML=`side ${ALLOC.sideBits}b${ALLOC.opt?"+opt":""} · delay [0..${maxDelay()}]`+
-    (redecoded?` <span style="color:var(--red)" title="same stored bits, re-decoded under this allocation — the machine runs what the bits now say">· garbled</span>`:"");
+    (redecoded?` <span style="color:var(--red)" data-tip="same stored bits, re-decoded under this allocation — the machine runs what the bits now say">· garbled</span>`:"");
   const st=$("sidetag");
   st.textContent=ALLOC.sideBits?`side gpio0·${ALLOC.sideBits}${ALLOC.opt?"+opt":""}`:"side —";
 }
@@ -862,7 +953,7 @@ function renderRegs(){
     const d=document.createElement("div");
     const full=i<S.fifo.length;
     d.className="fslot"+(full?" full":"")+(i===0?" next":"")+(i>=4?" borrowed":"");
-    if(i>=4)d.title="config · storage borrowed from RX via FIFO JOIN TX";
+    if(i>=4)d.dataset.tip="config · storage borrowed from RX via FIFO JOIN TX";
     d.innerHTML=`<span class="idx">${i}</span><span class="hexv">${full?hex32(S.fifo[i]):"········"}</span><span class="chv">${full?ascii(S.fifo[i]):""}</span>`;
     slots.appendChild(d);
   }
@@ -884,7 +975,8 @@ function classOf(tag){
   if(tag==="IDLE")return "idle";
   return "ctrl";
 }
-const colOf={data:"var(--green)",ctrl:"var(--amber)",idle:"var(--dim)"};
+// trace strokes ride lighter variants than the text tokens (see DESIGN-NOTES)
+const colOf={data:"var(--wave-data)",ctrl:"var(--wave-ctrl)",idle:"var(--wave-idle)"};
 function renderWave(){
   const svg=$("wavesvg");
   const n=Math.min(S.trace.length,WIN);
@@ -912,7 +1004,7 @@ function renderWave(){
     const col=colOf[classOf(t[i].tag)];
     const x0=i*CW,x1=j*CW;
     if(i>0)s+=`<path d="M${x0} ${yOf(t[i-1].pin)} L${x0} ${y}" stroke="${col}" stroke-width="2"/>`;
-    s+=`<path d="M${x0} ${y} L${x1} ${y}" stroke="${col}" stroke-width="2.4"/>`;
+    s+=`<path d="M${x0} ${y} L${x1} ${y}" stroke="${col}" stroke-width="2"/>`;
     i=j;
   }
   // tag runs
@@ -981,6 +1073,33 @@ document.addEventListener("keydown",e=>{
   else if(e.key==="i"||e.key==="I")$("binsn").onclick();
   else if(e.key==="0")$("breset").onclick();
 });
+
+// ---- era tooltips: the data-tip narration's mouse path ----
+// One narration store; the real page's keyboard path for the same
+// strings is the C25 status line. Cream card, hard 2px offset shadow,
+// portaled to <body> (the scrollable-ancestor clipping lesson).
+const TIP=$("tip");
+let tipTimer=null;
+function tipHide(){TIP.hidden=true;clearTimeout(tipTimer);}
+function tipShow(el,x,y){
+  const host=el.closest("[data-tip]");
+  if(!host||!host.dataset.tip){TIP.hidden=true;return;}
+  TIP.textContent=host.dataset.tip;TIP.hidden=false;
+  const w=TIP.offsetWidth,h=TIP.offsetHeight;
+  let tx=x+12,ty=y+18;
+  if(tx+w>innerWidth-4)tx=Math.max(4,innerWidth-w-4);
+  if(ty+h>innerHeight-4)ty=Math.max(4,y-h-6);
+  TIP.style.left=tx+"px";TIP.style.top=ty+"px";
+}
+document.addEventListener("mouseover",e=>{
+  if(!e.target.closest){return;}
+  if(!e.target.closest("[data-tip]")){tipHide();return;}
+  clearTimeout(tipTimer);
+  tipTimer=setTimeout(()=>tipShow(e.target,e.clientX,e.clientY),350);
+});
+document.addEventListener("mousedown",tipHide);
+document.addEventListener("keydown",tipHide);
+addEventListener("scroll",tipHide,true);
 
 // ================= modeless row editor =================
 // The listing IS the source (1-1 canonical assembler/disassembler): every
