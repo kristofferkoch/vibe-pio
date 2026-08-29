@@ -1,5 +1,9 @@
 // sm-view.js — the C21 sandbox SM view client logic (KANBAN
-// C18/C19/C21/C22; C24 grows it to the four-machine playground).
+// C18/C19/C21/C22; C24 grows it to the four-machine playground; C25
+// adds the keyboard surface: keys owned by focus — the accelerators on
+// body focus only, the listing as a listbox, every arrow group one Tab
+// stop with an internal cursor, Alt+letter mnemonics, the focus-tracking
+// status line).
 //
 // Every machine value rendered here (pins, the four PC cursors, phases,
 // X/Y, OSR/ISR, counters, FIFO levels, IRQ flags, pad ownership) comes
@@ -310,14 +314,69 @@ function refuseFlash() {
   f.classList.add('fifofull');
 }
 
+// ---- keyboard ownership (C25) -------------------------------------------
+// Keys belong to whatever has focus: text surfaces type, interactive
+// groups (the [data-rovi] arrow groups, spinboxes and the listing) own
+// their keys, and the accelerators fire only on body focus. The groups'
+// items are rebuilt every rendered clk, so each group is ONE Tab stop
+// with an internal cursor (the aria-activedescendant pattern) that
+// survives the rebuilds — per-item tabindex would drop focus on every
+// frame the engine renders.
+function textSurface(el) {
+  return /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable;
+}
+
+// Alt+letter mnemonics on the header buttons — hand-rolled because
+// accesskey collides with browser chrome. The letters are unique per the
+// 3.11 handbook's rule and underlined in the labels; the glyph-only
+// reset button has none (its keyboard path is the 0 accelerator).
+const MNEMONICS = {
+  e: 'bempty',
+  d: 'bdemo',
+  j: 'bexport',
+  i: 'bimport',
+  l: 'bcopy',
+  r: 'brun',
+  c: 'bstep',
+  n: 'binsn',
+};
+document.addEventListener('keydown', (e) => {
+  if (!e.altKey || e.ctrlKey || e.metaKey || !e.key || e.key.length !== 1) return;
+  const id = MNEMONICS[e.key.toLowerCase()];
+  if (!id || textSurface(e.target)) return;
+  e.preventDefault();
+  $(id).click();
+});
+
+// every stepper pair ([data-spin]) is one spinbox stop: −/← dec,
+// +/→ inc — the same wrapping clicks the pair's own buttons perform
+document.addEventListener('keydown', (e) => {
+  const g = e.target.closest ? e.target.closest('[data-spin]') : null;
+  if (!g || textSurface(e.target)) return;
+  const dir =
+    e.key === '-' || e.key === 'ArrowLeft'
+      ? 'dec'
+      : e.key === '+' || e.key === 'ArrowRight'
+        ? 'inc'
+        : null;
+  if (!dir) return;
+  e.preventDefault();
+  g.querySelector(`[data-g="${dir}"]`)?.click();
+});
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !POP.hidden) {
     popupHide();
-    HOST.classList.remove('picking');
+    pickEnd();
     return;
   }
   const t = e.target;
-  if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;
+  // text surfaces type; groups and buttons own their keys (Space must
+  // activate a focused button, not step the machine); the accelerators
+  // fire only on body focus. (t can be document for synthetic events —
+  // not an owner, but not a body focus either.)
+  if (t === document || textSurface(t) || t.closest('[data-rovi]') || t.tagName === 'BUTTON')
+    return;
   if (!V.ready) return;
   if (e.code === 'Space') {
     e.preventDefault();
@@ -327,6 +386,126 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'i' || e.key === 'I') $('binsn').onclick();
   else if (e.key === '0') $('breset').onclick();
   else if (['1', '2', '3', '4'].includes(e.key)) selectSm(+e.key - 1);
+});
+
+// a click that lands on no interactive owner releases the keyboard back
+// to the accelerators (body focus) — mouse users keep SPACE/R without
+// having to Tab anywhere
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (
+    textSurface(t) ||
+    t.closest('[data-rovi], button, a, select, input, textarea, label, [tabindex]')
+  )
+    return;
+  if (document.activeElement && document.activeElement !== document.body)
+    document.activeElement.blur();
+});
+
+// ---- the status line: the focused owner's key map + its narration ------
+// The title= tooltips never show on focus — this is their keyboard home.
+const BODY_KEYS =
+  'keys: SPACE cycle · I insn · R run · 0 reset · 1–4 machine · Alt+letter header · Tab walks every group';
+function updateStatus() {
+  const el = document.activeElement;
+  if (!el || el === document.body) {
+    $('statusline').textContent = BODY_KEYS;
+    return;
+  }
+  const group = el.closest('[data-status]');
+  const own =
+    el.tagName === 'BUTTON' ? 'Enter/Space activates' : el.tagName === 'SELECT' ? '↑/↓ choose' : '';
+  const keys = el.dataset?.status || own || group?.dataset?.status || '';
+  const title = el.title || el.closest('[title]')?.title || '';
+  const line = [keys, title].filter(Boolean).join(' — ');
+  $('statusline').textContent = line || BODY_KEYS;
+}
+document.addEventListener('focusin', updateStatus);
+document.addEventListener('focusout', () => setTimeout(updateStatus, 0));
+// the import button is a real button now — it clicks through to the
+// hidden file input (a button can't nest the input; the label trick is
+// gone with the C25 keyboard work)
+$('bimport').onclick = () => $('impfile').click();
+
+// ---- the arrow groups: one Tab stop each, an internal cursor -----------
+// The cursor is view state rendered as a class by the render passes
+// (which rebuild these hosts every clk) — never a focused node.
+function wireGroup(host, onKey) {
+  host.addEventListener('keydown', (e) => {
+    if (textSurface(e.target)) return; // inner inputs keep native keys
+    onKey(e);
+  });
+}
+
+// pin strip: ←/→ walks the cursor; 1/0/Z latch; Space cycles Z→1→0
+let pinCursor = 0;
+function applyPinCursor() {
+  document.querySelectorAll('#pincells .pcell').forEach((c) => {
+    c.classList.toggle('kc', +c.dataset.pin === pinCursor);
+  });
+  $('pincells')?.setAttribute('aria-activedescendant', `pc${pinCursor}`);
+}
+wireGroup($('pincells'), (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    pinCursor = Math.max(0, Math.min(31, pinCursor + (e.key === 'ArrowRight' ? 1 : -1)));
+    applyPinCursor();
+    document.querySelector(`.pcell[data-pin="${pinCursor}"]`)?.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === '1' || e.key === '0' || e.key === 'z' || e.key === 'Z') {
+    e.preventDefault();
+    post({ cmd: 'drive', pin: pinCursor, level: e.key === '1' ? 1 : e.key === '0' ? 0 : null });
+  } else if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    const cur = V.state.drives[pinCursor];
+    const next = cur === null ? 1 : cur === 1 ? 0 : null; // Z → 1 → 0 → Z
+    post({ cmd: 'drive', pin: pinCursor, level: next });
+  }
+});
+
+// machines bar: ←/→ selects (wrapping the four); 1–4 jump straight there
+wireGroup($('smscells'), (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    selectSm((curSm + (e.key === 'ArrowRight' ? 1 : 3)) % 4);
+  } else if (['1', '2', '3', '4'].includes(e.key)) {
+    e.preventDefault();
+    selectSm(+e.key - 1);
+  }
+});
+
+// irq lamps: ←/→ picks a flag, Space/Enter fires its W1C write
+let lampCursor = 0;
+function applyLampCursor() {
+  document.querySelectorAll('#irqlamps .ilamp[data-flag]').forEach((l) => {
+    l.classList.toggle('kc', +l.dataset.flag === lampCursor);
+  });
+  $('irqlamps')?.setAttribute('aria-activedescendant', `lf${lampCursor}`);
+}
+wireGroup($('irqlamps'), (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    lampCursor = Math.max(0, Math.min(7, lampCursor + (e.key === 'ArrowRight' ? 1 : -1)));
+    applyLampCursor();
+  } else if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    post({ cmd: 'regwrite', addr: VD.REG.IRQ, data: 1 << lampCursor });
+  }
+});
+
+// fifo join: a radio group — ←/→ moves the cursor AND applies it (the
+// classic radio behavior), Space/Enter re-applies
+const JOIN_SEGS = ['split', 'join-tx', 'join-rx'];
+let joinCursor = 0;
+wireGroup($('segjoin'), (e) => {
+  const move = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+  if (move) {
+    e.preventDefault();
+    joinCursor = (joinCursor + move + 3) % 3;
+    sendCtl('fifo-mode', JOIN_SEGS[joinCursor]);
+  } else if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    sendCtl('fifo-mode', JOIN_SEGS[joinCursor]);
+  }
 });
 
 // ---- the sandbox loads: empty boot / demo / persistence ----------------
@@ -430,6 +609,7 @@ function buildProgram() {
   const nodes = [];
   for (let i = 0; i < 32; i++) {
     const r = document.createElement('div');
+    r.setAttribute('role', 'option');
     if (!ROWS[i]) {
       r.className = 'prow empty';
       r.id = `pr${i}`;
@@ -501,16 +681,29 @@ function buildProgram() {
   // bracket that row — never the clipped-above-the-scroll-origin state
   // the layout gate caught (wrap-top inc is the arc's stretch gesture at
   // the top end; from the 1/31 reset posture it stretches [0..wrapTop]).
-  const wrapStep = (field, g, y, label) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = `wstep ${g}`;
-    b.dataset.ctl = field;
-    b.dataset.g = g;
-    b.textContent = g === 'inc' ? '▲' : '▼';
-    b.title = `config · ${field === 'wrap-top' ? 'WRAP_TOP' : 'WRAP_BOTTOM'}: ${label} — cycles 0..31, a real EXECCTRL write`;
-    b.style.top = `${y}px`;
-    nodes.push(b);
+  // C25: each pair rides in one .wspin spinbox stop (one Tab stop, keys
+  // −/← and +/→) at the same 12+2+12 footprint the buttons drew.
+  const wrapSpin = (field, y, label, id) => {
+    const box = document.createElement('div');
+    box.className = 'wspin';
+    box.id = id;
+    box.tabIndex = 0;
+    box.dataset.spin = '';
+    box.dataset.rovi = '';
+    box.dataset.status = '−/+ or ←/→ step · wraps';
+    box.style.top = `${y}px`;
+    for (const g of ['inc', 'dec']) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `wstep ${g}`;
+      b.tabIndex = -1;
+      b.dataset.ctl = field;
+      b.dataset.g = g;
+      b.textContent = g === 'inc' ? '▲' : '▼';
+      b.title = `config · ${field === 'wrap-top' ? 'WRAP_TOP' : 'WRAP_BOTTOM'}: ${label(g)} — cycles 0..31, a real EXECCTRL write`;
+      box.appendChild(b);
+    }
+    nodes.push(box);
   };
   const tY = wrapTop * 20 + 7, // flush under the after-insn boundary
     bY =
@@ -519,29 +712,19 @@ function buildProgram() {
           ? wrapBot * 20 - 13 // bracket the wrapped row: handle above
           : (wrapBot + 1) * 20 + 3 // row 0 has no row above — handle below
         : wrapBot * 20 + 3; // inside the return row, beside the arrow
-  wrapStep(
+  wrapSpin(
     'wrap-top',
-    'inc',
     tY,
-    `raise the top end — after-insn ${wrapTop} → ${(wrapTop + 1) & 31}`,
+    (g) =>
+      `${g === 'inc' ? 'raise' : 'lower'} the top end — after-insn ${wrapTop} → ${(wrapTop + (g === 'inc' ? 1 : 31)) & 31}`,
+    'spin-wraptop',
   );
-  wrapStep(
-    'wrap-top',
-    'dec',
-    tY,
-    `lower the top end — after-insn ${wrapTop} → ${(wrapTop + 31) & 31}`,
-  );
-  wrapStep(
+  wrapSpin(
     'wrap-bot',
-    'inc',
     bY,
-    `raise the return row — target ${wrapBot} → ${(wrapBot + 1) & 31}`,
-  );
-  wrapStep(
-    'wrap-bot',
-    'dec',
-    bY,
-    `lower the return row — target ${wrapBot} → ${(wrapBot + 31) & 31}`,
+    (g) =>
+      `${g === 'inc' ? 'raise' : 'lower'} the return row — target ${wrapBot} → ${(wrapBot + (g === 'inc' ? 1 : 31)) & 31}`,
+    'spin-wrapbot',
   );
   const arcs = [];
   for (let i = 0; i < 32; i++) {
@@ -581,6 +764,7 @@ function buildProgram() {
   $('wordsct').textContent = usedN;
   $('freect').textContent = 32 - usedN;
   updateUnbuilt();
+  applyRowCursor();
   renderAlloc();
   renderInspector();
 }
@@ -720,7 +904,7 @@ function renderSms(st) {
     const ph = s.phase || 'OFF';
     const phCls = ph === 'EXEC' ? 'x' : ph === 'DELAY' ? 'd' : ph === 'STALL' ? 'w' : '';
     h +=
-      `<div class="smcell${i === curSm ? ' sel' : ''}" data-sm="${i}" style="--smc:${SM_COLOR[i]}"` +
+      `<div class="smcell${i === curSm ? ' sel' : ''}" id="sm${i}" role="option" aria-selected="${i === curSm}" data-sm="${i}" style="--smc:${SM_COLOR[i]}"` +
       ` title="SM${i} — click selects the machine the detail panes follow (key ${i + 1}) · PC ${s.displayPc ?? 0} · ${ph} · tx ${s.txLevel ?? 0}/${s.fifoDepths?.tx ?? 4} · rx ${s.rxLevel ?? 0}/${s.fifoDepths?.rx ?? 4}">` +
       `<span class="smn">SM${i}</span><span class="smpc">${(s.displayPc ?? 0).toString().padStart(2, '0')}</span>` +
       `<span class="smph ${phCls}">${ph}</span>` +
@@ -814,17 +998,23 @@ function renderRegs(st) {
     slots.appendChild(d);
   }
   // the FIFO-mode segmented control: the active segment is the drawn
-  // truth (an aux mode lights none — those are inspector-set)
+  // truth (an aux mode lights none — those are inspector-set). It is
+  // also the radio group's checked state, and the keyboard cursor
+  // follows the applied mode (the walk only leads it transiently).
   let joinActive = null;
   if (!sc.fjoinRxPut && !sc.fjoinRxGet)
     joinActive = sc.fjoinTx ? 'tx' : sc.fjoinRx ? 'rx' : 'split';
+  joinCursor = joinActive ? { split: 0, tx: 1, rx: 2 }[joinActive] : joinCursor;
   for (const [k, id] of [
     ['split', 'segsplit'],
     ['tx', 'segtx'],
     ['rx', 'segrx'],
   ]) {
     const seg = $(id);
-    if (seg) seg.classList.toggle('on', k === joinActive);
+    if (seg) {
+      seg.classList.toggle('on', k === joinActive);
+      seg.setAttribute('aria-pressed', k === joinActive ? 'true' : 'false');
+    }
   }
   // depth lives in the LEVEL line (fifometa/rxmeta); the panel titles
   // stay single-line so the right column keeps its 13"-viewport fit
@@ -875,10 +1065,11 @@ function renderRegs(st) {
   const flags = (st.intr >> 8) & 0xff;
   let lh = '';
   for (let i = 0; i < 8; i++)
-    lh += `<span class="ilamp${(flags >> i) & 1 ? ' on' : ''}" title="IRQ flag ${i} — ${(flags >> i) & 1 ? 'SET' : 'clear'} · click = W1C via IRQ" data-flag="${i}">f${i}</span>`;
+    lh += `<span id="lf${i}" role="option" aria-selected="${i === lampCursor}" class="ilamp${(flags >> i) & 1 ? ' on' : ''}" title="IRQ flag ${i} — ${(flags >> i) & 1 ? 'SET' : 'clear'} · click = W1C via IRQ" data-flag="${i}">f${i}</span>`;
   lh += `<span class="ilamp sub${(st.intr >> 4) & 1 ? ' on' : ''}" title="TXNFULL SM0">tx¬full</span>`;
   lh += `<span class="ilamp sub${st.intr & 1 ? ' on' : ''}" title="RXNEMPTY SM0">rx¬empty</span>`;
   lamps.innerHTML = lh;
+  applyLampCursor();
 
   // header chips + the C22 pin-mapping tag numbers (the steppers write)
   const cd = OV.clkdiv;
@@ -927,9 +1118,10 @@ function renderPins(st) {
     ]
       .filter(Boolean)
       .join(' · ');
-    h += `<div class="${cls}" data-pin="${p}" title="${tips}"><span class="pn">${p}</span><span class="pl">${lvl}</span><span class="pm">${oe ? '▲' : drv !== null ? 'D' : ''}${patPin === p ? '◆' : ''}</span>${own >= 0 ? `<span class="po">${own}</span>` : ''}</div>`;
+    h += `<div class="${cls}" id="pc${p}" role="option" aria-selected="${p === pinCursor}" data-pin="${p}" title="${tips}"><span class="pn">${p}</span><span class="pl">${lvl}</span><span class="pm">${oe ? '▲' : drv !== null ? 'D' : ''}${patPin === p ? '◆' : ''}</span>${own >= 0 ? `<span class="po">${own}</span>` : ''}</div>`;
   }
   host.innerHTML = h;
+  applyPinCursor();
 }
 $('pincells').addEventListener('click', (e) => {
   const c = e.target.closest('.pcell');
@@ -1302,6 +1494,84 @@ const SIDE = $('edside'),
 let curRow = -1;
 let asmErr = null; // row error of the last failed re-assembly (C19)
 
+// ---- the listing as a listbox (C25) -------------------------------------
+// The amber row cursor is view state (the group's remembered position);
+// the PC row (.cur) is machine truth. They can coincide; they don't move
+// together.
+let kc = 0; // the row the listing's cursor sits on
+function applyRowCursor() {
+  for (let i = 0; i < 32; i++) $(`pr${i}`)?.classList.toggle('kc', i === kc);
+  HOST.setAttribute('aria-activedescendant', `pr${kc}`);
+}
+function refocusListing() {
+  // called BEFORE the editor hides: once the focused element is hidden,
+  // Chromium resets the focus to body at its next rendering update and
+  // stomps any focus() that raced it — transferring first sticks. When
+  // focus already went elsewhere (a click-away commit) it stays there.
+  if (RE.contains(document.activeElement)) HOST.focus();
+}
+
+// ---- the gutter pick walk (C25) -----------------------------------------
+// Pick mode previews the jump edge on the walked row: an amber arc from
+// the edited row plus a highlight; Enter inserts the address, Esc (or
+// any stand-down) takes the preview with it. The 'picking' class alone
+// is NOT the walk's state — the popup sets it as a gutter hint whenever
+// a ↦ pick candidate is on show — so the live walk carries its own flag.
+let pkRow = -1;
+let pickLive = false;
+function pickPreviewOff() {
+  pkRow = -1;
+  HOST.querySelectorAll('.jparc.prev, .jparr.prev').forEach((n) => {
+    n.remove();
+  });
+  HOST.querySelectorAll('.pkw').forEach((n) => {
+    n.classList.remove('pkw');
+  });
+}
+function drawPickPreview() {
+  HOST.querySelectorAll('.jparc.prev, .jparr.prev').forEach((n) => {
+    n.remove();
+  });
+  if (pkRow < 0 || curRow < 0) return;
+  const lo = Math.min(curRow, pkRow),
+    hi = Math.max(curRow, pkRow);
+  const arc = document.createElement('div');
+  arc.className = 'jparc prev';
+  arc.style.left = '35px'; // one lane past the committed arcs (LANES 4)
+  arc.style.top = `${lo * 20 + 10}px`;
+  arc.style.height = `${(hi - lo) * 20}px`;
+  const arr = document.createElement('div');
+  arr.className = 'jparr prev';
+  arr.style.left = '42px';
+  arr.style.top = `${pkRow * 20 + 6}px`;
+  HOST.append(arc, arr);
+}
+function pickWalk(delta) {
+  pkRow = Math.max(0, Math.min(31, pkRow + delta));
+  HOST.querySelectorAll('.pkw').forEach((n) => {
+    n.classList.remove('pkw');
+  });
+  $(`pr${pkRow}`)?.classList.add('pkw');
+  drawPickPreview();
+  $(`pr${pkRow}`)?.scrollIntoView({ block: 'nearest' });
+}
+function pickBegin() {
+  pickLive = true;
+  HOST.classList.add('picking');
+  pkRow = Math.max(0, curRow);
+  HOST.querySelectorAll('.pkw').forEach((n) => {
+    n.classList.remove('pkw');
+  });
+  $(`pr${pkRow}`)?.classList.add('pkw');
+  drawPickPreview();
+}
+function pickEnd() {
+  if (!pickLive) return;
+  pickLive = false;
+  HOST.classList.remove('picking');
+  pickPreviewOff();
+}
+
 function reassemble() {
   const words = new Array(32).fill(0);
   for (let i = 0; i < 32; i++) {
@@ -1561,15 +1831,18 @@ function renderEdCode() {
   host.innerHTML = html;
   RE.title = html.replace(/<[^>]+>/g, '');
 }
-function openRow(i, focus) {
+function openRow(i, focus, seed) {
   if (curRow >= 0) commitRow();
   curRow = Math.max(0, Math.min(31, i));
+  kc = curRow; // the listing cursor follows its editor anchor
+  applyRowCursor();
   RE.hidden = false;
   RE.style.top = `${curRow * 20}px`;
   const p = parseRow(ROWS[curRow] || '');
   ED.value = ROWS[curRow]
     ? `${p.op}${p.args ? ` ${p.args}` : ''}${p.tgt != null ? (p.args ? ', ' : ' ') + p.tgt : ''}`
     : '';
+  if (seed !== undefined) ED.value = seed; // type-ahead opened the editor
   SIDE.value = p.side ?? '';
   DLY.value = p.delay || '';
   const f = { ins: ED, side: SIDE, dly: DLY }[focus || 'ins'];
@@ -1582,19 +1855,22 @@ function openRow(i, focus) {
 function commitRow() {
   if (curRow < 0) return;
   ROWS[curRow] = edRowText(); // the preview showed exactly this assembly
+  kc = curRow;
   curRow = -1;
+  refocusListing(); // while the editor still holds focus
   RE.hidden = true;
   popupHide();
-  HOST.classList.remove('picking');
+  pickEnd();
   buildAndPush(); // C19: re-assemble; on success patch the engine image
   buildProgram();
   render(V.state);
 }
 function cancelRow() {
   curRow = -1;
+  refocusListing(); // while the editor still holds focus
   RE.hidden = true;
   popupHide();
-  HOST.classList.remove('picking');
+  pickEnd();
 }
 function hopRow(delta, focus) {
   const n = Math.max(0, Math.min(31, curRow + delta));
@@ -1615,9 +1891,11 @@ HOST.addEventListener('click', (e) => {
     const a = e.target.closest('.addr');
     if (a && /^\d+$/.test(a.textContent)) {
       insertAtCaret(a.textContent);
-      HOST.classList.remove('picking');
+      pickEnd();
+      HOST.classList.remove('picking'); // the hint goes too
       ED.focus();
     } else {
+      pickEnd();
       HOST.classList.remove('picking'); // clicked elsewhere: stand down
     }
     return;
@@ -1625,6 +1903,24 @@ HOST.addEventListener('click', (e) => {
   if (e.target.closest('#rowedit')) return;
   const r = e.target.closest('.prow');
   if (r) openRow(+r.id.slice(2));
+});
+// the listbox keys (C25): the arrows move the row cursor, Enter opens
+// the row on the instruction cell, and typing opens it with the char
+// inserted. The editor's own cells have their own model (below).
+HOST.addEventListener('keydown', (e) => {
+  if (e.target !== HOST) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    kc = Math.max(0, Math.min(31, kc + (e.key === 'ArrowDown' ? 1 : -1)));
+    applyRowCursor();
+    $(`pr${kc}`)?.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    openRow(kc, 'ins');
+  } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    openRow(kc, 'ins', e.key); // the char the row editor opened under
+  }
 });
 let edSel = 0,
   edCands = [];
@@ -1747,10 +2043,9 @@ function popupShow() {
     return;
   }
   edSel = Math.min(edSel, Math.max(0, edCands.length - 1));
-  HOST.classList.toggle(
-    'picking',
-    edCands.some((c) => c.kind === 'pick'),
-  );
+  const wantPick = edCands.some((c) => c.kind === 'pick');
+  if (pickLive && !wantPick) pickEnd(); // typed past the pick — stand down
+  if (!pickLive) HOST.classList.toggle('picking', wantPick); // the hint
   $('edmain').style.display = edCands.length ? '' : 'none';
   if (edCands.length) {
     $('edcands').innerHTML = edCands
@@ -1789,7 +2084,7 @@ function popupHide() {
 }
 function accept(c) {
   if (c.kind === 'pick') {
-    HOST.classList.add('picking');
+    pickBegin();
     popupHide();
     ED.focus();
     return;
@@ -1832,6 +2127,25 @@ addEventListener('resize', () => popupHide());
 SIDE.addEventListener('focus', () => HOST.classList.remove('picking'));
 DLY.addEventListener('focus', () => HOST.classList.remove('picking'));
 ED.addEventListener('keydown', (e) => {
+  if (pickLive) {
+    // gutter pick (C25): the arrows walk the previewed edge, Enter
+    // inserts the walked address, Esc stands down — still editing
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      pickWalk(1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      pickWalk(-1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      insertAtCaret(String(pkRow));
+      pickEnd();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      pickEnd(); // stand down — still editing
+    }
+    return;
+  }
   if (!POP.hidden && edCands.length) {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -1962,6 +2276,7 @@ buildBits($('osrbits'));
 buildBits($('isrbits'));
 patternUi();
 render(V.state);
+updateStatus(); // the status line opens on the body key map
 
 function applyUrlParams() {
   // shareable states: ?demo=1 loads the uart demo, ?t=N pre-runs N cycles
@@ -1988,7 +2303,7 @@ function applyUrlParams() {
     if (q.get('complete')) ED.value = q.get('complete');
     if (q.get('pick')) {
       ED.value = 'jmp x--,';
-      HOST.classList.add('picking');
+      pickBegin();
       popupHide();
     }
     renderED();

@@ -46,12 +46,14 @@ Conventions for AI agents (and subagents) working in this repo.
   engine are the cheap red cases; the in-browser assembler port is anchored
   to pio_model by golden bit-vectors (drift-checked in `make js`),
   never to itself. DOM glue is verified by the browser session and
-  `make web`, never unit tests — with one exception: page *geometry*
-  is gated by the headless-Chromium layout checks
-  (`web/tests/layout.test.js`, part of the `node --test` suite; needs a
-  chromium on PATH or `$PIO_BROWSER`, see `docs/js-tooling.md`). Layout
-  fixes follow the same red/green rule — the gate ran red against the
-  shipped page it was written for.
+  `make web`, never unit tests — with two exceptions, both headless-
+  Chromium checks in the `node --test` suite (a chromium on PATH or
+  `$PIO_BROWSER`; see `docs/js-tooling.md`): page *geometry* is gated
+  by `web/tests/layout.test.js`, and keyboard *operation* is gated by
+  the C25 keyboard walk, `web/tests/keyboard.test.js`, which drives the
+  shipped page with key events only through the core loop. Both follow
+  the same red/green rule — each gate ran red against the shipped page
+  it was written for.
 
 ## Fact and clause citations
 

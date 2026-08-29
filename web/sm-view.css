@@ -492,7 +492,6 @@ main > * {
   color: var(--txt);
   font: 12px / 18px var(--mono);
   padding: 0 6px;
-  outline: none;
   caret-color: var(--amber);
   resize: none;
   overflow: hidden;
@@ -525,7 +524,6 @@ main > * {
   color: transparent;
   caret-color: var(--amber);
   resize: none;
-  outline: none;
 }
 #edittxt::selection {
   background: rgba(90, 200, 216, 0.28);
@@ -841,7 +839,6 @@ main > * {
   width: 190px;
 }
 #feed input:focus {
-  outline: none;
   border-color: var(--amber-dim);
 }
 /* the fifo's own footer note (moved from the stimulus row, which stays
@@ -1986,5 +1983,81 @@ button.shiftviz:hover .sv-end {
 /* the exec pane's machine badge */
 #execsm {
   font-size: 10px;
+  color: var(--dim);
+}
+
+/* ========== C25 keyboard surface ==========
+   Keys are owned by focus: the accelerators fire on body focus only,
+   every arrow group is one Tab stop with an internal cursor, and the
+   focus is always visible — the amber ring (the Win3.11 focus rect;
+   the era skin re-styles it dotted in C26). */
+
+:focus {
+  outline: 1px solid var(--amber);
+  outline-offset: -1px;
+}
+
+/* the listing's row cursor: distinct from the amber PC row (.cur) — a
+   cool tint and a left bar so the two cursors never read as the same */
+.prow.kc {
+  background: rgba(90, 200, 216, 0.09);
+}
+.prow.kc::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2px;
+  height: 20px;
+  background: var(--cfg);
+}
+
+/* the walked item in the pin strip / irq lamps */
+.pcell.kc,
+.ilamp.kc {
+  border-color: var(--amber);
+  box-shadow: inset 0 0 0 1px var(--amber);
+}
+
+/* the gutter pick walk's highlighted row + preview arc */
+.prow.pkw {
+  background: rgba(255, 180, 84, 0.1);
+}
+.jparc.prev {
+  border-color: var(--amber);
+}
+.jparr.prev {
+  border-left-color: var(--amber);
+}
+
+/* the wrap-stepper pairs: one spinbox stop around both buttons — the
+   same 12px+2px+12px footprint the absolute buttons drew (the layout
+   gate pins their rects and overlap) */
+.wspin {
+  position: absolute;
+  left: 15px;
+  display: flex;
+  gap: 2px;
+  z-index: 4;
+}
+.wspin .wstep {
+  position: static;
+  flex: none;
+}
+
+/* the pin-mapping tags' spinbox stops: inline like the tag text */
+.maptag .spin {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+/* the footer status line: the focused owner's key map + narration;
+   it shrinks (ellipsis) so the right-side credits never leave */
+#statusline {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--dim);
 }

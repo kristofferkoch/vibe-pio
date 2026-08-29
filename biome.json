@@ -27,5 +27,17 @@
         "noDescendingSpecificity": "off"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["web/sm-view.html"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noNoninteractiveTabindex": "off"
+          }
+        }
+      }
+    }
+  ]
 }

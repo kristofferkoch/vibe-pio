@@ -16,7 +16,7 @@ behavior change.
 | `web/sm-view.js` | the view's DOM glue (**extract-on-touch**: lint/format always; logic migrates into require-able tested modules only as it is touched) — the listing itself is assembler-derived: rows disassemble from the loaded words and committed edits re-assemble through `pio-asm.js` into a live imem patch |
 | `web/sm-view.html` / `web/sm-view.css` | the shipped page and its stylesheet (the `<style>` extracted so css joins the gate) |
 | `web/node_gate.js` / `web/node_client_gate.js` | the headless `make web` runners (wasm engine / client-vs-oracle; the client gate also round-trips the level listing through `pio-asm.js`) |
-| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface), `browser.js` + `layout.test.js` (the headless-Chromium layout gate — see below) |
+| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface), `browser.js` + `layout.test.js` (the headless-Chromium layout gate — see below), `fake-engine-module.js` + `keyboard.test.js` (the headless-Chromium keyboard walk — see below) |
 | `tools/gen_pio_asm_golden.py` | generates `web/tests/pio-asm-golden.json` from pio_model (stdlib-only; `--check` is the drift gate in `make js`) |
 | `biome.json` | the format+lint configuration (waivers documented below) |
 | `package.json` + `package-lock.json` | dev-only dependency: `@biomejs/biome` |
@@ -72,9 +72,20 @@ vibe-pio container image) and the browser session for DOM glue.
 - `style/noDescendingSpecificity` — the mock-up's cascade layering
   (base rule early, contextual override later) is deliberate display
   structure; reordering for the linter churns the sheet for nothing.
+- `a11y/noNoninteractiveTabindex` — scoped override for `web/sm-view.html`
+  only (the C25 keyboard surface): the spinbox stops — the ds allocator
+  row and the thr/maptag stepper pairs — are deliberately focusable
+  plain divs/spans, one Tab stop per pair with hand-managed −/+/arrow
+  keys, the era idiom rather than `input[type=number]` widgets. Every
+  other group carries an honest role (listbox/group semantics, with the
+  cursor as `aria-activedescendant`); these stay role-less until the
+  era skin re-draws the markup.
 - Inline ignores (each carries its reason at the site): the Web Worker
-  `onmessage` assignment (`noGlobalAssign` — it IS the worker API) and
-  the live-redrawn waveform `<svg>` (`noSvgWithoutTitle` — its
+  `onmessage` assignment (`noGlobalAssign` — it IS the worker API),
+  `PioEngine` in `web/tests/fake-engine-module.js`
+  (`noUnusedVariables` — the assignment IS the export: the worker reads
+  it as a worker global after `importScripts`), and the live-redrawn
+  waveform `<svg>` (`noSvgWithoutTitle` — its
   innerHTML is replaced every render, a `<title>` child would be wiped;
   the frame map carries the meaning).
 
@@ -241,6 +252,43 @@ Green after the fix (content-based `min-height` on the fixed rows +
 panel compaction + the level gauge and join slots capped so the slots
 column, not a gauge, sets the tx-fifo height): 6/6.
 
+## The keyboard gate: `web/tests/keyboard.test.js`
+
+The second sanctioned DOM-glue exception (C25). It drives the real
+`sm-view.html` with **keyboard events only** — CDP
+`Input.dispatchKeyEvent` through the same `browser.js` plumbing as the
+layout gate; not one mouse event, not one `element.click()` — through
+the mouseless core loop: Tab into the machines bar and the pin strip,
+walk the arrows, latch a pin; Tab into the listing (a listbox), walk
+the row cursor, type an instruction (the editor opens under the keys
+alone), commit it, walk the gutter pick; spin a drawn stepper through
+its wrap; take an Alt+letter mnemonic.
+
+The engine is hermetic: the test's static server answers the engine
+request with `web/tests/fake-engine-module.js` — the suite's own
+`fake-engine.js` wearing the `PioEngine` factory face — so the REAL
+`engine-worker.js` boots unmodified and every keystroke's effect (a
+drive latch, a threshold wrap) is the engine truth the view renders,
+not a stub. Note for CDP key events: the DOM event's modifier state
+(`e.altKey` & co.) rides the `modifiers` bitmask (alt 1, ctrl 2, meta
+4, shift 8); the per-modifier boolean params alone do not set it.
+
+The focus model the walk pins: keys are owned by focus — text surfaces
+type, every interactive group ([data-rovi]) is ONE Tab stop with an
+internal cursor rendered as view state (the items are rebuilt every
+rendered clk, so per-item tabindex would drop focus each frame — the
+cursor classes and `aria-activedescendant` survive), and the global
+accelerators fire on body focus only. A click that lands on no
+interactive owner releases the keyboard back to the accelerators, so
+mouse users keep SPACE/R.
+
+Worked example (this gate's first commit): the shipped pre-C25 page
+could not be operated at all without the mouse — Tab never reached the
+machines bar (the walk's first failing check, 60 stops exhausted; the
+listing had no tab stop at all, so the row editor could not open under
+the keys). Red against that page; green after the C25 surface landed
+(listbox listing, arrow groups, spinbox stops, mnemonics, status line).
+
 ## Conventions for new JS code (future levels)
 
 1. Runtime code stays dependency-free and loads as a classic script;
@@ -250,6 +298,9 @@ column, not a gauge, sets the tx-fifo height): 6/6.
    TDD against golden bit-vectors generated from pio_model); `sm-view.js`
    stays extract-on-touch.
 3. DOM glue is never unit-tested — it is verified by the browser
-   session and `make web`.
+   session and `make web` — with exactly two exceptions, both
+   headless-Chromium gates in the suite: page *geometry*
+   (`layout.test.js`) and keyboard *operation* (`keyboard.test.js`,
+   the C25 walk).
 4. Red/green for every behavior fix; `make js` green before commit,
    `make web` green when the driver/gate runners changed.
