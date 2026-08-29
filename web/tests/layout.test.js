@@ -497,3 +497,88 @@ for (const [width, height] of VIEWPORTS) {
     );
   });
 }
+
+// the wrap arc in the RESET posture: WRAP_TOP=1 < WRAP_BOTTOM=31 — the
+// hardware-reset window (EXECCTRL_RESET) wraps the memory edge, its loop
+// running rows 31→0→1. The arc's height formula only understood
+// WRAP_BOTTOM ≤ WRAP_TOP, so the reset window drew as a zero-height
+// sliver pinned at row 31 while its WRAP_TOP steppers sat at row 1 — on
+// the reference 13" listing the pair and the sliver can never share the
+// screen (596px apart in a ~560px viewport), and wrap-top inc (the
+// stretch gesture at the only visible end) can never gain extent:
+// WRAP_TOP cannot pass WRAP_BOTTOM=31. The pins: the window draws with
+// real extent (its 3 reset rows), a bracket is on-screen beside the
+// visible steppers without scrolling, the stretch gesture — the same
+// controlEdit write a click rides — grows the drawn window, and all
+// four steppers stay inside the listing's scrollable extent.
+const WRAP_RESET_SCAN = `(() => {
+  const reset = () => {
+    Object.assign(curState.sms[0].execctrl, { wrapTop: 1, wrapBot: 31 });
+    OV = overlayOf(0);
+    buildProgram();
+  };
+  reset();
+  const host = document.querySelector('#progrows');
+  const hb = host.getBoundingClientRect();
+  const segs = () =>
+    [...host.querySelectorAll('.wraparc, #wraparc')].map((s) => s.getBoundingClientRect());
+  const extent = (rs) => rs.reduce((t, r) => t + r.height, 0);
+  const bad = [];
+  const px = extent(segs());
+  if (px < 20)
+    bad.push(
+      'reset wrap window draws ' + px.toFixed(1) + 'px of bracket — the 31→0→1 window (3 rows) has no extent (the height formula only knew WRAP_BOTTOM ≤ WRAP_TOP)',
+    );
+  if (!segs().some((r) => r.bottom > hb.top && r.top < hb.bottom))
+    bad.push(
+      'no wrap bracket in the listing viewport — the reset window drew only below the fold, so its visible steppers point at nothing and no gesture there can stretch it',
+    );
+  // the stretch gesture, applied the way sendCtl applies it
+  for (const [g, f, v] of VD.controlEdit(OV, 'wrap-top', 'inc'))
+    curState.sms[0][g][f] = v;
+  OV = overlayOf(0);
+  buildProgram();
+  const px2 = extent(segs());
+  if (px2 <= px)
+    bad.push(
+      'wrap-top inc did not stretch the drawn window (' +
+        px.toFixed(1) + 'px → ' + px2.toFixed(1) + 'px) — from 1/31 the visible end can never pass WRAP_BOTTOM',
+    );
+  reset();
+  const steps = [...host.querySelectorAll('.wstep')];
+  if (steps.length !== 4) bad.push('expected 4 wrap steppers, found ' + steps.length);
+  const name = (b) => b.dataset.ctl + '/' + b.dataset.g;
+  const rects = steps.map((b) => b.getBoundingClientRect());
+  const origin = host.scrollHeight + hb.top;
+  for (const [i, r] of rects.entries()) {
+    if (r.top < hb.top - 0.5)
+      bad.push(
+        'stepper ' + name(steps[i]) + ' clipped above the listing scroll origin (' +
+        (r.top - hb.top).toFixed(1) + 'px) — unreachable in a scroll container',
+      );
+    if (r.bottom > origin + 0.5)
+      bad.push(
+        'stepper ' + name(steps[i]) + ' beyond the listing content end (' +
+        (r.bottom - origin).toFixed(1) + 'px past the last row) — unreachable in a scroll container',
+      );
+  }
+  for (let i = 1; i < rects.length; i++)
+    for (let j = 0; j < i; j++) {
+      const a = rects[i], b = rects[j];
+      if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)
+        bad.push('steppers ' + name(steps[j]) + ' and ' + name(steps[i]) + ' overlap');
+    }
+  return bad;
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`wrap reset 1/31: the window draws, shows, and stretches ${width}×${height}`, async () => {
+    await load(null, width, height);
+    const bad = await page.evaluate(WRAP_RESET_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `broken reset-posture wrap window at ${width}×${height} (wrap-top inc must stretch the drawn window)`,
+    );
+  });
+}

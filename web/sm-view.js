@@ -460,18 +460,35 @@ function buildProgram() {
       `<span class="chips"></span>`;
     nodes.push(r);
   }
-  // the wrap arc is LIVE config: EXECCTRL.WRAP_TOP/BOTTOM (SPEC-7-19)
+  // the wrap arc is LIVE config: EXECCTRL.WRAP_TOP/BOTTOM (SPEC-7-19).
+  // The window draws as brackets over the rows its loop covers: normally
+  // one mid-row-to-mid-row bracket [wrapBot..wrapTop]; a one-row loop is
+  // a tick inside that row; and when the window wraps the memory edge
+  // (wrapTop < wrapBot — the 1/31 hardware-reset posture, whose loop runs
+  // 31→0→1) it is the two brackets the loop actually covers,
+  // [wrapBot..31] and [0..wrapTop]. The old single-arc height
+  // max(0, top−bot) collapsed that posture onto row 31 — below the fold,
+  // far from the wrap-top steppers at row 1, and no gesture at the
+  // visible end could ever stretch it (wrapTop cannot pass wrapBot=31).
   const wrapTop = OV.execctrl.wrapTop,
     wrapBot = OV.execctrl.wrapBot;
-  const arc = document.createElement('div');
-  arc.id = 'wraparc';
-  arc.title = `config · WRAP: after insn ${wrapTop} the PC returns to ${wrapBot} instead of falling through — the steppers at the arc's ends are real EXECCTRL writes`;
-  arc.style.top = `${wrapBot * 20 + 10}px`;
-  arc.style.height = `${Math.max(0, wrapTop - wrapBot) * 20}px`;
-  nodes.push(arc);
+  const arcTitle = `config · WRAP: after insn ${wrapTop} the PC returns to ${wrapBot} instead of falling through — the steppers at the arc's ends are real EXECCTRL writes`;
+  const wrapSeg = (lo, hi) => {
+    const s = document.createElement('div');
+    s.className = 'wraparc';
+    s.title = arcTitle;
+    s.style.top = `${lo === hi ? lo * 20 + 3 : lo * 20 + 10}px`;
+    s.style.height = `${lo === hi ? 14 : (hi - lo) * 20}px`;
+    nodes.push(s);
+  };
+  if (wrapTop >= wrapBot) wrapSeg(wrapBot, wrapTop);
+  else {
+    wrapSeg(wrapBot, 31); // the run up to the memory edge
+    wrapSeg(0, wrapTop); // the fall-through's rows, back at the top
+  }
   const ah = document.createElement('div');
   ah.id = 'wraparrow';
-  ah.title = arc.title;
+  ah.title = arcTitle;
   ah.style.top = `${wrapBot * 20 + 6}px`;
   nodes.push(ah);
   // wrap steppers on the arc (C22): WRAP_TOP at the arc's top end,
@@ -480,9 +497,10 @@ function buildProgram() {
   // pairs read [▲][▼] and mean it the same way. The pairs sit right of
   // the margin's arrow lane (x ≥ 15) so the arrowhead stays visible,
   // and each hugs its end vertically. When the ends coincide (a fresh
-  // SM stepped to 0/0) the arc collapses and the pairs bracket the one
-  // wrapped row — never the clipped-above-the-scroll-origin state the
-  // layout gate caught (wrap-top inc is the arc's only stretch gesture).
+  // SM stepped to 0/0) the window is the one-row tick and the pairs
+  // bracket that row — never the clipped-above-the-scroll-origin state
+  // the layout gate caught (wrap-top inc is the arc's stretch gesture at
+  // the top end; from the 1/31 reset posture it stretches [0..wrapTop]).
   const wrapStep = (field, g, y, label) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -601,10 +619,11 @@ function renderAlloc() {
     : '—';
 }
 function flashWrap() {
-  const a = $('wraparc');
-  if (!a) return;
-  a.classList.add('flash');
-  setTimeout(() => a.classList.remove('flash'), 240);
+  // every bracket of the window flashes (the edge-wrapped posture has two)
+  document.querySelectorAll('.wraparc').forEach((a) => {
+    a.classList.add('flash');
+    setTimeout(() => a.classList.remove('flash'), 240);
+  });
 }
 function flashPull() {
   const c = $('pullconn');

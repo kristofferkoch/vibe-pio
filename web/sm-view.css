@@ -312,7 +312,7 @@ main > * {
 #progrows {
   position: relative;
 }
-#wraparc {
+.wraparc {
   position: absolute;
   left: 1px;
   width: 7px;
@@ -324,7 +324,7 @@ main > * {
     border-color 0.45s,
     box-shadow 0.45s;
 }
-#wraparc.flash {
+.wraparc.flash {
   border-color: var(--cfg);
   box-shadow: 0 0 7px rgba(90, 200, 216, 0.55);
   transition: none;
