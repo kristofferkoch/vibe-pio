@@ -403,7 +403,8 @@ document.addEventListener('click', (e) => {
 });
 
 // ---- the status line: the focused owner's key map + its narration ------
-// The title= tooltips never show on focus — this is their keyboard home.
+// The data-tip narration (C26's era tooltips) never shows on focus —
+// this is its keyboard home: the same string, narrated in the footer.
 const BODY_KEYS =
   'keys: SPACE cycle · I insn · R run · 0 reset · 1–4 machine · Alt+letter header · Tab walks every group';
 function updateStatus() {
@@ -416,12 +417,54 @@ function updateStatus() {
   const own =
     el.tagName === 'BUTTON' ? 'Enter/Space activates' : el.tagName === 'SELECT' ? '↑/↓ choose' : '';
   const keys = el.dataset?.status || own || group?.dataset?.status || '';
-  const title = el.title || el.closest('[title]')?.title || '';
-  const line = [keys, title].filter(Boolean).join(' — ');
+  const tip = el.dataset?.tip || el.closest('[data-tip]')?.dataset.tip || '';
+  const line = [keys, tip].filter(Boolean).join(' — ');
   $('statusline').textContent = line || BODY_KEYS;
 }
 document.addEventListener('focusin', updateStatus);
 document.addEventListener('focusout', () => setTimeout(updateStatus, 0));
+
+// ---- the era tooltip: the data-tip narration's mouse path --------------
+// One narration store with the status line above (C26): hover waits a
+// beat, then the cream card portals to <body> (the scrollable-ancestor
+// clipping lesson) near the pointer, hard 2px black offset shadow. It
+// dies on mousedown/keydown/scroll, era-style. DOM glue — verified by
+// the browser session, never unit tests.
+const TIP = $('tip');
+let tipTimer = null;
+function tipHide() {
+  TIP.hidden = true;
+  clearTimeout(tipTimer);
+}
+function tipShow(host, x, y) {
+  if (!host?.dataset.tip) {
+    TIP.hidden = true;
+    return;
+  }
+  TIP.textContent = host.dataset.tip;
+  TIP.hidden = false;
+  const w = TIP.offsetWidth;
+  const h = TIP.offsetHeight;
+  let tx = x + 12;
+  let ty = y + 18;
+  if (tx + w > innerWidth - 4) tx = Math.max(4, innerWidth - w - 4);
+  if (ty + h > innerHeight - 4) ty = Math.max(4, y - h - 6);
+  TIP.style.left = `${tx}px`;
+  TIP.style.top = `${ty}px`;
+}
+document.addEventListener('mouseover', (e) => {
+  if (!e.target.closest) return;
+  const host = e.target.closest('[data-tip]');
+  if (!host) {
+    tipHide();
+    return;
+  }
+  clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => tipShow(host, e.clientX, e.clientY), 350);
+});
+document.addEventListener('mousedown', tipHide);
+document.addEventListener('keydown', tipHide);
+addEventListener('scroll', tipHide, true);
 // the import button is a real button now — it clicks through to the
 // hidden file input (a button can't nest the input; the label trick is
 // gone with the C25 keyboard work)
@@ -613,7 +656,7 @@ function buildProgram() {
     if (!ROWS[i]) {
       r.className = 'prow empty';
       r.id = `pr${i}`;
-      r.title =
+      r.dataset.tip =
         '0x0000 · jmp 0 — untouched memory (all-zero reset); if executed, control jumps to slot 00';
       r.innerHTML = `<span class="addr"><span class="smcur"></span>${i.toString().padStart(2, '0')}</span><span class="ins">·</span><span></span><span></span><span class="chips"></span>`;
       nodes.push(r);
@@ -625,10 +668,10 @@ function buildProgram() {
       dly = eff.delay;
     const sideHtml =
       side == null
-        ? `<span title="${allocOf(OV).opt ? 'opt enable bit is 0 — no side applied' : 'no side-set allocated (ds is all delay)'}">—</span>`
+        ? `<span data-tip="${allocOf(OV).opt ? 'opt enable bit is 0 — no side applied' : 'no side-set allocated (ds is all delay)'}">—</span>`
         : `<span>side <b>${side}</b></span>`;
-    const dlyHtml = dly ? `<span>[${dly}]</span>` : `<span title="delay 0">—</span>`;
-    r.title = `0x${PROG[i].w.toString(16).padStart(4, '0').toUpperCase()} · ${ROWS[i]}`;
+    const dlyHtml = dly ? `<span>[${dly}]</span>` : `<span data-tip="delay 0">—</span>`;
+    r.dataset.tip = `0x${PROG[i].w.toString(16).padStart(4, '0').toUpperCase()} · ${ROWS[i]}`;
     r.className = 'prow';
     r.id = `pr${i}`;
     const tgtHtml =
@@ -656,7 +699,7 @@ function buildProgram() {
   const wrapSeg = (lo, hi) => {
     const s = document.createElement('div');
     s.className = 'wraparc';
-    s.title = arcTitle;
+    s.dataset.tip = arcTitle;
     s.style.top = `${lo === hi ? lo * 20 + 3 : lo * 20 + 10}px`;
     s.style.height = `${lo === hi ? 14 : (hi - lo) * 20}px`;
     nodes.push(s);
@@ -668,7 +711,7 @@ function buildProgram() {
   }
   const ah = document.createElement('div');
   ah.id = 'wraparrow';
-  ah.title = arcTitle;
+  ah.dataset.tip = arcTitle;
   ah.style.top = `${wrapBot * 20 + 6}px`;
   nodes.push(ah);
   // wrap steppers on the arc (C22): WRAP_TOP at the arc's top end,
@@ -700,7 +743,7 @@ function buildProgram() {
       b.dataset.ctl = field;
       b.dataset.g = g;
       b.textContent = g === 'inc' ? '▲' : '▼';
-      b.title = `config · ${field === 'wrap-top' ? 'WRAP_TOP' : 'WRAP_BOTTOM'}: ${label(g)} — cycles 0..31, a real EXECCTRL write`;
+      b.dataset.tip = `config · ${field === 'wrap-top' ? 'WRAP_TOP' : 'WRAP_BOTTOM'}: ${label(g)} — cycles 0..31, a real EXECCTRL write`;
       box.appendChild(b);
     }
     nodes.push(box);
@@ -746,14 +789,14 @@ function buildProgram() {
     const el = document.createElement('div');
     el.className = 'jparc';
     el.id = `jp${a.i}`;
-    el.title = `jmp: ${a.i.toString().padStart(2, '0')} ↷ ${a.tgt.toString().padStart(2, '0')}`;
+    el.dataset.tip = `jmp: ${a.i.toString().padStart(2, '0')} ↷ ${a.tgt.toString().padStart(2, '0')}`;
     el.style.left = `${x}px`;
     el.style.top = `${a.lo * 20 + 10}px`;
     el.style.height = `${(a.hi - a.lo) * 20}px`;
     nodes.push(el);
     const t = document.createElement('div');
     t.className = 'jparr';
-    t.title = el.title;
+    t.dataset.tip = el.dataset.tip;
     t.style.left = `${x + 7}px`;
     t.style.top = `${a.tgt * 20 + 6}px`;
     nodes.push(t);
@@ -772,7 +815,8 @@ function updateUnbuilt() {
   const u = $('unbuilt');
   if (!u) return;
   u.hidden = !asmErr;
-  if (asmErr) u.title = `edits do not assemble — ${asmErr} — the machine runs the last good build`;
+  if (asmErr)
+    u.dataset.tip = `edits do not assemble — ${asmErr} — the machine runs the last good build`;
 }
 function renderAlloc() {
   const h = $('dspips');
@@ -782,7 +826,7 @@ function renderAlloc() {
   for (let k = 0; k < 5; k++) {
     const d = document.createElement('div');
     d.className = `pip${k < total ? (k === 0 && a.opt ? ' en' : ' s') : ' d'}`;
-    d.title =
+    d.dataset.tip =
       k < total
         ? k === 0 && a.opt
           ? 'opt-enable bit — per-instruction side on/off'
@@ -872,7 +916,7 @@ function renderProgram(st) {
         .filter((s) => s.pc === i)
         .map(
           (s) =>
-            `<i class="smk${s.k === curSm ? ' on' : ''}" style="--smc:${SM_COLOR[s.k]}" title="SM${s.k} PC">${s.k}</i>`,
+            `<i class="smk${s.k === curSm ? ' on' : ''}" style="--smc:${SM_COLOR[s.k]}" data-tip="SM${s.k} PC">${s.k}</i>`,
         )
         .join('');
     const chips = r.querySelector('.chips');
@@ -905,7 +949,7 @@ function renderSms(st) {
     const phCls = ph === 'EXEC' ? 'x' : ph === 'DELAY' ? 'd' : ph === 'STALL' ? 'w' : '';
     h +=
       `<div class="smcell${i === curSm ? ' sel' : ''}" id="sm${i}" role="option" aria-selected="${i === curSm}" data-sm="${i}" style="--smc:${SM_COLOR[i]}"` +
-      ` title="SM${i} — click selects the machine the detail panes follow (key ${i + 1}) · PC ${s.displayPc ?? 0} · ${ph} · tx ${s.txLevel ?? 0}/${s.fifoDepths?.tx ?? 4} · rx ${s.rxLevel ?? 0}/${s.fifoDepths?.rx ?? 4}">` +
+      ` data-tip="SM${i} — click selects the machine the detail panes follow (key ${i + 1}) · PC ${s.displayPc ?? 0} · ${ph} · tx ${s.txLevel ?? 0}/${s.fifoDepths?.tx ?? 4} · rx ${s.rxLevel ?? 0}/${s.fifoDepths?.rx ?? 4}">` +
       `<span class="smn">SM${i}</span><span class="smpc">${(s.displayPc ?? 0).toString().padStart(2, '0')}</span>` +
       `<span class="smph ${phCls}">${ph}</span>` +
       `<span class="smfifo">tx<b>${s.txLevel ?? 0}</b><i>/${s.fifoDepths?.tx ?? 4}</i> rx<b>${s.rxLevel ?? 0}</b><i>/${s.fifoDepths?.rx ?? 4}</i></span>` +
@@ -993,7 +1037,7 @@ function renderRegs(st) {
     const full = i < st.txWords.length;
     const borrowed = i >= 4 && depth === 8;
     d.className = `fslot${full ? ' full' : ''}${i === 0 ? ' next' : ''}${borrowed ? ' borrowed' : ''}`;
-    if (borrowed) d.title = 'config · storage borrowed from RX via FIFO JOIN TX — the tick';
+    if (borrowed) d.dataset.tip = 'config · storage borrowed from RX via FIFO JOIN TX — the tick';
     d.innerHTML = `<span class="idx">${i}${borrowed ? '<i class="tick">✓</i>' : ''}</span><span class="hexv">${full ? hex32(st.txWords[i]) : '········'}</span><span class="chv">${full ? ascii(st.txWords[i]) : ''}</span>`;
     slots.appendChild(d);
   }
@@ -1065,9 +1109,9 @@ function renderRegs(st) {
   const flags = (st.intr >> 8) & 0xff;
   let lh = '';
   for (let i = 0; i < 8; i++)
-    lh += `<span id="lf${i}" role="option" aria-selected="${i === lampCursor}" class="ilamp${(flags >> i) & 1 ? ' on' : ''}" title="IRQ flag ${i} — ${(flags >> i) & 1 ? 'SET' : 'clear'} · click = W1C via IRQ" data-flag="${i}">f${i}</span>`;
-  lh += `<span class="ilamp sub${(st.intr >> 4) & 1 ? ' on' : ''}" title="TXNFULL SM0">tx¬full</span>`;
-  lh += `<span class="ilamp sub${st.intr & 1 ? ' on' : ''}" title="RXNEMPTY SM0">rx¬empty</span>`;
+    lh += `<span id="lf${i}" role="option" aria-selected="${i === lampCursor}" class="ilamp${(flags >> i) & 1 ? ' on' : ''}" data-tip="IRQ flag ${i} — ${(flags >> i) & 1 ? 'SET' : 'clear'} · click = W1C via IRQ" data-flag="${i}">f${i}</span>`;
+  lh += `<span class="ilamp sub${(st.intr >> 4) & 1 ? ' on' : ''}" data-tip="TXNFULL SM0">tx¬full</span>`;
+  lh += `<span class="ilamp sub${st.intr & 1 ? ' on' : ''}" data-tip="RXNEMPTY SM0">rx¬empty</span>`;
   lamps.innerHTML = lh;
   applyLampCursor();
 
@@ -1118,7 +1162,7 @@ function renderPins(st) {
     ]
       .filter(Boolean)
       .join(' · ');
-    h += `<div class="${cls}" id="pc${p}" role="option" aria-selected="${p === pinCursor}" data-pin="${p}" title="${tips}"><span class="pn">${p}</span><span class="pl">${lvl}</span><span class="pm">${oe ? '▲' : drv !== null ? 'D' : ''}${patPin === p ? '◆' : ''}</span>${own >= 0 ? `<span class="po">${own}</span>` : ''}</div>`;
+    h += `<div class="${cls}" id="pc${p}" role="option" aria-selected="${p === pinCursor}" data-pin="${p}" data-tip="${tips}"><span class="pn">${p}</span><span class="pl">${lvl}</span><span class="pm">${oe ? '▲' : drv !== null ? 'D' : ''}${patPin === p ? '◆' : ''}</span>${own >= 0 ? `<span class="po">${own}</span>` : ''}</div>`;
   }
   host.innerHTML = h;
   applyPinCursor();
@@ -1198,7 +1242,10 @@ function classOf(tag) {
   if (tag === 'IDLE') return 'idle';
   return 'ctrl';
 }
-const colOf = { data: 'var(--green)', ctrl: 'var(--amber)', idle: 'var(--dim)' };
+// trace strokes ride lighter variants than the text tokens: 2px of hue
+// carries less than a glyph does, and data-green must not collapse into
+// idle-gray on the white well (C26 era skin, DESIGN-NOTES "wave")
+const colOf = { data: 'var(--wave-data)', ctrl: 'var(--wave-ctrl)', idle: 'var(--wave-idle)' };
 function renderWave(st) {
   const svg = $('wavesvg');
   const w = st.wave;
@@ -1212,7 +1259,7 @@ function renderWave(st) {
     const x = k * CW;
     s += `<line x1="${x}" y1="8" x2="${x}" y2="${LO + 6}" stroke="var(--line)" stroke-width="1"/>`;
     if ((c0 + k) % 16 === 0 && k < WIN && Math.abs(x - n * CW) > 56)
-      s += `<text x="${x + 3}" y="${RULY}" fill="var(--dimmer)" font-size="9" font-family="var(--mono)">${c0 + k}</text>`;
+      s += `<text x="${x + 3}" y="${RULY}" fill="var(--dimmer)" font-size="16" font-family="var(--mono)">${c0 + k}</text>`;
   }
   $('wavelabel').textContent =
     `gpio${lensPin} · ${st.lens.mode === 'off' ? 'raw' : st.lens.mode} lens`;
@@ -1233,7 +1280,7 @@ function renderWave(st) {
       x1 = j * CW;
     if (i > 0)
       s += `<path d="M${x0} ${yOf(pins[i - 1])} L${x0} ${y}" stroke="${col}" stroke-width="2"/>`;
-    s += `<path d="M${x0} ${y} L${x1} ${y}" stroke="${col}" stroke-width="2.4"/>`;
+    s += `<path d="M${x0} ${y} L${x1} ${y}" stroke="${col}" stroke-width="2"/>`;
     i = j;
   }
   i = 0;
@@ -1242,12 +1289,12 @@ function renderWave(st) {
     while (j < n && tags[j] === tags[i]) j++;
     if (j - i >= 3 && tags[i]) {
       const col = colOf[classOf(tags[i])];
-      s += `<text x="${((i + j) * CW) / 2}" y="${TAGY}" fill="${col}" font-size="9" font-family="var(--mono)" text-anchor="middle" opacity=".85">${tags[i]}</text>`;
+      s += `<text x="${((i + j) * CW) / 2}" y="${TAGY}" fill="${col}" font-size="16" font-family="var(--mono)" text-anchor="middle" opacity=".85">${tags[i]}</text>`;
     }
     i = j;
   }
   s += `<line x1="${n * CW - 1}" y1="6" x2="${n * CW - 1}" y2="${LO + 6}" stroke="var(--amber)" stroke-width="1" opacity=".8"/>`;
-  s += `<text x="${n * CW - 5}" y="${RULY}" fill="var(--amber)" font-size="9" font-family="var(--mono)" text-anchor="end">${st.cycle}</text>`;
+  s += `<text x="${n * CW - 5}" y="${RULY}" fill="var(--amber)" font-size="16" font-family="var(--mono)" text-anchor="end">${st.cycle}</text>`;
   svg.innerHTML = s;
 }
 
@@ -1285,7 +1332,7 @@ function inspFieldRow(group, field, spec, val) {
   } else {
     ctrl = `<input type="number" id="${id}" value="${val}" min="0" max="${max}" />`;
   }
-  return `<div class="ifield" title="${tip}"><span class="ifn">${field}</span><span class="ifb">${bits}</span>${ctrl}</div>`;
+  return `<div class="ifield" data-tip="${tip}"><span class="ifn">${field}</span><span class="ifb">${bits}</span>${ctrl}</div>`;
 }
 function renderInspector() {
   const st = V.state;
@@ -1305,55 +1352,55 @@ function renderInspector() {
   const fstatLive = `txe ${txEmpty} txf ${txFull} rxe ${rxEmpty} rxf ${rxFull}`;
   let h = '';
   h += `<div class="igroup">block</div>`;
-  h += `<div class="ireg" title="CTRL: SM_ENABLE per machine + the SM_RESTART / CLKDIV_RESTART pulses (the selected machine's bits)">
+  h += `<div class="ireg" data-tip="CTRL: SM_ENABLE per machine + the SM_RESTART / CLKDIV_RESTART pulses (the selected machine's bits)">
     <div class="irhead"><span class="irn">CTRL</span><span class="ira">0x000</span></div>
     <div class="ifields">
       ${[0, 1, 2, 3]
         .map(
           (i) =>
-            `<div class="ifield" title="SM_ENABLE bit${i} — SM${i} on/off"><span class="ifn">SM${i}_EN</span><span class="ifb">${i}</span><input type="checkbox" id="insp-ctrl-smen${i}" /></div>`,
+            `<div class="ifield" data-tip="SM_ENABLE bit${i} — SM${i} on/off"><span class="ifn">SM${i}_EN</span><span class="ifb">${i}</span><input type="checkbox" id="insp-ctrl-smen${i}" /></div>`,
         )
         .join('')}
-      <button type="button" class="ipulse" data-wr="${regs.CTRL}" data-val="${1 << (4 + curSm)}" title="SM_RESTART bit${4 + curSm}: clears SM${curSm}'s shift counters, ISR, delay, WAIT state — one clk">SM${curSm}_RESTART</button>
-      <button type="button" class="ipulse" data-wr="${regs.CTRL}" data-val="${1 << (8 + curSm)}" title="CLKDIV_RESTART bit${8 + curSm}: SM${curSm}'s divider back to phase 0">SM${curSm}_DIVRST</button>
+      <button type="button" class="ipulse" data-wr="${regs.CTRL}" data-val="${1 << (4 + curSm)}" data-tip="SM_RESTART bit${4 + curSm}: clears SM${curSm}'s shift counters, ISR, delay, WAIT state — one clk">SM${curSm}_RESTART</button>
+      <button type="button" class="ipulse" data-wr="${regs.CTRL}" data-val="${1 << (8 + curSm)}" data-tip="CLKDIV_RESTART bit${8 + curSm}: SM${curSm}'s divider back to phase 0">SM${curSm}_DIVRST</button>
     </div></div>`;
-  h += `<div class="ireg" title="FSTAT — live from the cycle sample">
+  h += `<div class="ireg" data-tip="FSTAT — live from the cycle sample">
     <div class="irhead"><span class="irn">FSTAT</span><span class="ira">0x004</span><span class="iro">${fstatLive}</span>
     <button type="button" class="ipulse" data-rd="${regs.FSTAT}">READ</button></div></div>`;
-  h += `<div class="ireg" title="FDEBUG — sticky flags, W1C; READ costs one rendered clk">
+  h += `<div class="ireg" data-tip="FDEBUG — sticky flags, W1C; READ costs one rendered clk">
     <div class="irhead"><span class="irn">FDEBUG</span><span class="ira">0x008</span><span class="iro" id="insp-fdebug">—</span>
     <button type="button" class="ipulse" data-rd="${regs.FDEBUG}">READ</button></div>
     <div class="ifields btns">
-    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 24}" title="W1C TXSTALL">clr TXSTALL</button>
-    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 16}" title="W1C TXOVER">clr TXOVER</button>
-    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 8}" title="W1C RXUNDER">clr RXUNDER</button>
-    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1}" title="W1C RXSTALL">clr RXSTALL</button></div></div>`;
-  h += `<div class="ireg" title="FLEVEL — live TX/RX nibbles">
+    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 24}" data-tip="W1C TXSTALL">clr TXSTALL</button>
+    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 16}" data-tip="W1C TXOVER">clr TXOVER</button>
+    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1 << 8}" data-tip="W1C RXUNDER">clr RXUNDER</button>
+    <button type="button" class="ipulse" data-wr="${regs.FDEBUG}" data-val="${1}" data-tip="W1C RXSTALL">clr RXSTALL</button></div></div>`;
+  h += `<div class="ireg" data-tip="FLEVEL — live TX/RX nibbles">
     <div class="irhead"><span class="irn">FLEVEL</span><span class="ira">0x00c</span><span class="iro">tx ${st.txLevel} rx ${st.rxLevel}</span>
     <button type="button" class="ipulse" data-rd="${regs.FLEVEL}">READ</button></div></div>`;
-  h += `<div class="ireg" title="TXF${curSm} — write pushes one 32-bit word into SM${curSm}'s TX FIFO (refused at full)">
+  h += `<div class="ireg" data-tip="TXF${curSm} — write pushes one 32-bit word into SM${curSm}'s TX FIFO (refused at full)">
     <div class="irhead"><span class="irn">TXF${curSm}</span><span class="ira">${hex32(regs.TXF0 + 4 * curSm)}</span></div>
     <div class="ifields"><div class="ifield hex"><span class="ifn">word</span><span class="ifb">31:0</span><input type="text" id="insp-txf0" class="ihex" placeholder="0x…" maxlength="10" /></div>
     <button type="button" id="insp-txf0go">FEED</button></div></div>`;
-  h += `<div class="ireg" title="RXF${curSm} — read pops one word of SM${curSm}'s RX FIFO (the RX drain)">
+  h += `<div class="ireg" data-tip="RXF${curSm} — read pops one word of SM${curSm}'s RX FIFO (the RX drain)">
     <div class="irhead"><span class="irn">RXF${curSm}</span><span class="ira">${hex32(regs.RXF0 + 4 * curSm)}</span><span class="iro">level ${st.rxLevel}</span>
     <button type="button" id="insp-rxf0">DRAIN</button></div></div>`;
-  h += `<div class="ireg" title="IRQ — 8 SM flags, W1C (the lamps above)">
+  h += `<div class="ireg" data-tip="IRQ — 8 SM flags, W1C (the lamps above)">
     <div class="irhead"><span class="irn">IRQ</span><span class="ira">0x030</span><span class="iro">w1c — clear one flag</span></div>
-    <div class="ifields btns">${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<button type="button" class="ipulse" data-wr="${regs.IRQ}" data-val="${1 << i}" title="clear flag ${i}">clr f${i}</button>`).join('')}</div></div>`;
-  h += `<div class="ireg" title="IRQ_FORCE — set flag i without side effects on pads">
+    <div class="ifields btns">${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<button type="button" class="ipulse" data-wr="${regs.IRQ}" data-val="${1 << i}" data-tip="clear flag ${i}">clr f${i}</button>`).join('')}</div></div>`;
+  h += `<div class="ireg" data-tip="IRQ_FORCE — set flag i without side effects on pads">
     <div class="irhead"><span class="irn">IRQ_FORCE</span><span class="ira">0x034</span><span class="iro">set one flag</span></div>
-    <div class="ifields btns">${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<button type="button" class="ipulse" data-wr="${regs.IRQ_FORCE}" data-val="${1 << i}" title="force flag ${i}">set f${i}</button>`).join('')}</div></div>`;
-  h += `<div class="ireg" title="INPUT_SYNC_BYPASS — per-GPIO: 1 bypasses the 2-FF input synchroniser">
+    <div class="ifields btns">${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<button type="button" class="ipulse" data-wr="${regs.IRQ_FORCE}" data-val="${1 << i}" data-tip="force flag ${i}">set f${i}</button>`).join('')}</div></div>`;
+  h += `<div class="ireg" data-tip="INPUT_SYNC_BYPASS — per-GPIO: 1 bypasses the 2-FF input synchroniser">
     <div class="irhead"><span class="irn">ISB</span><span class="ira">0x038</span><span class="iro" id="insp-isb">—</span></div>
     <div class="ifields"><div class="ifield hex"><span class="ifn">mask</span><span class="ifb">31:0</span><input type="text" id="insp-isbval" class="ihex" value="0x00000000" maxlength="10" /></div>
     <button type="button" id="insp-isbgo">WRITE</button>
     <button type="button" class="ipulse" data-rd="${regs.ISB}">READ</button></div></div>`;
-  h += `<div class="ireg" title="DBG_PADOUT — the driven levels, live">
+  h += `<div class="ireg" data-tip="DBG_PADOUT — the driven levels, live">
     <div class="irhead"><span class="irn">PADOUT</span><span class="ira">0x03c</span><span class="iro">${hex32(st.gpioOut)}</span></div></div>`;
-  h += `<div class="ireg" title="DBG_PADOE — the output enables, live">
+  h += `<div class="ireg" data-tip="DBG_PADOE — the output enables, live">
     <div class="irhead"><span class="irn">PADOE</span><span class="ira">0x040</span><span class="iro">${hex32(st.gpioOe)}</span></div></div>`;
-  h += `<div class="ireg" title="DBG_CFGINFO — constant">
+  h += `<div class="ireg" data-tip="DBG_CFGINFO — constant">
     <div class="irhead"><span class="irn">CFGINFO</span><span class="ira">0x044</span><span class="iro">0x10200404 · imem 32 · sm 4 · fifo 4</span></div></div>`;
 
   h += `<div class="igroup">SM${curSm} — the config overlay (settable; edits land as queued reg writes · the window follows the selected machine)</div>`;
@@ -1367,18 +1414,18 @@ function renderInspector() {
     const fields = VD.OVERLAY_GROUP_FIELDS(group);
     let fh = '';
     for (const [field, spec] of fields) fh += inspFieldRow(group, field, spec, OV[group][field]);
-    h += `<div class="ireg" title="${regName} @ ${hex32(VD.overlayAddr(curSm, group))} — compose ${hex32(VD.composeOverlay(group, OV[group]))}">
+    h += `<div class="ireg" data-tip="${regName} @ ${hex32(VD.overlayAddr(curSm, group))} — compose ${hex32(VD.composeOverlay(group, OV[group]))}">
       <div class="irhead"><span class="irn">${label}</span><span class="ira">${group === 'clkdiv' ? '+0' : group === 'pinctrl' ? '+20' : group === 'execctrl' ? '+4' : '+8'}</span>
       <span class="iro">${hex32(VD.composeOverlay(group, OV[group]))}</span></div>
       <div class="ifields">${fh}</div></div>`;
   }
-  h += `<div class="ireg" title="SM${curSm}_ADDR — the live PC">
+  h += `<div class="ireg" data-tip="SM${curSm}_ADDR — the live PC">
     <div class="irhead"><span class="irn">ADDR</span><span class="ira">+12</span><span class="iro">${st.pc}</span></div></div>`;
-  h += `<div class="ireg" title="SM${curSm}_INSTR — read: imem[pc]; write: FORCE-execute a word on SM${curSm} (delay ignored, bypasses the divider)">
+  h += `<div class="ireg" data-tip="SM${curSm}_INSTR — read: imem[pc]; write: FORCE-execute a word on SM${curSm} (delay ignored, bypasses the divider)">
     <div class="irhead"><span class="irn">INSTR</span><span class="ira">+16</span><span class="iro">0x${(BUILT[st.pc] || 0).toString(16).padStart(4, '0').toUpperCase()}</span></div>
     <div class="ifields"><div class="ifield hex"><span class="ifn">force</span><span class="ifb">15:0</span><input type="text" id="insp-force" class="ihex" placeholder="0x…" maxlength="6" /></div>
     <button type="button" id="insp-forcego">FORCE</button></div></div>`;
-  h += `<div class="ireg" title="RXF${curSm}_PUTGET0..3 — SM${curSm}'s aux-mode storage window (readable in txput, writable in txget)">
+  h += `<div class="ireg" data-tip="RXF${curSm}_PUTGET0..3 — SM${curSm}'s aux-mode storage window (readable in txput, writable in txget)">
     <div class="irhead"><span class="irn">PUTGET</span><span class="ira">${hex32(regs.PUTGET0 + 0x10 * curSm)}</span><span class="iro" id="insp-putget">—</span></div>
     <div class="ifields btns">${[0, 1, 2, 3].map((y) => `<button type="button" class="ipulse" data-rd="${regs.PUTGET0 + 0x10 * curSm + 4 * y}">PG${y}</button>`).join('')}</div></div>`;
   h += `<div class="ireg"><span class="iro" id="insp-lastread">every READ/WRITE here retires one rendered clk</span></div>`;
@@ -1829,7 +1876,7 @@ function renderEdCode() {
     }
   }
   host.innerHTML = html;
-  RE.title = html.replace(/<[^>]+>/g, '');
+  RE.dataset.tip = html.replace(/<[^>]+>/g, '');
 }
 function openRow(i, focus, seed) {
   if (curRow >= 0) commitRow();

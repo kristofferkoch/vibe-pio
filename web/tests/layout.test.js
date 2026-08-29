@@ -104,6 +104,10 @@ const JOIN_RX = { fifoDepths: { tx: 0, rx: 8 }, txWords: [], txLevel: 0, rxLevel
 async function load(state, width, height) {
   await page.setViewport(width, height);
   await page.goto(pageUrl());
+  // C26: the geometry is font-dependent (the two bitmap webfonts) —
+  // measure only once they are settled, or early frames measure the
+  // fallback faces
+  await page.evaluate('document.fonts.ready.then(() => {})');
   if (state) await page.evaluate(`render(Object.assign({}, V.state, ${JSON.stringify(state)}))`);
   await page.evaluate("document.getElementById('boot')?.remove()");
 }
@@ -432,6 +436,14 @@ test(`desktop cap 1920×1080: center at natural scale, register column at its ce
   assert(
     geo.centerW <= 904,
     `exec column above the waveform's natural scale at 1920: ${geo.centerW.toFixed(0)}px (cap 904)`,
+  );
+  // C26 re-pin: the cap is not just a ceiling — the wave must REACH its
+  // natural scale (128 cycles × 7px = 896px, the integer grid the drawn
+  // geometry snaps to). The era window's 2px bevel padding used to eat
+  // 6px of it (measured 890): the wave rendered perpetually sub-scale.
+  assert(
+    geo.centerW >= 892,
+    `exec column short of the waveform's natural scale at 1920: ${geo.centerW.toFixed(0)}px (want 896 — the window chrome must not tax the drawn grid)`,
   );
   // the pin strip must show all 32 pins at the cap: the narrated legend
   // that used to lead the strip measured 828px (scrollWidth 2043 in a

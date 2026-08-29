@@ -51,673 +51,703 @@
   listbox, every arrow group and stepper pair is one Tab stop, the
   header buttons carry Alt+letter mnemonics, the footer narrates
   whichever group owns the keys, and focus is always visible (the
-  amber ring). Serve from the repo root (web/serve.py)
+  1px dotted focus rect). C26 re-skins the page as the era window
+  (silver chrome, navy title bar, two bitmap fonts — see
+  mockups/DESIGN-NOTES.md, "The era skin"); the narration moved from
+  title= to data-tip= so the page, not the browser, draws tooltips.
+  Serve from the repo root (web/serve.py)
   so the engine resolves at build/web/.
 -->
     <link rel="stylesheet" href="sm-view.css">
   </head>
   <body>
-    <header>
-      <div class="brand">vibe<em>-</em>pio</div>
-      <div class="lvl">4×SM · <b>SANDBOX</b><span class="tail"> · all features unlocked</span></div>
-      <span
-        class="cfgtag"
-        id="clkdivtag"
-        title="config · SMx_CLKDIV — the real divider; set it in the inspector"
-        >clkdiv ÷1.0</span
-      >
-      <div class="spacer"></div>
-      <button
-        type="button"
-        id="bempty"
-        class="mini"
-        title="reload empty memory — all-zero is the jmp-0 park"
-      >
-        ␀ <u>E</u>MPTY
-      </button>
-      <button
-        type="button"
-        id="bdemo"
-        class="mini"
-        title="load the demo program + config — uart_tx, an 8N1 transmitter on pin 0"
-      >
-        ▶ <u>D</u>EMO
-      </button>
-      <button
-        type="button"
-        id="bexport"
-        class="mini"
-        title="download the stored program (32 words + config overlay) as JSON"
-      >
-        ⇩ <u>J</u>SON
-      </button>
-      <button type="button" id="bimport" class="mini imp" title="import a stored-program JSON">
-        ⇧ <u>I</u>MPORT
-      </button>
-      <input type="file" id="impfile" accept=".json,application/json" hidden>
-      <button
-        type="button"
-        id="bcopy"
-        class="mini"
-        title="copy the program as a canonical pioasm listing"
-      >
-        ⧉ <u>L</u>ISTING
-      </button>
-      <div class="cyc">CYCLE <b id="cyc">0</b></div>
-      <div class="ctrl">
-        <button type="button" id="breset" title="reset SM (0)">⟲</button>
-        <button type="button" id="brun" class="primary" title="run / pause (R)">
-          ▶ <u>R</u> RUN
-        </button>
-        <select id="speed" title="run speed">
-          <option value="120">×1</option>
-          <option value="30" selected>×4</option>
-          <option value="8">×16</option>
-        </select>
-        <button type="button" id="bstep" title="single cycle (SPACE)">⏭ <u>C</u>YCLE</button>
-        <button type="button" id="binsn" title="step one instruction (I)">⏭ I<u>N</u>SN</button>
+    <div id="win">
+      <!-- the one master window: nothing decorative lies — no control-menu
+           box, no min/max buttons; the navy bar carries only the caption
+           and the live cycle readout -->
+      <div id="titlebar">
+        <span class="caption"
+          >vibe-pio — 4×SM · <b>SANDBOX</b><span class="tail"> · all features unlocked</span></span
+        >
+        <span class="cyc">CYCLE <b id="cyc">0</b></span>
       </div>
-    </header>
+      <header>
+        <span
+          class="cfgtag"
+          id="clkdivtag"
+          data-tip="config · SMx_CLKDIV — the real divider; set it in the inspector"
+          >clkdiv ÷1.0</span
+        >
+        <div class="spacer"></div>
+        <button
+          type="button"
+          id="bempty"
+          class="mini"
+          data-tip="reload empty memory — all-zero is the jmp-0 park"
+        >
+          ␀ <u>E</u>MPTY
+        </button>
+        <button
+          type="button"
+          id="bdemo"
+          class="mini"
+          data-tip="load the demo program + config — uart_tx, an 8N1 transmitter on pin 0"
+        >
+          ▶ <u>D</u>EMO
+        </button>
+        <button
+          type="button"
+          id="bexport"
+          class="mini"
+          data-tip="download the stored program (32 words + config overlay) as JSON"
+        >
+          ⇩ <u>J</u>SON
+        </button>
+        <button type="button" id="bimport" class="mini imp" data-tip="import a stored-program JSON">
+          ⇧ <u>I</u>MPORT
+        </button>
+        <input type="file" id="impfile" accept=".json,application/json" hidden>
+        <button
+          type="button"
+          id="bcopy"
+          class="mini"
+          data-tip="copy the program as a canonical pioasm listing"
+        >
+          ⧉ <u>L</u>ISTING
+        </button>
+        <div class="ctrl">
+          <button type="button" id="breset" data-tip="reset SM (0)">⟲</button>
+          <button type="button" id="brun" class="primary" data-tip="run / pause (R)">
+            ▶ <u>R</u> RUN
+          </button>
+          <select id="speed" data-tip="run speed">
+            <option value="120">×1</option>
+            <option value="30" selected>×4</option>
+            <option value="8">×16</option>
+          </select>
+          <button type="button" id="bstep" data-tip="single cycle (SPACE)">⏭ <u>C</u>YCLE</button>
+          <button type="button" id="binsn" data-tip="step one instruction (I)">
+            ⏭ I<u>N</u>SN
+          </button>
+        </div>
+      </header>
 
-    <!-- ============ the four machines: cursors, per-SM FIFO columns === -->
-    <div
-      id="smsbar"
-      title="four machines, one playground — the shared listing carries all four PC cursors; a chip selects the machine the detail panes (exec, registers, inspector, drawn config) follow"
-    >
-      <span class="pslabel">machines · ←/→ selects · keys 1–4</span>
+      <!-- ============ the four machines: cursors, per-SM FIFO columns === -->
       <div
-        id="smscells"
-        tabindex="0"
-        role="listbox"
-        aria-label="machines"
-        data-rovi
-        data-status="machines: ←/→ select · 1–4 jump straight there"
-      ></div>
-    </div>
+        id="smsbar"
+        data-tip="four machines, one playground — the shared listing carries all four PC cursors; a chip selects the machine the detail panes (exec, registers, inspector, drawn config) follow"
+      >
+        <span class="pslabel">machines · ←/→ selects · keys 1–4</span>
+        <div
+          id="smscells"
+          tabindex="0"
+          role="listbox"
+          aria-label="machines"
+          data-rovi
+          data-status="machines: ←/→ select · 1–4 jump straight there"
+        ></div>
+      </div>
 
-    <!-- ============ pin I/O strip: drives, hold latches, pattern ============ -->
-    <!-- the legend shows the marks, not the sentence: three color-echoed
+      <!-- ============ pin I/O strip: drives, hold latches, pattern ============ -->
+      <!-- the legend shows the marks, not the sentence: three color-echoed
          tokens (amber ▲ · cyan · the corner chip) — the full narration
          lives in the title, and the strip's room belongs to the pins -->
-    <div id="pinstrip">
-      <span
-        class="pslabel"
-        title="pins — click cycles the drive latch: released (Z) → held 1 → held 0. cyan = a held latch (the digit is the driven level) · ▲ = the engine drives the pad (OE) · the colored corner names the owning SM — the last writer, highest-numbered on a same-clk conflict"
-        >pins · ←/→ walks the cursor <b>Z→1→0</b> · <span class="pk out">▲</span> out ·
-        <span class="pk drv">driven</span>
-        · <span class="pk own">0</span> owner SM</span
-      >
-      <div
-        id="pincells"
-        tabindex="0"
-        role="listbox"
-        aria-label="pin drive latches"
-        data-rovi
-        data-status="pins: ←/→ walk · 1/0 latch · Z release · Space cycles Z→1→0"
-      ></div>
-    </div>
-
-    <main>
-      <!-- ================= program ================= -->
-      <section class="panel" id="program" style="display:flex;flex-direction:column">
-        <div class="ptitle">
-          program memory · 32 × 16b
-          <span class="aux"
-            >canonical C12 · <b id="usedct">0/32</b> used · click a row · Tab crosses
-            ins/side/delay</span
-          >
-        </div>
-        <div
-          id="dsalloc"
-          title="the ds field (bits 12:8) is one shared budget: side-set bits steal delay range. This allocation is PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, program-wide."
+      <div id="pinstrip">
+        <span
+          class="pslabel"
+          data-tip="pins — click cycles the drive latch: released (Z) → held 1 → held 0. cyan = a held latch (the digit is the driven level) · ▲ = the engine drives the pad (OE) · the colored corner names the owning SM — the last writer, highest-numbered on a same-clk conflict"
+          >pins · ←/→ walks the cursor <b>Z→1→0</b> · <span class="pk out">▲</span> out ·
+          <span class="pk drv">driven</span>
+          · <span class="pk own">0</span> owner SM</span
         >
-          <div
-            class="dsrow1"
-            id="spin-ds"
-            tabindex="0"
-            data-spin
-            data-rovi
-            data-status="ds split: −/+ or ←/→ moves a bit between side-set and delay"
-          >
-            <span>ds 5b</span>
-            <button
-              type="button"
-              id="ssminus"
-              data-g="dec"
-              title="fewer side bits → more delay range"
-            >
-              −
-            </button>
-            <div id="dspips"></div>
-            <button
-              type="button"
-              id="ssplus"
-              data-g="inc"
-              title="more side bits → less delay range"
-            >
-              +
-            </button>
-            <label class="opttgl" title="OPT: an enable bit so instructions may skip the side-set"
-              ><input type="checkbox" id="ssopt">opt</label
-            >
-          </div>
-          <div id="dsinfo"></div>
-        </div>
-        <div class="phead">
-          <span>addr</span><span>instruction</span><span>side</span><span>delay</span><span></span>
-        </div>
         <div
-          id="progrows"
+          id="pincells"
           tabindex="0"
-          data-rovi
           role="listbox"
-          aria-label="program memory"
-          data-status="listing: ↑/↓ rows · Enter or a letter edits the row · Esc cancels"
-        >
-          <div
-            id="rowedit"
-            hidden
-            data-status="row editor: Enter/↓ next row · ↑ back · Tab crosses cells · Esc cancels"
-          >
-            <div class="recell reins">
-              <pre id="edithl" aria-hidden="true"></pre>
-              <textarea id="edittxt" spellcheck="false" wrap="off"></textarea>
-            </div>
-            <textarea
-              id="edside"
-              class="recell"
-              placeholder="side"
-              rows="1"
-              spellcheck="false"
-            ></textarea>
-            <textarea
-              id="eddly"
-              class="recell"
-              placeholder="[dly]"
-              rows="1"
-              spellcheck="false"
-            ></textarea>
-          </div>
-        </div>
-        <div id="progfoot">
-          <span>words <b id="wordsct">0</b></span><span>free <b id="freect">32</b></span>
-          <span
-            class="chip unbuilt"
-            id="unbuilt"
-            hidden
-            title="edits do not assemble — the machine runs the last good build (the title carries the row error)"
-            >unbuilt edits</span
-          >
-        </div>
-      </section>
+          aria-label="pin drive latches"
+          data-rovi
+          data-status="pins: ←/→ walk · 1/0 latch · Z release · Space cycles Z→1→0"
+        ></div>
+      </div>
 
-      <!-- ================= center ================= -->
-      <!-- pass 2 of the layout reprioritization: the old execbody wall
+      <main>
+        <!-- ================= program ================= -->
+        <section class="panel" id="program" style="display:flex;flex-direction:column">
+          <div class="ptitle">
+            program memory · 32 × 16b
+            <span class="aux"
+              >canonical C12 · <b id="usedct">0/32</b> used · click a row · Tab crosses
+              ins/side/delay</span
+            >
+          </div>
+          <div
+            id="dsalloc"
+            data-tip="the ds field (bits 12:8) is one shared budget: side-set bits steal delay range. This allocation is PINCTRL.SIDESET_COUNT + EXECCTRL.SIDE_EN, program-wide."
+          >
+            <div
+              class="dsrow1"
+              id="spin-ds"
+              tabindex="0"
+              data-spin
+              data-rovi
+              data-status="ds split: −/+ or ←/→ moves a bit between side-set and delay"
+            >
+              <span>ds 5b</span>
+              <button
+                type="button"
+                id="ssminus"
+                data-g="dec"
+                data-tip="fewer side bits → more delay range"
+              >
+                −
+              </button>
+              <div id="dspips"></div>
+              <button
+                type="button"
+                id="ssplus"
+                data-g="inc"
+                data-tip="more side bits → less delay range"
+              >
+                +
+              </button>
+              <label
+                class="opttgl"
+                data-tip="OPT: an enable bit so instructions may skip the side-set"
+                ><input type="checkbox" id="ssopt">opt</label
+              >
+            </div>
+            <div id="dsinfo"></div>
+          </div>
+          <div class="phead">
+            <span>addr</span><span>instruction</span><span>side</span><span>delay</span
+            ><span></span>
+          </div>
+          <div
+            id="progrows"
+            tabindex="0"
+            data-rovi
+            role="listbox"
+            aria-label="program memory"
+            data-status="listing: ↑/↓ rows · Enter or a letter edits the row · Esc cancels"
+          >
+            <div
+              id="rowedit"
+              hidden
+              data-status="row editor: Enter/↓ next row · ↑ back · Tab crosses cells · Esc cancels"
+            >
+              <div class="recell reins">
+                <pre id="edithl" aria-hidden="true"></pre>
+                <textarea id="edittxt" spellcheck="false" wrap="off"></textarea>
+              </div>
+              <textarea
+                id="edside"
+                class="recell"
+                placeholder="side"
+                rows="1"
+                spellcheck="false"
+              ></textarea>
+              <textarea
+                id="eddly"
+                class="recell"
+                placeholder="[dly]"
+                rows="1"
+                spellcheck="false"
+              ></textarea>
+            </div>
+          </div>
+          <div id="progfoot">
+            <span>words <b id="wordsct">0</b></span><span>free <b id="freect">32</b></span>
+            <span
+              class="chip unbuilt"
+              id="unbuilt"
+              hidden
+              data-tip="edits do not assemble — the machine runs the last good build (the title carries the row error)"
+              >unbuilt edits</span
+            >
+          </div>
+        </section>
+
+        <!-- ================= center ================= -->
+        <!-- pass 2 of the layout reprioritization: the old execbody wall
            (flex:1 blank around the instruction echo) is gone — the echo
            is two lines — and the out datapath (tx fifo → pull → osr)
            took its place, moved in from the right column. The stack
            reads top to bottom: what runs (echo) → what it shifts out
            (fifo/osr) → what the pins did (wave) → what feeds it
            (stimulus/pattern). -->
-      <section class="panel" id="exec">
-        <div class="ptitle">
-          execute
-          <b
-            id="execsm"
-            title="the machine this pane follows — select with the machines bar above or keys 1–4"
-            >SM0</b
-          >
-          <span id="execins"></span>
-          <span class="aux" id="mon"
-            >MONITOR lens
-            <select
-              id="lensmode"
-              title="the receiver monitor is a lens over the picked pin — a lens, never a judge, until levels"
+        <section class="panel" id="exec">
+          <div class="ptitle">
+            execute
+            <b
+              id="execsm"
+              data-tip="the machine this pane follows — select with the machines bar above or keys 1–4"
+              >SM0</b
             >
-              <option value="off" selected>off</option>
-              <option value="square">square</option>
-              <option value="uart">uart 8N1</option>
-            </select>
-            · pin
-            <select id="lenspin" title="the lens/waveform target pin"></select>
-            · decoded <b id="monbuf"></b> <span id="moncnt"></span></span
-          >
-        </div>
-        <div id="execslim">
-          <span id="execfields"></span>
-          <span id="phase">
-            <b id="phasename">EXEC</b>
-            <span id="phasebar"><span id="phasefill"></span></span>
-            <span id="phasesub"></span>
-          </span>
-        </div>
+            <span id="execins"></span>
+            <span class="aux" id="mon"
+              >MONITOR lens
+              <select
+                id="lensmode"
+                data-tip="the receiver monitor is a lens over the picked pin — a lens, never a judge, until levels"
+              >
+                <option value="off" selected>off</option>
+                <option value="square">square</option>
+                <option value="uart">uart 8N1</option>
+              </select>
+              · pin
+              <select id="lenspin" data-tip="the lens/waveform target pin"></select>
+              · decoded <b id="monbuf"></b> <span id="moncnt"></span></span
+            >
+          </div>
+          <div id="execslim">
+            <span id="execfields"></span>
+            <span id="phase">
+              <b id="phasename">EXEC</b>
+              <span id="phasebar"><span id="phasefill"></span></span>
+              <span id="phasesub"></span>
+            </span>
+          </div>
 
-        <!-- pass 4: the shift registers sandwich the fifo pair — isr
+          <!-- pass 4: the shift registers sandwich the fifo pair — isr
              above (its push arrow feeds the rx half below), osr below
              (the pull connector feeds it from the tx half). In on top,
              out on the bottom, storage in the middle. -->
-        <div id="isr">
-          <div class="ptitle">
-            isr · in shift register <span class="aux" id="isrnote">idle</span>
-          </div>
-          <div class="bits" id="isrbits"></div>
-          <button
-            type="button"
-            class="shiftviz"
-            id="isrviz"
-            data-ctl="isr-dir"
-            data-g="toggle"
-            title="config · IN_SHIFTDIR: click flips which ISR end IN feeds — the arrow is the register's shift direction"
-          >
-            <span class="sv-end" id="isrdir">pins → in</span>
-            <span class="sv-arrow" id="israrr"></span>
-            <span class="sv-end">push ⇣ rx</span>
-          </button>
-          <div class="shbar">
-            <div class="shfill" id="isrfill"></div>
-            <div
-              class="shnotch"
-              id="isrnotch"
-              title="PUSH_THRESH — autopush fires as the counter crosses it"
-            ></div>
-          </div>
-          <div class="shiftnote">
-            <span>shift <b id="isrcnt">0</b>/32</span>
-            <span class="cfgdraw">
-              <button
-                type="button"
-                class="ctgl"
-                id="aptg2"
-                data-ctl="autopush"
-                data-g="toggle"
-                title="config · AUTOPUSH: on IN reaching the threshold, push ISR to the RX FIFO in the same cycle"
-              >
-                autopush
-              </button>
-              <span
-                class="thrctl"
-                id="spin-pushthr"
-                tabindex="0"
-                data-spin
-                data-rovi
-                data-status="−/+ or ←/→ step · wraps"
-                title="config · PUSH_THRESH: 1–32, steppers wrap; 0 encodes 32"
-              >
-                thr
-                <button type="button" class="cstep" data-ctl="push-thr" data-g="dec">−</button>
-                <b id="apthr2">32</b>
-                <button type="button" class="cstep" data-ctl="push-thr" data-g="inc">+</button>
+          <div id="isr">
+            <div class="ptitle">
+              isr · in shift register <span class="aux" id="isrnote">idle</span>
+            </div>
+            <div class="bits" id="isrbits"></div>
+            <button
+              type="button"
+              class="shiftviz"
+              id="isrviz"
+              data-ctl="isr-dir"
+              data-g="toggle"
+              data-tip="config · IN_SHIFTDIR: click flips which ISR end IN feeds — the arrow is the register's shift direction"
+            >
+              <span class="sv-end" id="isrdir">pins → in</span>
+              <span class="sv-arrow" id="israrr"></span>
+              <span class="sv-end">push ⇣ rx</span>
+            </button>
+            <div class="shbar">
+              <div class="shfill" id="isrfill"></div>
+              <div
+                class="shnotch"
+                id="isrnotch"
+                data-tip="PUSH_THRESH — autopush fires as the counter crosses it"
+              ></div>
+            </div>
+            <div class="shiftnote">
+              <span>shift <b id="isrcnt">0</b>/32</span>
+              <span class="cfgdraw">
+                <button
+                  type="button"
+                  class="ctgl"
+                  id="aptg2"
+                  data-ctl="autopush"
+                  data-g="toggle"
+                  data-tip="config · AUTOPUSH: on IN reaching the threshold, push ISR to the RX FIFO in the same cycle"
+                >
+                  autopush
+                </button>
+                <span
+                  class="thrctl"
+                  id="spin-pushthr"
+                  tabindex="0"
+                  data-spin
+                  data-rovi
+                  data-status="−/+ or ←/→ step · wraps"
+                  data-tip="config · PUSH_THRESH: 1–32, steppers wrap; 0 encodes 32"
+                >
+                  thr
+                  <button type="button" class="cstep" data-ctl="push-thr" data-g="dec">−</button>
+                  <b id="apthr2">32</b>
+                  <button type="button" class="cstep" data-ctl="push-thr" data-g="inc">+</button>
+                </span>
               </span>
-            </span>
-            <span class="flag" id="isrf">ISR Full</span>
+              <span class="flag" id="isrf">ISR Full</span>
+            </div>
           </div>
-        </div>
 
-        <!-- the fifo twins: one row, even split — the tx/rx pair is the
+          <!-- the fifo twins: one row, even split — the tx/rx pair is the
              machine's whole scratch storage surface, so it reads as one
              band (pass 3 of the layout reprioritization) -->
-        <div id="fiforow">
-          <div id="fifo">
-            <div class="ptitle">
-              tx fifo
-              <span class="aux"
-                ><span
-                  class="segjoin"
-                  id="segjoin"
-                  tabindex="0"
-                  data-rovi
-                  data-status="fifo join: ←/→ pick the mode · Space/Enter applies"
-                  title="config · FIFO JOIN — pick the mode: a real SHIFTCTRL write that flushes the FIFOs. The aux modes (txput/txget/putget) stay inspector-set."
-                >
-                  <button
-                    type="button"
-                    id="segsplit"
-                    tabindex="-1"
-                    aria-pressed="false"
-                    data-ctl="fifo-mode"
-                    data-g="split"
-                    title="config · FIFO JOIN → split: TX 4 deep + RX 4 deep — the reset posture"
+          <div id="fiforow">
+            <div id="fifo">
+              <div class="ptitle">
+                tx fifo
+                <span class="aux"
+                  ><span
+                    class="segjoin"
+                    id="segjoin"
+                    tabindex="0"
+                    data-rovi
+                    data-status="fifo join: ←/→ pick the mode · Space/Enter applies"
+                    data-tip="config · FIFO JOIN — pick the mode: a real SHIFTCTRL write that flushes the FIFOs. The aux modes (txput/txget/putget) stay inspector-set."
                   >
-                    split
-                  </button>
-                  <button
-                    type="button"
-                    id="segtx"
-                    tabindex="-1"
-                    aria-pressed="false"
-                    data-ctl="fifo-mode"
-                    data-g="join-tx"
-                    title="config · FIFO JOIN → join TX: both halves as one TX FIFO, 8 deep — RX goes dark"
-                  >
-                    join tx
-                  </button>
-                  <button
-                    type="button"
-                    id="segrx"
-                    tabindex="-1"
-                    aria-pressed="false"
-                    data-ctl="fifo-mode"
-                    data-g="join-rx"
-                    title="config · FIFO JOIN → join RX: both halves as one RX FIFO, 8 deep — TX goes dark"
-                  >
-                    join rx
-                  </button>
+                    <button
+                      type="button"
+                      id="segsplit"
+                      tabindex="-1"
+                      aria-pressed="false"
+                      data-ctl="fifo-mode"
+                      data-g="split"
+                      data-tip="config · FIFO JOIN → split: TX 4 deep + RX 4 deep — the reset posture"
+                    >
+                      split
+                    </button>
+                    <button
+                      type="button"
+                      id="segtx"
+                      tabindex="-1"
+                      aria-pressed="false"
+                      data-ctl="fifo-mode"
+                      data-g="join-tx"
+                      data-tip="config · FIFO JOIN → join TX: both halves as one TX FIFO, 8 deep — RX goes dark"
+                    >
+                      join tx
+                    </button>
+                    <button
+                      type="button"
+                      id="segrx"
+                      tabindex="-1"
+                      aria-pressed="false"
+                      data-ctl="fifo-mode"
+                      data-g="join-rx"
+                      data-tip="config · FIFO JOIN → join RX: both halves as one RX FIFO, 8 deep — TX goes dark"
+                    >
+                      join rx
+                    </button>
+                  </span>
+                  <span class="cfgtx on" id="txghost" hidden></span>
                 </span>
-                <span class="cfgtx on" id="txghost" hidden></span>
-              </span>
-            </div>
-            <div id="fifobody">
-              <div id="fslots"></div>
-              <div id="fifometa">
-                <div id="fifolvltxt">LEVEL <b id="fifolvl">0</b>/<span id="txdepth2">4</span></div>
-                <div id="fifolvlbar"><div id="fifolvlfill"></div></div>
-                <div id="fifostall">EMPTY · SM STALLED</div>
               </div>
-            </div>
-            <!-- the depth/overflow note lives on the fifo it describes
-                 (the stimulus row stays one line); refuseFlash blinks
-                 the meta column beside it -->
-            <div id="txnote" title="writes are refused while the FIFO is full">
-              TX FIFO 4 deep — overflow is refused
-            </div>
-          </div>
-
-          <div id="rxfifo">
-            <div class="ptitle">
-              rx fifo
-              <span class="aux"
-                ><span class="cfgtx on" id="rxghost" hidden></span>
-                learned only by draining</span
-              >
-            </div>
-            <div id="rxbody">
-              <div id="rxmeta">
-                <div id="rxlvltxt">LEVEL <b id="rxlvl">0</b>/<span id="rxdepth2">4</span></div>
-                <div id="rxlvlbar"><div id="rxlvlfill"></div></div>
-                <div id="rxbtns">
-                  <button
-                    type="button"
-                    id="bdrain"
-                    title="read RXF0 once — a queued reg read, one rendered clk"
-                  >
-                    DRAIN 1
-                  </button>
-                  <button type="button" id="bdrainall" title="drain every mirrored word">
-                    DRAIN ALL
-                  </button>
+              <div id="fifobody">
+                <div id="fslots"></div>
+                <div id="fifometa">
+                  <div id="fifolvltxt">
+                    LEVEL <b id="fifolvl">0</b>/<span id="txdepth2">4</span>
+                  </div>
+                  <div id="fifolvlbar"><div id="fifolvlfill"></div></div>
+                  <div id="fifostall">EMPTY · SM STALLED</div>
                 </div>
               </div>
-              <div id="rxlog"><span class="note">drained words appear here</span></div>
+              <!-- the depth/overflow note lives on the fifo it describes
+                 (the stimulus row stays one line); refuseFlash blinks
+                 the meta column beside it -->
+              <div id="txnote" data-tip="writes are refused while the FIFO is full">
+                TX FIFO 4 deep — overflow is refused
+              </div>
+            </div>
+
+            <div id="rxfifo">
+              <div class="ptitle">
+                rx fifo
+                <span class="aux"
+                  ><span class="cfgtx on" id="rxghost" hidden></span>
+                  learned only by draining</span
+                >
+              </div>
+              <div id="rxbody">
+                <div id="rxmeta">
+                  <div id="rxlvltxt">LEVEL <b id="rxlvl">0</b>/<span id="rxdepth2">4</span></div>
+                  <div id="rxlvlbar"><div id="rxlvlfill"></div></div>
+                  <div id="rxbtns">
+                    <button
+                      type="button"
+                      id="bdrain"
+                      data-tip="read RXF0 once — a queued reg read, one rendered clk"
+                    >
+                      DRAIN 1
+                    </button>
+                    <button type="button" id="bdrainall" data-tip="drain every mirrored word">
+                      DRAIN ALL
+                    </button>
+                  </div>
+                </div>
+                <div id="rxlog"><span class="note">drained words appear here</span></div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div
-          class="flowconn"
-          id="pullconn"
-          title="PULL / autopull moves a word from the TX FIFO into the OSR"
-        >
-          <span class="gly">⇣</span>
-          pull <span class="gly">⇣</span>
-        </div>
-
-        <div id="osr">
-          <div class="ptitle">osr · out shift register</div>
-          <div class="bits" id="osrbits"></div>
-          <button
-            type="button"
-            class="shiftviz"
-            id="osrviz"
-            data-ctl="osr-dir"
-            data-g="toggle"
-            title="config · OUT_SHIFTDIR: click flips which OSR end feeds OUT — the arrow is the register's shift direction"
+          <div
+            class="flowconn"
+            id="pullconn"
+            data-tip="PULL / autopull moves a word from the TX FIFO into the OSR"
           >
-            <span class="sv-end">fifo ⇣</span>
-            <span class="sv-arrow" id="osrarr"></span>
-            <span class="sv-end" id="osrdir">out → pins</span>
-          </button>
-          <div class="shbar">
-            <div class="shfill" id="osrfill"></div>
-            <div
-              class="shnotch"
-              id="osrnotch"
-              title="PULL_THRESH — autopull refills as the counter crosses it"
-            ></div>
+            <span class="gly">⇣</span>
+            pull <span class="gly">⇣</span>
           </div>
-          <div class="shiftnote">
-            <span>shift <span id="osrcnt" style="color:var(--txt)">0</span>/32</span>
-            <span class="cfgdraw">
-              <button
-                type="button"
-                class="ctgl"
-                id="aptgl"
-                data-ctl="autopull"
-                data-g="toggle"
-                title="config · AUTOPULL: between OUTs, reload OSR from the TX FIFO once the counter crosses the threshold"
-              >
-                autopull
-              </button>
+
+          <div id="osr">
+            <div class="ptitle">osr · out shift register</div>
+            <div class="bits" id="osrbits"></div>
+            <button
+              type="button"
+              class="shiftviz"
+              id="osrviz"
+              data-ctl="osr-dir"
+              data-g="toggle"
+              data-tip="config · OUT_SHIFTDIR: click flips which OSR end feeds OUT — the arrow is the register's shift direction"
+            >
+              <span class="sv-end">fifo ⇣</span>
+              <span class="sv-arrow" id="osrarr"></span>
+              <span class="sv-end" id="osrdir">out → pins</span>
+            </button>
+            <div class="shbar">
+              <div class="shfill" id="osrfill"></div>
+              <div
+                class="shnotch"
+                id="osrnotch"
+                data-tip="PULL_THRESH — autopull refills as the counter crosses it"
+              ></div>
+            </div>
+            <div class="shiftnote">
+              <span>shift <span id="osrcnt" style="color:var(--txt)">0</span>/32</span>
+              <span class="cfgdraw">
+                <button
+                  type="button"
+                  class="ctgl"
+                  id="aptgl"
+                  data-ctl="autopull"
+                  data-g="toggle"
+                  data-tip="config · AUTOPULL: between OUTs, reload OSR from the TX FIFO once the counter crosses the threshold"
+                >
+                  autopull
+                </button>
+                <span
+                  class="thrctl"
+                  id="spin-pullthr"
+                  tabindex="0"
+                  data-spin
+                  data-rovi
+                  data-status="−/+ or ←/→ step · wraps"
+                  data-tip="config · PULL_THRESH: 1–32, steppers wrap; 0 encodes 32"
+                >
+                  thr
+                  <button type="button" class="cstep" data-ctl="pull-thr" data-g="dec">−</button>
+                  <b id="apthr">32</b>
+                  <button type="button" class="cstep" data-ctl="pull-thr" data-g="inc">+</button>
+                </span>
+              </span>
+              <span class="flag" id="osre" data-tip="osr_cnt ≥ pull threshold">OSRE</span>
+            </div>
+          </div>
+          <div id="framemap">
+            <span class="fmlabel">frame map · 8N1</span>
+            <div id="fmcells"></div>
+          </div>
+          <div class="ptitle wavetitle" style="border-top:1px solid var(--line)">
+            <span id="wavelabel">gpio0</span>
+            <span
+              class="cfgtag maptag"
+              data-tip="config · OUT mapping: OUT_BASE / OUT_COUNT — the steppers are real PINCTRL writes; counts cycle 1..32 (0 encodes 32)"
+            >
+              out
               <span
-                class="thrctl"
-                id="spin-pullthr"
+                class="spin"
+                id="spin-outbase"
                 tabindex="0"
                 data-spin
                 data-rovi
-                data-status="−/+ or ←/→ step · wraps"
-                title="config · PULL_THRESH: 1–32, steppers wrap; 0 encodes 32"
+                data-status="−/+ or ←/→ step"
               >
-                thr
-                <button type="button" class="cstep" data-ctl="pull-thr" data-g="dec">−</button>
-                <b id="apthr">32</b>
-                <button type="button" class="cstep" data-ctl="pull-thr" data-g="inc">+</button>
+                <button type="button" class="tstep" tabindex="-1" data-ctl="out-base" data-g="dec">
+                  −
+                </button><b id="outbase">0</b
+                ><button type="button" class="tstep" tabindex="-1" data-ctl="out-base" data-g="inc">
+                  +
+                </button>
+              </span>
+              ·<span
+                class="spin"
+                id="spin-outcnt"
+                tabindex="0"
+                data-spin
+                data-rovi
+                data-status="−/+ or ←/→ step · wraps 1..32"
+              >
+                <button type="button" class="tstep" tabindex="-1" data-ctl="out-cnt" data-g="dec">
+                  −
+                </button><b id="outcnt">32</b
+                ><button type="button" class="tstep" tabindex="-1" data-ctl="out-cnt" data-g="inc">
+                  +
+                </button>
               </span>
             </span>
-            <span class="flag" id="osre" title="osr_cnt ≥ pull threshold">OSRE</span>
-          </div>
-        </div>
-        <div id="framemap">
-          <span class="fmlabel">frame map · 8N1</span>
-          <div id="fmcells"></div>
-        </div>
-        <div class="ptitle wavetitle" style="border-top:1px solid var(--line)">
-          <span id="wavelabel">gpio0</span>
-          <span
-            class="cfgtag maptag"
-            title="config · OUT mapping: OUT_BASE / OUT_COUNT — the steppers are real PINCTRL writes; counts cycle 1..32 (0 encodes 32)"
-          >
-            out
             <span
-              class="spin"
-              id="spin-outbase"
-              tabindex="0"
-              data-spin
-              data-rovi
-              data-status="−/+ or ←/→ step"
+              class="cfgtag maptag"
+              data-tip="config · SIDESET mapping: SIDESET_BASE — the steppers are real PINCTRL writes; the bit count is the ds-field allocator's shared budget (the pips in the program panel)"
             >
-              <button type="button" class="tstep" tabindex="-1" data-ctl="out-base" data-g="dec">
-                −
-              </button><b id="outbase">0</b
-              ><button type="button" class="tstep" tabindex="-1" data-ctl="out-base" data-g="inc">
-                +
-              </button>
-            </span>
-            ·<span
-              class="spin"
-              id="spin-outcnt"
-              tabindex="0"
-              data-spin
-              data-rovi
-              data-status="−/+ or ←/→ step · wraps 1..32"
-            >
-              <button type="button" class="tstep" tabindex="-1" data-ctl="out-cnt" data-g="dec">
-                −
-              </button><b id="outcnt">32</b
-              ><button type="button" class="tstep" tabindex="-1" data-ctl="out-cnt" data-g="inc">
-                +
-              </button>
-            </span>
-          </span>
-          <span
-            class="cfgtag maptag"
-            title="config · SIDESET mapping: SIDESET_BASE — the steppers are real PINCTRL writes; the bit count is the ds-field allocator's shared budget (the pips in the program panel)"
-          >
-            side
-            <span
-              class="spin"
-              id="spin-sidebase"
-              tabindex="0"
-              data-spin
-              data-rovi
-              data-status="−/+ or ←/→ step"
-            >
-              <button type="button" class="tstep" tabindex="-1" data-ctl="side-base" data-g="dec">
-                −
-              </button><b id="sidebase">0</b
-              ><button type="button" class="tstep" tabindex="-1" data-ctl="side-base" data-g="inc">
-                +
-              </button>
-            </span>
-            · <span id="sidecnt">—</span>
-          </span>
-          <span
-            class="cfgtag maptag"
-            title="config · IN mapping: IN_BASE / IN_COUNT — the steppers are real PINCTRL/SHIFTCTRL writes; counts cycle 1..32 (0 encodes 32)"
-          >
-            in
-            <span
-              class="spin"
-              id="spin-inbase"
-              tabindex="0"
-              data-spin
-              data-rovi
-              data-status="−/+ or ←/→ step"
-            >
-              <button type="button" class="tstep" tabindex="-1" data-ctl="in-base" data-g="dec">
-                −
-              </button><b id="inbase">0</b
-              ><button type="button" class="tstep" tabindex="-1" data-ctl="in-base" data-g="inc">
-                +
-              </button>
-            </span>
-            ·<span
-              class="spin"
-              id="spin-incnt"
-              tabindex="0"
-              data-spin
-              data-rovi
-              data-status="−/+ or ←/→ step · wraps 1..32"
-            >
-              <button type="button" class="tstep" tabindex="-1" data-ctl="in-cnt" data-g="dec">
-                −
-              </button><b id="incnt">32</b
-              ><button type="button" class="tstep" tabindex="-1" data-ctl="in-cnt" data-g="inc">
-                +
-              </button>
-            </span>
-          </span>
-          <span class="aux" id="wavewinaux"
-            >window <span id="wavewin">128</span> cycles · 8 cyc/grid</span
-          >
-        </div>
-        <!-- biome-ignore lint/a11y/noSvgWithoutTitle: the waveform svg is a live-drawn canvas — its innerHTML is replaced every render, so a <title> child would be wiped; the frame map below carries the meaning -->
-        <svg id="wavesvg" preserveAspectRatio="none"></svg>
-        <div id="feed">
-          <span class="ptitle" style="border:none;padding:0;background:none">stimulus →</span>
-          <input type="text" id="feedtxt" value="PIO!" maxlength="32" spellcheck="false">
-          <button type="button" id="bfeed">ENQUEUE</button>
-          <button type="button" id="bfeed55" title="one 0x55 word">0x55</button>
-        </div>
-        <div id="pattern">
-          <span class="ptitle" style="border:none;padding:0;background:none">pattern →</span>
-          <select
-            id="patmode"
-            title="the deterministic pattern generator — square period or a pasted bitstream, one pin, pure function of clks since arming"
-          >
-            <option value="off" selected>off</option>
-            <option value="square">square</option>
-            <option value="bits">bits</option>
-          </select>
-          <label id="patperwrap" hidden
-            >period <input type="number" id="patperiod" value="16" min="2" max="1024" step="2">
-          </label>
-          <label id="patbitswrap" hidden
-            >bits
-            <input type="text" id="patbits" value="01000011" maxlength="256" spellcheck="false">
-          </label>
-          <span>on pin</span>
-          <select id="patpin"></select>
-          <span class="note">drives gpio_in on step clks; reg-op clks hold the last level</span>
-        </div>
-      </section>
-
-      <!-- ================= registers ================= -->
-      <section id="regs">
-        <div id="xy">
-          <div class="ptitle">scratch</div>
-          <div class="kv">
-            <div class="k">X</div>
-            <div class="v" id="xval">0x00000000 <small>= 0</small></div>
-            <div class="k">Y</div>
-            <div class="v" id="yval" style="color:var(--dim)">0x00000000 <small>= 0</small></div>
-          </div>
-        </div>
-
-        <div id="irqpanel">
-          <div class="ptitle">
-            irq
-            <span class="aux"
-              >INTR <b id="intrhex">0x00F0</b>
+              side
               <span
-                class="cfgtx"
-                title="config · the composed INTR: SM flags 15:8, TXNFULL 7:4, RXNEMPTY 3:0"
-                >readback view</span
-              ></span
+                class="spin"
+                id="spin-sidebase"
+                tabindex="0"
+                data-spin
+                data-rovi
+                data-status="−/+ or ←/→ step"
+              >
+                <button type="button" class="tstep" tabindex="-1" data-ctl="side-base" data-g="dec">
+                  −
+                </button><b id="sidebase">0</b
+                ><button
+                  type="button"
+                  class="tstep"
+                  tabindex="-1"
+                  data-ctl="side-base"
+                  data-g="inc"
+                >
+                  +
+                </button>
+              </span>
+              · <span id="sidecnt">—</span>
+            </span>
+            <span
+              class="cfgtag maptag"
+              data-tip="config · IN mapping: IN_BASE / IN_COUNT — the steppers are real PINCTRL/SHIFTCTRL writes; counts cycle 1..32 (0 encodes 32)"
+            >
+              in
+              <span
+                class="spin"
+                id="spin-inbase"
+                tabindex="0"
+                data-spin
+                data-rovi
+                data-status="−/+ or ←/→ step"
+              >
+                <button type="button" class="tstep" tabindex="-1" data-ctl="in-base" data-g="dec">
+                  −
+                </button><b id="inbase">0</b
+                ><button type="button" class="tstep" tabindex="-1" data-ctl="in-base" data-g="inc">
+                  +
+                </button>
+              </span>
+              ·<span
+                class="spin"
+                id="spin-incnt"
+                tabindex="0"
+                data-spin
+                data-rovi
+                data-status="−/+ or ←/→ step · wraps 1..32"
+              >
+                <button type="button" class="tstep" tabindex="-1" data-ctl="in-cnt" data-g="dec">
+                  −
+                </button><b id="incnt">32</b
+                ><button type="button" class="tstep" tabindex="-1" data-ctl="in-cnt" data-g="inc">
+                  +
+                </button>
+              </span>
+            </span>
+            <span class="aux" id="wavewinaux"
+              >window <span id="wavewin">128</span> cycles · 8 cyc/grid</span
             >
           </div>
-          <div
-            id="irqlamps"
-            tabindex="0"
-            role="listbox"
-            aria-label="IRQ flags"
-            data-rovi
-            data-status="irq flags: ←/→ pick · Space/Enter clears it (W1C)"
-          ></div>
-        </div>
+          <!-- biome-ignore lint/a11y/noSvgWithoutTitle: the waveform svg is a live-drawn canvas — its innerHTML is replaced every render, so a <title> child would be wiped; the frame map below carries the meaning -->
+          <svg id="wavesvg" preserveAspectRatio="none"></svg>
+          <div id="feed">
+            <span class="ptitle" style="border:none;padding:0;background:none">stimulus →</span>
+            <input type="text" id="feedtxt" value="PIO!" maxlength="32" spellcheck="false">
+            <button type="button" id="bfeed">ENQUEUE</button>
+            <button type="button" id="bfeed55" data-tip="one 0x55 word">0x55</button>
+          </div>
+          <div id="pattern">
+            <span class="ptitle" style="border:none;padding:0;background:none">pattern →</span>
+            <select
+              id="patmode"
+              data-tip="the deterministic pattern generator — square period or a pasted bitstream, one pin, pure function of clks since arming"
+            >
+              <option value="off" selected>off</option>
+              <option value="square">square</option>
+              <option value="bits">bits</option>
+            </select>
+            <label id="patperwrap" hidden
+              >period <input type="number" id="patperiod" value="16" min="2" max="1024" step="2">
+            </label>
+            <label id="patbitswrap" hidden
+              >bits
+              <input type="text" id="patbits" value="01000011" maxlength="256" spellcheck="false">
+            </label>
+            <span>on pin</span>
+            <select id="patpin"></select>
+            <span class="note">drives gpio_in on step clks; reg-op clks hold the last level</span>
+          </div>
+        </section>
 
-        <div id="inspector">
-          <div class="ptitle">
-            register inspector
-            <!-- the aux stays two words: at the column widths the panel
+        <!-- ================= registers ================= -->
+        <section id="regs">
+          <div id="xy">
+            <div class="ptitle">scratch</div>
+            <div class="kv">
+              <div class="k">X</div>
+              <div class="v" id="xval">0x00000000 <small>= 0</small></div>
+              <div class="k">Y</div>
+              <div class="v" id="yval" style="color:var(--dim)">0x00000000 <small>= 0</small></div>
+            </div>
+          </div>
+
+          <div id="irqpanel">
+            <div class="ptitle">
+              irq
+              <span class="aux"
+                >INTR <b id="intrhex">0x00F0</b>
+                <span
+                  class="cfgtx"
+                  data-tip="config · the composed INTR: SM flags 15:8, TXNFULL 7:4, RXNEMPTY 3:0"
+                  >readback view</span
+                ></span
+              >
+            </div>
+            <div
+              id="irqlamps"
+              tabindex="0"
+              role="listbox"
+              aria-label="IRQ flags"
+              data-rovi
+              data-status="irq flags: ←/→ pick · Space/Enter clears it (W1C)"
+            ></div>
+          </div>
+
+          <div id="inspector">
+            <div class="ptitle">
+              register inspector
+              <!-- the aux stays two words: at the column widths the panel
                  actually gets, the long pitch wrapped the title to three
                  lines and ate the settings it names (layout gate pins
                  the single-line title) --><span class="aux"
-              >datasheet map · <b id="inspstate">live</b></span
-            >
+                >datasheet map · <b id="inspstate">live</b></span
+              >
+            </div>
+            <div id="inspbody"></div>
           </div>
-          <div id="inspbody"></div>
-        </div>
-      </section>
-    </main>
+        </section>
+      </main>
 
-    <footer>
-      <span id="leg-ctrl" hidden
-        ><span class="sw" style="background:var(--amber)"></span>frame control
-        (start/stop/idle)</span
-      >
-      <span id="leg-data" hidden
-        ><span class="sw" style="background:var(--green)"></span>frame data bits D0..D7 (LSB
-        first)</span
-      >
-      <span
-        ><span class="sw" style="background:var(--cfg)"></span>config — where the machine is
-        wired</span
-      >
-      <span id="statusline"></span>
-      <span class="right"
-        >engine: verified RTL (verilator→wasm) · oracle: pio_model (CI cross-check) · autosave:
-        <b id="savestate">on</b></span
-      >
-    </footer>
+      <footer>
+        <span id="leg-ctrl" hidden
+          ><span class="sw" style="background:var(--amber)"></span>frame control
+          (start/stop/idle)</span
+        >
+        <span id="leg-data" hidden
+          ><span class="sw" style="background:var(--green)"></span>frame data bits D0..D7 (LSB
+          first)</span
+        >
+        <span
+          ><span class="sw" style="background:var(--cfg)"></span>config — where the machine is
+          wired</span
+        >
+        <span id="statusline"></span>
+        <span class="right"
+          >engine: verified RTL (verilator→wasm) · oracle: pio_model (CI cross-check) · autosave:
+          <b id="savestate">on</b></span
+        >
+      </footer>
+    </div>
+    <!-- /#win: the one master window; the teal outside it is the desktop edge -->
+
+    <!-- the era tooltip: the data-tip narration's mouse path — its keyboard
+         path is the status line above (one narration store, two mouths) -->
+    <div id="tip" hidden></div>
 
     <div id="edpop" hidden>
       <div id="edcode"></div>

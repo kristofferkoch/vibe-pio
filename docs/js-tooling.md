@@ -78,8 +78,9 @@ vibe-pio container image) and the browser session for DOM glue.
   plain divs/spans, one Tab stop per pair with hand-managed −/+/arrow
   keys, the era idiom rather than `input[type=number]` widgets. Every
   other group carries an honest role (listbox/group semantics, with the
-  cursor as `aria-activedescendant`); these stay role-less until the
-  era skin re-draws the markup.
+  cursor as `aria-activedescendant`); the C26 era skin re-drew their
+  chrome (silver bevels, dotted focus rects) but kept them role-less —
+  the drawn stepper look is the affordance.
 - Inline ignores (each carries its reason at the site): the Web Worker
   `onmessage` assignment (`noGlobalAssign` — it IS the worker API),
   `PioEngine` in `web/tests/fake-engine-module.js`
@@ -220,7 +221,12 @@ project has hit by hand:
   fixed columns. The wave keeps a 64px floor — the
   sandwich buys its room from the wave, but it never collapses. At
   1920×1080 the app caps with the register column at its 430px ceiling
-  and the center at the waveform's natural 896px scale.
+  and the center at the waveform's natural 896px scale — measured from
+  both sides since the C26 era window (whose 2px bevel padding used to
+  tax the drawn grid down to 890; the gate wants 896, the integer
+  scale the drawn geometry snaps to). Since C26 the geometry is also
+  font-dependent (the two bitmap webfonts), so `load()` awaits
+  `document.fonts.ready` before measuring.
 
 Practicalities:
 
