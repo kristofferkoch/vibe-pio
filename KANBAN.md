@@ -93,3 +93,36 @@ covers the new stop red/green.
   the label growth (red/green — the 1520px yield may need revisiting);
   the browser session and `make web` re-verify; the demonstration is
   recorded in the commit.
+
+## Web track — listing-gutter legibility (C30)
+
+Scheduled 2026-08-30 by owner request straight from the address-00
+review (the program listing's address gutter; findings from a live
+browser session plus a code read of sm-view.js / sm-view.css — the
+same evidence path as the gpio0-panel round). Not via the IDEAS.md
+hop — the review plus the owner's scheduling instruction stand in for
+the grilling. The finding: C24's four per-SM PC cursor marks
+(`.smcur`) render inline in the 30px address cell, and the boot
+posture parks all four SMs at PC 0 — row 00's gutter reads
+"0123 00", the mark cluster overflows the cell (measured live:
+scrollWidth 36 vs clientWidth 30) and spills into the margin lane.
+Owner decision: the marks leave the address cell entirely — the
+coincident cluster is absolutely positioned in the row's left margin
+as one boxed chip riding the pin-ownership chip grammar
+(`.pcell.ow .po`), colored digits, per-SM identity by color plus the
+`SM<k> PC` tooltip; the address digits always render clean. The
+margin's other tenants bound the chip's slot: the wrap bracket and
+the C25 wrap steppers (x ≥ 15) at rows 0–1, the `.cur` bar at 43px —
+the chip's x-position must not collide with either. Web card: the JS
+discipline (docs/js-tooling.md), red/green TDD, DOM glue verified by
+the browser session and `make web`.
+
+- C30 (the cursor marks leave the address cell): the `.smcur` cluster
+  out of the address cell's text flow, per the preamble's owner
+  decision. Done-when: `make js` passes; the layout gate pins the
+  boot posture red/green — with all four cursors on row 00, `.addr`
+  does not overflow (scrollWidth ≤ clientWidth) and the mark chip
+  does not intersect the address digits' box; the check runs red
+  against the shipped page before the fix; the browser session and
+  `make web` re-verify; the demonstration is recorded in the commit.
+  Standalone — no cross-dependency with C29.
