@@ -815,3 +815,72 @@ for (const [width, height] of VIEWPORTS) {
     );
   });
 }
+
+// C27 follow-up (the owner's two reports from the live session): a drive
+// latch click grew the whole strip — the empty mark row (.pm) had no line
+// box, so the first ▲/D/◆ anywhere stretched EVERY cell (measured: a
+// cell went 35px to 51px) and the strip jumped under the pointer. The
+// marks ride the level line instead, whose 16px line box always exists:
+// appearing marks must not move a single cell box, and the strip must
+// hold its height — state changes are not allowed to re-flow the chrome
+// (the C26 hover/press rule, now for drive state).
+test('drive marks never reflow the strip: ▲/D/◆ ride the level line', async () => {
+  await load(null, 1280, 800);
+  const boxes = `(() => {
+    const strip = document.querySelector('#pinstrip').getBoundingClientRect();
+    const cells = [...document.querySelectorAll('#pincells .pcell')].map((c) => {
+      const b = c.getBoundingClientRect();
+      return [c.dataset.pin, +b.left.toFixed(1), +b.top.toFixed(1), +b.width.toFixed(1), +b.height.toFixed(1)];
+    });
+    return { strip: +strip.height.toFixed(1), cells };
+  })()`;
+  const before = await page.evaluate(boxes);
+  const drives = new Array(32).fill(null);
+  drives[31] = 1; // a held latch on a bare cell — the D mark appears
+  await page.evaluate(`render(Object.assign({}, V.state, { drives: ${JSON.stringify(drives)} }))`);
+  const afterD = await page.evaluate(boxes);
+  assert.deepStrictEqual(
+    afterD,
+    before,
+    'a drive latch (the D mark) re-flowed the pin strip — the mark row must not change any cell box',
+  );
+  await page.evaluate(`render(Object.assign({}, V.state, { gpioOe: 1 << 31, gpioOut: 1 << 31 }))`);
+  const afterOE = await page.evaluate(boxes);
+  assert.deepStrictEqual(
+    afterOE,
+    before,
+    'the engine-output mark (▲) re-flowed the pin strip — the mark row must not change any cell box',
+  );
+});
+
+// The program column is content-anchored: the widest in-flow resident is
+// the row editor (measured 364px); the old 32vw track gave it 461px at
+// 1440 — dead width the wave never saw. The pins: the column lands
+// within the editor's need + scrollbar slack, and the editor row itself
+// is never squeezed (its content fits its box — the honesty rule).
+test('the program column is content-anchored: editor fits, no dead width', async () => {
+  await load(null, 1280, 800);
+  const m = await page.evaluate(`(() => {
+    openRow(1); // the editor overlays the listing (left 78 / right 8 anchors)
+    const prog = document.getElementById('program').getBoundingClientRect().width;
+    const listing = document.getElementById('progrows').clientWidth;
+    const ed = document.getElementById('rowedit').getBoundingClientRect();
+    const reins = document.querySelector('#rowedit .reins');
+    return { prog: +prog.toFixed(1), listing, edW: +ed.width.toFixed(1),
+             reinsW: +reins.getBoundingClientRect().width.toFixed(1) };
+  })()`);
+  assert.ok(m.edW > 0, 'the row editor row is not on the page (open a row first)');
+  assert.strictEqual(
+    Math.round(m.edW),
+    m.listing - 86,
+    'the editor is not anchored to the listing box (left 78 / right 8)',
+  );
+  assert(
+    m.reinsW >= 148,
+    `the instruction cell is squeezed to ${m.reinsW}px — the widest canonical rows (out pindirs, 31 ≈ 128px) still need typing room (floor 148)`,
+  );
+  assert(
+    m.prog >= 362 && m.prog <= 394,
+    `program column is not content-anchored at 1280: ${m.prog}px — the widest in-flow residents need ~364px; anything beyond is dead width the wave never sees`,
+  );
+});

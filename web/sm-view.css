@@ -100,15 +100,16 @@ body {
 /* the one master window: everything lives in here; the teal showing
    around it is the desktop edge. The cap: the app stops growing when
    the waveform reaches its natural scale — 128 cycles × 7px = 896px of
-   center view. The 1804px cap is the old 1798 plus the window's own
-   2px bevel padding (the C26 layout-gate re-pin: chrome must not tax
-   the drawn grid); at the cap the side columns sit at their clamps
-   (470/430) and the center lands exactly 896 */
+   center view. The 1726px cap = the content-anchored program column at
+   its 392px ceiling + 896 + the register column at its 430px clamp +
+   the 4px of gaps and 4px of window bevel padding (the C26 re-pin
+   lesson: chrome must not tax the drawn grid); at the cap the center
+   lands exactly 896 */
 #win {
   display: grid;
   grid-template-rows: auto auto auto auto minmax(0, 1fr) 26px;
   height: calc(100% - 16px);
-  max-width: 1804px;
+  max-width: 1726px;
   margin: 0 auto;
   background: var(--panel);
   box-shadow:
@@ -293,15 +294,18 @@ select {
 }
 
 /* ---------- main grid ---------- */
-/* column priority (the layout reprioritization): the program column
-   keeps its allocation; the register column gets what its drawn
+/* column priority (the layout reprioritization): the program column is
+   content-anchored (its widest resident, the row editor at left 78 /
+   right 8 with two fixed 58px cells + a usable instruction input,
+   measures ~364px; the old 32vw track gave it 461px at 1440 — dead
+   width the wave never saw); the register column gets what its drawn
    controls measure (356px floor = the widest control row single-line
    plus slack; 28vw so 13" panels land 358/382; 430px comfort ceiling);
    the exec pane — instruction echo, phase, waveform, stimulus — takes
    the remainder and stops growing first */
 main {
   display: grid;
-  grid-template-columns: clamp(330px, 32vw, 470px) minmax(338px, 1fr) clamp(356px, 28vw, 430px);
+  grid-template-columns: clamp(364px, 24vw, 392px) minmax(338px, 1fr) clamp(356px, 28vw, 430px);
   gap: 2px;
   background: var(--line);
   min-height: 0;
@@ -1471,6 +1475,12 @@ header .mini.imp {
   font-size: 16px;
   line-height: 16px;
   color: var(--dim);
+}
+/* the ▲/D/◆ marks ride the level line (an <i> after the digit): the
+   16px line box always exists, so marks appearing or leaving never
+   change any cell height — a latch click must not reflow the strip */
+.pcell .pm {
+  font-style: normal;
 }
 .pcell.hi .pl {
   color: var(--green);

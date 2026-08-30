@@ -158,6 +158,15 @@ driven)". The driver classifies (`getState().stale`): OE ∧ a known
 owner ∧ the owner's OUT ∪ SIDESET ∪ SET extents no longer cover the
 pin. The same-clk conflict narration keeps its CC-7 wording verbatim.
 
+Follow-up from the owner's live session (2026-08-30): the ▲/D/◆ marks
+ride the level digit's line — a mark row of its own had no line box
+when empty, so the first mark anywhere stretched every cell 16px and
+the strip jumped under the latch click (the C26 hover/press rule,
+applied to drive state). And the program column is content-anchored
+(`clamp(364px, 24vw, 392px)`, the row editor's need — the old 32vw
+track carried dead width the wave never saw; the window cap retuned to
+1726px so the cap still lands the wave at its 896px natural scale).
+
 ## Layout
 
 - **Not 80×25.** One SM wants ~1440px in three columns: program listing

@@ -234,6 +234,15 @@ project has hit by hand:
   the gray mark, and the "wiring has moved away" narration. Both ran
   red against their re-injected defects (a boot-captured overlay; the
   stale class dropped).
+- **State changes never reflow the strip; the program column is
+  content-anchored** (the C27 follow-up from the owner's live session):
+  the ▲/D/◆ pin marks ride the level line — its 16px line box exists on
+  every cell, so a drive latch or OE appearing must not move a single
+  cell box (the empty mark row had none: the first mark anywhere
+  stretched every cell 16px); and the program column lands at its
+  content clamp (the row editor's ~364px need — the old 32vw track
+  carried 46px+ of dead width at 1280–1440 that the wave never saw),
+  with the editor's instruction cell keeping its typing room.
 - **Priority** — the register column is not the exec pane's leftover
   (the layout reprioritization, four passes): at the 13" references
   its drawn control rows render single-line (the measured wrapped

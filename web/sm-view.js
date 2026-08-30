@@ -1187,7 +1187,13 @@ function renderPins(st) {
       .filter(Boolean)
       .join(' · ');
     const lanes = `<span class="pmap"><i class="${(map.out >>> p) & 1 ? 'mo' : ''}"></i><i class="${(map.side >>> p) & 1 ? 'ms' : ''}"></i><i class="${(map.in >>> p) & 1 ? 'mi' : ''}"></i></span>`;
-    h += `<div class="${cls}" id="pc${p}" role="option" aria-selected="${p === pinCursor}" data-pin="${p}" data-tip="${tips}"><span class="pn">${p}</span>${lanes}<span class="pl">${lvl}</span><span class="pm">${oe ? '▲' : drv !== null ? 'D' : ''}${patPin === p ? '◆' : ''}</span>${own >= 0 ? `<span class="po">${own}</span>` : ''}</div>`;
+    // the marks ride the LEVEL line — its 16px line box exists on every
+    // cell (the digit), so a ▲/D/◆ appearing never reflows the strip (a
+    // mark row of its own had no line box when empty: the first mark
+    // anywhere stretched every cell 16px, the C26 hover/press lesson
+    // now applied to drive state)
+    const marks = `${oe ? '▲' : drv !== null ? 'D' : ''}${patPin === p ? '◆' : ''}`;
+    h += `<div class="${cls}" id="pc${p}" role="option" aria-selected="${p === pinCursor}" data-pin="${p}" data-tip="${tips}"><span class="pn">${p}</span>${lanes}<span class="pl">${lvl}<i class="pm">${marks}</i></span>${own >= 0 ? `<span class="po">${own}</span>` : ''}</div>`;
   }
   host.innerHTML = h;
   applyPinCursor();
