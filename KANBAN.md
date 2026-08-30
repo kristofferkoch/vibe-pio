@@ -51,3 +51,57 @@ silver chrome, navy title bar, 2px bevels, Pixelated MS Sans Serif
 the mockup round + DESIGN-NOTES.md "The era skin" is the spec. No
 cards remain; the next web-track work (level/menu shell) starts from
 IDEAS.md after its own grilling.
+
+## Web track — pin-mapping legibility (C27–C29)
+
+Scheduled 2026-08-30 by owner request straight from the gpio0-panel
+review (the wave-header out/side/in tags and the pin strip; findings
+from a live browser session plus a code read of sm-view.js /
+engine-driver.js). Not via the IDEAS.md hop — the review plus the
+owner's scheduling instruction stand in for the grilling. Owner
+decisions from the review: the pin strip drawing the mapping is the
+load-bearing fix (the tags name pin numbers; the strip shows nothing
+until a program actually writes — a mid-run side-base move left only
+a 13px digit as evidence); the lens pin becomes pickable at the wave
+row itself; the row's numbers get named on the face and the side dash
+annotated; the 13×13 stepper size stands (keyboard parity is the
+compensating control — explicitly not a card). Dependency order:
+C27 ∥ C28 ∥ C29, no cross-dependencies (C27 first by value). Web
+cards: the JS discipline (docs/js-tooling.md), red/green TDD, DOM
+glue verified by the browser session and `make web` — geometry and
+keyboard only through the two sanctioned headless gates.
+
+- C27 (the pin strip draws the mapping): the C22 drawn-config grammar
+  gains its pin-side echo — the 32-cell strip draws the selected SM's
+  OUT / SIDESET / IN extents (SPEC-7-26/21) as cyan-family marks
+  under the pin numbers (hue-true on the light skin; overlapping
+  mappings must stay legible — mock-up first), so a base/count
+  stepper click shows where the wiring moved with no program
+  running. Live vs stale: the owner corner and held level
+  distinguish actively-driven (OE this clk) from was-driven (last
+  writer, the mapping since moved away) — the moved-from pin must
+  stop reading as currently driven. Same-clk conflict narration
+  keeps its CC-7 wording. Done-when: `make js` passes; the layout
+  gate pins the new marks' geometry at the gated viewports, red /
+  green against a re-injected defect (extents drawn from a stale
+  overlay; the stale class never applied); the browser session and
+  `make web` re-verify; the demonstration is recorded in the commit.
+- C28 (the lens lives on the wave): the wave row owns its pin — the
+  `gpio<N>` label becomes a drawn lens-pin picker riding the row's
+  spin grammar (C25: one Tab stop, −/+/←/→), so following a signal
+  that moved (side-base remapped mid-run, the wave gone flat) no
+  longer hunts the exec-title select; that select moves down to the
+  row or mirrors it. Done-when: the keyboard walk covers the new stop
+  (red/green against a re-injected defect); `make js` and the layout
+  gate pass; the browser session and `make web` re-verify; the
+  demonstration is recorded in the commit.
+- C29 (the row says what it means): base·count named on the face —
+  one letter each (`out b0·c32`-style) so the two numbers per tag
+  stop being hover-only — and the `side · —` dash annotated in-face
+  (no side-set allocated; the bits come from the program panel's ds
+  pips) so it stops reading as a broken stepper pair; tooltips and
+  status narrations updated to match. Done-when: `make js` passes;
+  the layout gate pins the row's one-line fit at the 13" widths after
+  the label growth (red/green — the 1520px yield may need revisiting);
+  the browser session and `make web` re-verify; the demonstration is
+  recorded in the commit.
