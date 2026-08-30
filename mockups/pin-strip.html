@@ -1,0 +1,300 @@
+<!doctype html>
+<!-- pin-strip.html — the C27 mock-up round: the pin strip's mapping marks.
+  Free-form (mockups/ is outside the biome gate). One question, three
+  candidate grammars for drawing the selected SM's OUT / SIDESET / IN
+  extents (SPEC-7-26/21) as cyan-family marks under the pin numbers, plus
+  the live-vs-stale driven-pin distinction. The mapping scenario is fixed:
+
+      OUT  b0·c32   (every pin — the reset posture)
+      SIDE b4·1b+opt  (ssCnt 2: data bit on pin 4, enable bit not a pin)
+      IN   b10·c4   (pins 10..13)
+
+  so OUT∩SIDE lands on 4 and OUT∩IN on 10..13 — the overlap the marks
+  must survive. Same fonts/tokens as the shipped sheet. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>pin strip — C27 mapping marks</title>
+    <style>
+      @font-face {
+        font-family: 'Pixelated MS Sans Serif';
+        src: url('../web/fonts/ms_sans_serif.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Pixelated MS Sans Serif';
+        font-weight: bold;
+        src: url('../web/fonts/ms_sans_serif_bold.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Px437 IBM VGA9';
+        src: url('../web/fonts/px437-ibm-vga9.woff') format('woff');
+      }
+      :root {
+        --panel: #c0c0c0;
+        --well: #ffffff;
+        --line: #808080;
+        --hi: #ffffff;
+        --dim: #5a5a5a;
+        --dimmer: #808080;
+        --amber: #8f5000;
+        --green: #0d6e0d;
+        --cfg: #006a78;
+        --cfg-dim: #00505c;
+        --cfg-lit: #4d96a1; /* the IN tint — lighter, same hue */
+        --red: #a31414;
+        --sm0: #8f5000;
+        --sm2: #006a78;
+        --sans: 'Pixelated MS Sans Serif', sans-serif;
+        --mono: 'Px437 IBM VGA9', monospace;
+      }
+      body {
+        background: #008080;
+        font-family: var(--sans);
+        font-size: 11px;
+        color: #000;
+        margin: 0;
+        padding: 16px;
+      }
+      h2 {
+        font-size: 11px;
+        margin: 14px 0 4px;
+        color: #fff;
+      }
+      .win {
+        background: var(--panel);
+        box-shadow: inset 2px 2px 0 var(--hi), inset -2px -2px 0 var(--line);
+        padding: 8px;
+        max-width: 1250px;
+      }
+      .strip {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 8px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      .pslabel {
+        color: var(--dim);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      #cells {
+        display: flex;
+        gap: 3px;
+      }
+      /* ==== the shipped cell (reference) ==== */
+      .pcell {
+        width: 34px;
+        background: var(--panel);
+        text-align: center;
+        cursor: pointer;
+        user-select: none;
+        padding: 1px 0 2px;
+        box-shadow: inset 2px 2px 0 var(--hi), inset -2px -2px 0 var(--line);
+      }
+      .pcell .pn {
+        display: block;
+        font-size: 11px;
+        color: var(--dim);
+      }
+      .pcell .pl {
+        display: block;
+        font-family: var(--mono);
+        font-size: 16px;
+        line-height: 16px;
+        color: var(--dim);
+      }
+      .pcell.hi .pl {
+        color: var(--green);
+      }
+      .pcell.oe {
+        box-shadow:
+          inset 2px 2px 0 var(--hi),
+          inset -2px -2px 0 var(--line),
+          inset 0 0 0 1px var(--amber);
+      }
+      .pcell.oe .pm {
+        color: var(--amber);
+      }
+      .pcell.dh,
+      .pcell.dl {
+        background: var(--well);
+        box-shadow: inset 2px 2px 0 var(--line), inset -2px -2px 0 var(--hi);
+      }
+      .pcell.dh .pl,
+      .pcell.dl .pl {
+        color: var(--cfg);
+      }
+      .pcell.pat {
+        box-shadow:
+          inset 2px 2px 0 var(--hi),
+          inset -2px -2px 0 var(--line),
+          inset 0 0 0 1px var(--cfg-dim);
+      }
+      .pcell.pat .pm {
+        color: var(--cfg);
+      }
+      .pcell.sel {
+        border: 1px solid var(--amber);
+      }
+      .pcell {
+        position: relative;
+      }
+      .pcell.ow .po {
+        position: absolute;
+        top: -1px;
+        right: -1px;
+        font-size: 8px;
+        line-height: 1;
+        padding: 1px 2px;
+        background: var(--panel);
+        color: var(--smc);
+        border: 1px solid var(--smc);
+      }
+      .pcell.ow.s0 {
+        --smc: var(--sm0);
+      }
+      .pcell.ow.s2 {
+        --smc: var(--sm2);
+      }
+
+      /* ==== candidate A: three lanes under the number ==== */
+      .pmapA {
+        display: block;
+        margin: 1px 3px 2px;
+      }
+      .pmapA i {
+        display: block;
+        height: 2px;
+        margin-top: 1px;
+        background: transparent;
+      }
+      .pmapA i:first-child {
+        margin-top: 0;
+      }
+      .pmapA .mo {
+        background: var(--cfg);
+      }
+      .pmapA .ms {
+        background: var(--cfg-dim);
+      }
+      .pmapA .mi {
+        background: var(--cfg-lit);
+      }
+
+      /* ==== candidate B: three lanes, SIDE hatched ==== */
+      .pmapB {
+        display: block;
+        margin: 1px 3px 2px;
+      }
+      .pmapB i {
+        display: block;
+        height: 2px;
+        margin-top: 1px;
+        background: transparent;
+      }
+      .pmapB i:first-child {
+        margin-top: 0;
+      }
+      .pmapB .mo {
+        background: var(--cfg);
+      }
+      .pmapB .ms {
+        background: repeating-linear-gradient(
+          90deg,
+          var(--cfg-dim) 0 2px,
+          transparent 2px 4px
+        );
+      }
+      .pmapB .mi {
+        background: var(--cfg-lit);
+      }
+
+      /* ==== candidate C: one band, three fixed slots ==== */
+      .pmapC {
+        display: flex;
+        gap: 3px;
+        margin: 1px 4px 2px;
+        height: 3px;
+      }
+      .pmapC i {
+        flex: 1;
+        background: transparent;
+      }
+      .pmapC .mo {
+        background: var(--cfg);
+      }
+      .pmapC .ms {
+        background: var(--cfg-dim);
+      }
+      .pmapC .mi {
+        background: var(--cfg-lit);
+      }
+
+      /* ==== the was-driven (stale) treatment ==== */
+      .pcell.stale {
+        box-shadow:
+          inset 2px 2px 0 var(--hi),
+          inset -2px -2px 0 var(--line),
+          inset 0 0 0 1px var(--dimmer);
+      }
+      .pcell.stale .pm {
+        color: var(--dimmer);
+      }
+      .pcell.stale .pl {
+        color: var(--dim);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="win">
+      <h2>shipped (reference)</h2>
+      <div class="strip" id="s0">
+        <span class="pslabel">pins · ←/→ walks Z→1→0 · ▲ out · driven · 0 owner</span>
+        <div class="cellsA" id="cells0"></div>
+      </div>
+
+      <h2>A — three lanes under the number (OUT solid, SIDE dark, IN light)</h2>
+      <div class="strip"><div id="cellsA"></div></div>
+
+      <h2>B — three lanes, SIDE hatched (2px hard-stop dither)</h2>
+      <div class="strip"><div id="cellsB"></div></div>
+
+      <h2>C — one 3px band, three fixed slots (out · side · in)</h2>
+      <div class="strip"><div id="cellsC"></div></div>
+
+      <h2>A + the live/stale distinction (pins 0..3: OE+owner in-mapping = live; 4: side-written then base moved = stale)</h2>
+      <div class="strip"><div id="cellsD"></div></div>
+    </div>
+
+    <script>
+      // OUT b0·c32 · SIDE data bit on 4 (ssCnt 2 + opt) · IN b10·c4
+      const OUT = 0xffffffff;
+      const SIDE = 1 << 4;
+      const IN = 0x3c00;
+      const cells = (host, mk) => {
+        let h = '';
+        for (let p = 0; p < 16; p++) {
+          const oe = p < 5; // engine drives 0..4 this clk
+          const lvl = (p & 1) === 0 ? 1 : 0;
+          const own = p <= 4 ? 0 : -1;
+          h += `<div class="pcell${oe ? ' oe' : ''}${lvl ? ' hi' : ''}${own >= 0 ? ' ow s0' : ''}${p === 4 ? ' stale' : ''}${p === 10 ? ' pat' : ''}${p === 11 ? ' sel dh' : ''}">` +
+            `<span class="pn">${p}</span>${mk(p)}` +
+            `<span class="pl">${lvl}</span><span class="pm">${oe ? '▲' : p === 11 ? 'D' : ''}${p === 10 ? '◆' : ''}</span>` +
+            `${own >= 0 ? `<span class="po">${own}</span>` : ''}</div>`;
+        }
+        document.getElementById(host).innerHTML = h;
+        document.getElementById(host).style.display = 'flex';
+        document.getElementById(host).style.gap = '3px';
+      };
+      const band = (cls) => (p) =>
+        `<span class="${cls}"><i class="${OUT >> p & 1 ? 'mo' : ''}"></i><i class="${SIDE >> p & 1 ? 'ms' : ''}"></i><i class="${IN >> p & 1 ? 'mi' : ''}"></i></span>`;
+      cells('cells0', () => '');
+      cells('cellsA', band('pmapA'));
+      cells('cellsB', band('pmapB'));
+      cells('cellsC', band('pmapC'));
+      cells('cellsD', band('pmapA'));
+    </script>
+  </body>
+</html>

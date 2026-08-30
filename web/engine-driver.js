@@ -30,6 +30,10 @@
 //   - tracks pad ownership: the last SM to write each pin, ties broken
 //     by the CC-7 scan order (ascending — the highest-numbered SM's
 //     write lands last), exactly the resolution the RTL performs;
+//   - draws the pin-side echo of the config overlay (C27): the selected
+//     SM's OUT / SIDESET / IN extents as pin masks (pinExtents,
+//     SPEC-7-26/21) plus the was-driven mask — pads still OE whose
+//     owner's current write extents can no longer reach them;
 //   - serializes the stored-program format (words + the per-SM config
 //     overlay — the JSON that seeds level authoring; feeds/lens/drives
 //     are session state and stay out);
@@ -258,6 +262,50 @@
     'in-base': { kind: 'range', group: 'pinctrl', field: 'inBase', max: 31 }, // SPEC-7-26
     'in-cnt': { kind: 'c32', group: 'shiftctrl', field: 'inCount' }, // SPEC-7-21
   };
+
+  // C27: the pin extents of one SM's overlay — the OUT / SIDESET / SET /
+  // IN ranges as 32-bit masks (SPEC-7-26/21). A count of 0 encodes 32;
+  // every range wraps after GPIO31 (SPEC-7-26). The SIDESET extent holds
+  // the DATA bits only: SIDESET_COUNT includes the opt-enable bit, which
+  // is not a pin (SPEC-4-2; the LSB maps to SIDESET_BASE, SPEC-4-5).
+  function pinExtents(ov) {
+    const range = (base, cnt) => {
+      let m = 0;
+      for (let k = 0; k < Math.min(cnt, 32); k++) m |= 1 << ((base + k) & 31);
+      return m >>> 0;
+    };
+    const pc = ov.pinctrl;
+    const sideData = Math.max(0, pc.ssCnt - (ov.execctrl.sideEn ? 1 : 0));
+    return {
+      // OUT_COUNT/IN_COUNT 0 encode 32 (SPEC-7-26/21); SIDESET_COUNT and
+      // SET_COUNT are plain counts — 0 means no pins
+      out: range(pc.outBase, pc.outCnt || 32), // SPEC-7-26 OUT_BASE/OUT_COUNT
+      side: range(pc.ssBase, sideData), // SPEC-7-26 SIDESET_BASE + SPEC-4-2
+      set: range(pc.setBase, pc.setCnt), // SPEC-7-26 SET_BASE/SET_COUNT
+      in: range(pc.inBase, ov.shiftctrl.inCount || 32), // SPEC-7-21 IN_COUNT
+    };
+  }
+
+  // C27: the was-driven mask — pads still OE (holding their last written
+  // level) whose OWNER's current write extents (OUT | SIDESET | SET — the
+  // three pad-write mappings) no longer cover them: the wiring has moved
+  // away and no future write of that SM can reach the pad. The strip's
+  // live pads read as driven (amber); these read gray, a hold not a drive.
+  function wasDrivenMask(ovsArr, owner, oe) {
+    let m = 0;
+    if (!oe) return 0;
+    const writes = ovsArr.map((ov) => {
+      const e = pinExtents(ov);
+      return (e.out | e.side | e.set) >>> 0;
+    });
+    for (let p = 0; p < 32; p++) {
+      if (!((oe >>> p) & 1)) continue;
+      const own = owner[p];
+      if (own < 0) continue; // no recorded writer: not ours to classify
+      if (!((writes[own] >>> p) & 1)) m |= 1 << p;
+    }
+    return m >>> 0;
+  }
 
   // The FIFO-join cycle (SPEC-6-2/3): split → join TX → join RX → split,
   // walked by 'inc' ('dec' walks backwards). Any aux mode (FJOIN_RX_PUT/
@@ -1167,6 +1215,8 @@
         sm: selSm,
         sms: [smView(0), smView(1), smView(2), smView(3)],
         owners: pinOwner.slice(),
+        stale: wasDrivenMask(ovs, pinOwner, last ? last.gpioOe : 0), // C27
+        pinMap: pinExtents(ovs[selSm]), // the selected SM's drawn extents
         // selected-SM aliases (the detail panes' view — the C21 shape)
         pc: sel.pc,
         displayPc: sel.displayPc,
@@ -1253,6 +1303,8 @@
     // the C22 drawn-config grammar: gesture → overlay edits (pure)
     CFG_CONTROLS,
     controlEdit,
+    // C27: one SM's OUT / SIDESET / SET / IN extents as pin masks (pure)
+    pinExtents,
     // the inspector's field table (bit ranges + max/kind for its inputs)
     OVERLAY_GROUP_FIELDS: (group) => Object.entries(OVERLAY_GROUPS[group].fields),
     // the per-SM window address of one overlay group (SPEC-7 per-SM map)

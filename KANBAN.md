@@ -70,22 +70,11 @@ C27 ∥ C28 ∥ C29, no cross-dependencies (C27 first by value). Web
 cards: the JS discipline (docs/js-tooling.md), red/green TDD, DOM
 glue verified by the browser session and `make web` — geometry and
 keyboard only through the two sanctioned headless gates.
+C27 — the pin strip draws the mapping — landed 2026-08-30: the
+three-lane marks (mock-up round in mockups/pin-strip.html + the
+DESIGN-NOTES "The pin strip draws the mapping" section is the spec),
+the was-driven gray, the layout gate's mark/stale checks.
 
-- C27 (the pin strip draws the mapping): the C22 drawn-config grammar
-  gains its pin-side echo — the 32-cell strip draws the selected SM's
-  OUT / SIDESET / IN extents (SPEC-7-26/21) as cyan-family marks
-  under the pin numbers (hue-true on the light skin; overlapping
-  mappings must stay legible — mock-up first), so a base/count
-  stepper click shows where the wiring moved with no program
-  running. Live vs stale: the owner corner and held level
-  distinguish actively-driven (OE this clk) from was-driven (last
-  writer, the mapping since moved away) — the moved-from pin must
-  stop reading as currently driven. Same-clk conflict narration
-  keeps its CC-7 wording. Done-when: `make js` passes; the layout
-  gate pins the new marks' geometry at the gated viewports, red /
-  green against a re-injected defect (extents drawn from a stale
-  overlay; the stale class never applied); the browser session and
-  `make web` re-verify; the demonstration is recorded in the commit.
 - C28 (the lens lives on the wave): the wave row owns its pin — the
   `gpio<N>` label becomes a drawn lens-pin picker riding the row's
   spin grammar (C25: one Tab stop, −/+/←/→), so following a signal

@@ -123,6 +123,41 @@ line narrates when a group takes the keyboard — one mechanism, not a
 duplicate store. Tooltips die on mousedown/keydown/scroll, era-style.
 
 
+## The pin strip draws the mapping (C27, 2026-08-30)
+
+Promoted from the gpio0-panel review (owner-scheduled with C28/C29 —
+the review plus the scheduling instruction stood in for the grilling).
+The strip's 32 cells carry the pin-side echo of the drawn config: three
+cyan-family lanes under each pin number draw the selected SM's OUT /
+SIDESET / IN extents (SPEC-7-26/21), so a base/count stepper click
+shows where the wiring moved with no program running. Counts of 0 draw
+all 32 pins (the 0-encodes-32 storage); ranges wrap past GPIO31; the
+SIDESET extent counts data bits only — the opt-enable bit is not a pin
+(SPEC-4-2). `mockups/pin-strip.html` is the mock-up round that picked
+the grammar; three candidates ran:
+
+- **Three stacked lanes** (shipped): each kind owns a lane — OUT solid
+  `--cfg`, SIDESET `--cfg-dim`, IN the new light `--cfg-lit` tint —
+  2px tall, 1px apart, near-full cell width. Overlapping mappings stack
+  (OUT∩SIDESET and OUT∩IN both show, each in its lane), nothing
+  collides with the level digit or the owner corner, and the fixed
+  geometry is exactly what the layout gate pins.
+- One band, three fixed slots (position-coded dashes): 3px shorter, but
+  position-only coding — the marks stop reading as extents and become
+  tick marks to memorize.
+- A hatched SIDESET lane: a 2px dither is noise at that height, not the
+  era's crisp pixel columns (the ds-allocator pip hatch works because
+  its pips are taller).
+
+Live vs stale (the review's mid-run corner): a pad the owner's current
+wiring still reaches reads as driven — amber ring, amber ▲; a pad whose
+wiring moved away keeps its hardware truth (OE stays latched, the level
+holds, the owner corner stays) but the ring and ▲ turn gray and the
+tooltip narrates the hold: "the wiring has moved away (no longer
+driven)". The driver classifies (`getState().stale`): OE ∧ a known
+owner ∧ the owner's OUT ∪ SIDESET ∪ SET extents no longer cover the
+pin. The same-clk conflict narration keeps its CC-7 wording verbatim.
+
 ## Layout
 
 - **Not 80×25.** One SM wants ~1440px in three columns: program listing

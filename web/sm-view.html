@@ -149,16 +149,19 @@
       </div>
 
       <!-- ============ pin I/O strip: drives, hold latches, pattern ============ -->
-      <!-- the legend shows the marks, not the sentence: three color-echoed
-         tokens (amber ▲ · cyan · the corner chip) — the full narration
-         lives in the title, and the strip's room belongs to the pins -->
+      <!-- the legend shows the marks, not the sentence: four color-echoed
+         tokens (amber ▲ · cyan · the corner chip · the three-lane wiring
+         swatch) — the full narration lives in the title, and the strip's
+         room belongs to the pins -->
       <div id="pinstrip">
         <span
           class="pslabel"
-          data-tip="pins — click cycles the drive latch: released (Z) → held 1 → held 0. cyan = a held latch (the digit is the driven level) · ▲ = the engine drives the pad (OE) · the colored corner names the owning SM — the last writer, highest-numbered on a same-clk conflict"
+          data-tip="pins — click cycles the drive latch: released (Z) → held 1 → held 0. cyan = a held latch (the digit is the driven level) · ▲ = the engine drives the pad (OE) · the colored corner names the owning SM — the last writer, highest-numbered on a same-clk conflict · the three marks under a pin number are the selected SM's wiring — OUT / SIDESET / IN, cyan top to bottom · a gray ▲ = was driven: the pad still holds its last level, the wiring has moved away"
           >pins · ←/→ walks the cursor <b>Z→1→0</b> · <span class="pk out">▲</span> out ·
           <span class="pk drv">driven</span>
-          · <span class="pk own">0</span> owner SM</span
+          · <span class="pk own">0</span> owner SM ·
+          <span class="pk map"><i></i><i></i><i></i></span>
+          wiring</span
         >
         <div
           id="pincells"

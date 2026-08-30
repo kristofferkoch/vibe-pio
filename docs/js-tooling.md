@@ -16,7 +16,7 @@ behavior change.
 | `web/sm-view.js` | the view's DOM glue (**extract-on-touch**: lint/format always; logic migrates into require-able tested modules only as it is touched) — the listing itself is assembler-derived: rows disassemble from the loaded words and committed edits re-assemble through `pio-asm.js` into a live imem patch |
 | `web/sm-view.html` / `web/sm-view.css` | the shipped page and its stylesheet (the `<style>` extracted so css joins the gate) |
 | `web/node_gate.js` / `web/node_client_gate.js` | the headless `make web` runners (wasm engine / client-vs-oracle; the client gate also round-trips the level listing through `pio-asm.js`) |
-| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface), `browser.js` + `layout.test.js` (the headless-Chromium layout gate — see below), `fake-engine-module.js` + `keyboard.test.js` (the headless-Chromium keyboard walk — see below) |
+| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface), `pin-map.test.js` (the C27 mapping marks: `pinExtents` ranges + the was-driven mask), `browser.js` + `layout.test.js` (the headless-Chromium layout gate — see below), `fake-engine-module.js` + `keyboard.test.js` (the headless-Chromium keyboard walk — see below) |
 | `tools/gen_pio_asm_golden.py` | generates `web/tests/pio-asm-golden.json` from pio_model (stdlib-only; `--check` is the drift gate in `make js`) |
 | `biome.json` | the format+lint configuration (waivers documented below) |
 | `package.json` + `package-lock.json` | dev-only dependency: `@biomejs/biome` |
@@ -126,6 +126,12 @@ against the oracle gate. Prefer that route over blanket `--unsafe`.
   flushes, per-SM feeds/drains, the selected-SM aliases + `stepInsn`,
   the pad-ownership tracking (last writer, CC-7 scan order), and the
   two C24 defect hooks (smaddr / owner) red/green in process.
+  `pin-map.test.js` pins the C27 mapping surface: `pinExtents` (the
+  OUT/SIDESET/SET/IN ranges as masks — wrapping past GPIO31, the
+  0-encodes-32 counts, the opt bit that is not a pin), the selected
+  SM's `pinMap` in `getState`, and the was-driven `stale` mask (OE ∧
+  owner ∧ the owner's write extents moved away — judged by the OWNER's
+  extents, CC-7 lens).
   `drawn-config.test.js` pins the C22 drawn-config
   grammar at its unit-testable core: every drawn control (the
   DESIGN-NOTES table in engine-driver.js — `CFG_CONTROLS` +
@@ -217,6 +223,17 @@ project has hit by hand:
   requiring the boxes to hold exactly throughout. Hover restyles are
   color-only; the pressed bevel swap keeps its padding sum on the
   push-button faces and does not reach the drawn ones.
+- **The wiring marks track the overlay** (C27): the pin strip's three
+  cyan-family lanes per cell draw the selected SM's OUT/SIDESET/IN
+  extents at fixed lane metrics (2px lanes, 1px apart, under the pin
+  number), the filled lanes must match the overlay exactly in an
+  overlap scenario, and one `side-base` stepper gesture — applied the
+  way `sendCtl` applies it — must move the mark in the same render. The
+  twin check pins live vs was-driven: an OE pad inside the owner's
+  wiring renders driven; the moved-from pad carries the `stale` class,
+  the gray mark, and the "wiring has moved away" narration. Both ran
+  red against their re-injected defects (a boot-captured overlay; the
+  stale class dropped).
 - **Priority** — the register column is not the exec pane's leftover
   (the layout reprioritization, four passes): at the 13" references
   its drawn control rows render single-line (the measured wrapped

@@ -63,6 +63,7 @@
   --red: #a31414;
   --cfg: #006a78;
   --cfg-dim: #00505c;
+  --cfg-lit: #4d96a1; /* the IN lane of the pin-strip wiring marks (C27) */
   --addr: #6e4f1a;
   --cream: #ffffe1; /* the tooltip card */
   --sans: "Pixelated MS Sans Serif", Tahoma, sans-serif;
@@ -1422,6 +1423,28 @@ header .mini.imp {
   border: 1px solid currentColor;
   vertical-align: 1px;
 }
+/* the wiring token: the three lanes at swatch size (out/side/in shades) */
+#pinstrip .pk.map {
+  display: inline-block;
+  width: 12px;
+  vertical-align: -1px;
+}
+#pinstrip .pk.map i {
+  display: block;
+  height: 2px;
+  margin-top: 1px;
+  background: var(--cfg);
+}
+#pinstrip .pk.map i:first-child {
+  margin-top: 0;
+  background: var(--cfg);
+}
+#pinstrip .pk.map i:nth-child(2) {
+  background: var(--cfg-dim);
+}
+#pinstrip .pk.map i:nth-child(3) {
+  background: var(--cfg-lit);
+}
 #pincells {
   display: flex;
   gap: 3px;
@@ -1483,6 +1506,50 @@ header .mini.imp {
 }
 .pcell.sel {
   border: 1px solid var(--amber);
+}
+/* C27: the mapping marks — three cyan-family lanes under the pin number
+   draw the selected SM's OUT / SIDESET / IN extents (SPEC-7-26/21). Each
+   kind owns its lane, so overlapping mappings stack instead of colliding
+   (the mock-up round's finding — pin-strip.html); counts of 0 draw all
+   32 pins. Empty lanes keep the geometry fixed for the layout gate. */
+.pmap {
+  display: block;
+  margin: 1px 3px 2px;
+}
+.pmap i {
+  display: block;
+  height: 2px;
+  margin-top: 1px;
+  background: transparent;
+}
+.pmap i:first-child {
+  margin-top: 0;
+}
+.pmap .mo {
+  background: var(--cfg); /* OUT */
+}
+.pmap .ms {
+  background: var(--cfg-dim); /* SIDESET */
+}
+.pmap .mi {
+  background: var(--cfg-lit); /* IN */
+}
+/* C27: was-driven — the pad holds its last level (OE stays latched in
+   hardware) but the owner's wiring has moved away: the ring and ▲ read
+   gray, a hold not a drive. :not(.kc) keeps the keyboard cursor's navy
+   focus rect (the lower-specificity C25 rule) winning when both apply;
+   sits after the .oe/.hi rules to win the equal-specificity contest. */
+.pcell.oe.stale:not(.kc) {
+  box-shadow:
+    inset 2px 2px 0 var(--hi),
+    inset -2px -2px 0 var(--line),
+    inset 0 0 0 1px var(--dimmer);
+}
+.pcell.stale .pm {
+  color: var(--dimmer);
+}
+.pcell.stale .pl {
+  color: var(--dim);
 }
 #pattern {
   display: flex;

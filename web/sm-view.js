@@ -163,6 +163,7 @@ const V = {
     sm: 0,
     sms: [],
     owners: new Array(32).fill(-1),
+    stale: 0, // C27: was-driven pads (OE held, the owner's wiring moved away)
     pc: 0,
     displayPc: 0,
     phase: 'OFF',
@@ -1128,10 +1129,22 @@ function renderRegs(st) {
 }
 
 // ---- pin strip: drive latches, pattern source, engine outputs ---------
+// C27: the strip is the pin-side echo of the drawn config — three
+// cyan-family lanes under each pin number carry the SELECTED SM's OUT /
+// SIDESET / IN extents (SPEC-7-26/21; VD.pinExtents over the same OV the
+// wave-header tags render from), so a base/count stepper click shows
+// where the wiring moved with no program running. A gray ring + gray ▲
+// names a was-driven pad: still OE and holding its last level, but the
+// owner's current write extents no longer reach it (the driver's stale
+// mask — the moved-from pin stops reading as currently driven).
 function renderPins(st) {
   const host = $('pincells');
   const drives = st.drives;
   const owners = st.owners || new Array(32).fill(-1);
+  const stale = st.stale || 0;
+  const map = VD.pinExtents(OV);
+  const pc = OV.pinctrl;
+  const sideData = Math.max(0, pc.ssCnt - (OV.execctrl.sideEn ? 1 : 0)); // SPEC-4-2
   const patPin = st.pattern.mode !== 'off' ? st.pattern.pin : -1;
   let h = '';
   for (let p = 0; p < 32; p++) {
@@ -1139,9 +1152,15 @@ function renderPins(st) {
     const lvl = (st.gpioOut >> p) & 1;
     const drv = drives[p];
     const own = owners[p];
+    const was = (stale >>> p) & 1;
+    const wires = [];
+    if ((map.out >>> p) & 1) wires.push(`out ${pc.outBase}·${pc.outCnt || 32}`);
+    if ((map.side >>> p) & 1) wires.push(`side ${pc.ssBase}·${sideData}`);
+    if ((map.in >>> p) & 1) wires.push(`in ${pc.inBase}·${OV.shiftctrl.inCount || 32}`);
     const cls = [
       'pcell',
       oe ? 'oe' : '',
+      was ? 'stale' : '',
       drv === 1 ? 'dh' : drv === 0 ? 'dl' : '',
       lvl ? 'hi' : '',
       p === patPin ? 'pat' : '',
@@ -1152,7 +1171,12 @@ function renderPins(st) {
       .join(' ');
     const tips = [
       `pin ${p}`,
-      oe ? `engine OUTPUT — level ${lvl}` : 'engine input',
+      oe
+        ? was
+          ? `pad HELD at level ${lvl} — SM${own}'s last write; the wiring has moved away (no longer driven)`
+          : `engine OUTPUT — level ${lvl}`
+        : 'engine input',
+      wires.length ? `SM${curSm} wiring: ${wires.join(' · ')}` : `not in SM${curSm}'s wiring`,
       drv === null ? 'drive latch released (Z)' : `drive latch HELD at ${drv}`,
       patPin === p ? `pattern source (${st.pattern.mode})` : '',
       p === lensPin ? 'lens/wave target' : '',
@@ -1162,7 +1186,8 @@ function renderPins(st) {
     ]
       .filter(Boolean)
       .join(' · ');
-    h += `<div class="${cls}" id="pc${p}" role="option" aria-selected="${p === pinCursor}" data-pin="${p}" data-tip="${tips}"><span class="pn">${p}</span><span class="pl">${lvl}</span><span class="pm">${oe ? '▲' : drv !== null ? 'D' : ''}${patPin === p ? '◆' : ''}</span>${own >= 0 ? `<span class="po">${own}</span>` : ''}</div>`;
+    const lanes = `<span class="pmap"><i class="${(map.out >>> p) & 1 ? 'mo' : ''}"></i><i class="${(map.side >>> p) & 1 ? 'ms' : ''}"></i><i class="${(map.in >>> p) & 1 ? 'mi' : ''}"></i></span>`;
+    h += `<div class="${cls}" id="pc${p}" role="option" aria-selected="${p === pinCursor}" data-pin="${p}" data-tip="${tips}"><span class="pn">${p}</span>${lanes}<span class="pl">${lvl}</span><span class="pm">${oe ? '▲' : drv !== null ? 'D' : ''}${patPin === p ? '◆' : ''}</span>${own >= 0 ? `<span class="po">${own}</span>` : ''}</div>`;
   }
   host.innerHTML = h;
   applyPinCursor();

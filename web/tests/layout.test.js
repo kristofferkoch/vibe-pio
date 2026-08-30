@@ -692,3 +692,126 @@ for (const [width, height] of VIEWPORTS) {
     );
   });
 }
+
+// C27: the pin strip draws the mapping. The three cyan-family lanes
+// under each pin number carry the selected SM's OUT / SIDESET / IN
+// extents (SPEC-7-26/21), so a base/count stepper click shows where the
+// wiring moved with no program running. The pins: every cell carries the
+// three-lane band between its number and its level at the fixed lane
+// metrics, the filled lanes match the overlay exactly (overlap scenario:
+// OUT 0·3, SIDESET 2·2, IN 1·4 — OUT∩SIDESET on 2, OUT∩IN on 1..2), and
+// one side-base stepper gesture — applied the way sendCtl applies it —
+// moves the SIDESET mark the same clk. The drawn state is reached the
+// way the sandbox reaches it: overlay fields, then the render (the same
+// path a real stepper write takes).
+const PINMAP_SCAN = `(() => {
+  const bad = [];
+  const author = (pinctrl, shift) => {
+    Object.assign(curState.sms[0].pinctrl, pinctrl);
+    if (shift) Object.assign(curState.sms[0].shiftctrl, shift);
+    OV = overlayOf(0);
+    render(V.state);
+  };
+  author({ outBase: 0, outCnt: 3, ssBase: 2, ssCnt: 2, setCnt: 0, inBase: 1 }, { inCount: 4 });
+  const exp = { out: new Set([0, 1, 2]), side: new Set([2, 3]), in: new Set([1, 2, 3, 4]) };
+  const filled = (el) => getComputedStyle(el).backgroundColor !== 'rgba(0, 0, 0, 0)';
+  const cells = [...document.querySelectorAll('#pincells .pcell')];
+  if (cells.length !== 32) bad.push('expected 32 pin cells, found ' + cells.length);
+  for (const c of cells) {
+    const p = +c.dataset.pin;
+    const band = c.querySelector('.pmap');
+    if (!band) {
+      bad.push('pin ' + p + ' has no wiring band');
+      continue;
+    }
+    const lanes = [...band.querySelectorAll('i')];
+    if (lanes.length !== 3) {
+      bad.push('pin ' + p + ' band has ' + lanes.length + ' lanes, expected 3 (out/side/in)');
+      continue;
+    }
+    const nb = c.querySelector('.pn').getBoundingClientRect();
+    const lb = c.querySelector('.pl').getBoundingClientRect();
+    const bb = band.getBoundingClientRect();
+    if (bb.top < nb.bottom - 0.5 || bb.bottom > lb.top + 0.5)
+      bad.push('pin ' + p + ': the wiring band is not under the pin number');
+    if (bb.width < 24)
+      bad.push('pin ' + p + ': wiring band only ' + bb.width.toFixed(1) + 'px wide');
+    const rects = lanes.map((l) => l.getBoundingClientRect());
+    const laneKinds = ['out', 'side', 'in']; // DOM order: the mo/ms/mi lanes
+    for (const [k, name] of laneKinds.entries()) {
+      const r = rects[k];
+      if (Math.abs(r.height - 2) > 0.5)
+        bad.push('pin ' + p + ': the ' + name + ' lane is ' + r.height.toFixed(1) + 'px tall (fixed 2px)');
+      if (filled(lanes[k]) !== exp[name].has(p))
+        bad.push(
+          'pin ' + p + ': the ' + name + ' lane is ' +
+          (filled(lanes[k]) ? 'drawn' : 'missing') +
+          ' — the marks do not match the overlay',
+        );
+    }
+    if (!(rects[0].bottom <= rects[1].top + 0.5 && rects[1].bottom <= rects[2].top + 0.5))
+      bad.push('pin ' + p + ': lanes collide — the three kinds must stack, not overlap');
+  }
+  for (const [g, f, v] of VD.controlEdit(OV, 'side-base', 'inc'))
+    curState.sms[0][g][f] = v;
+  OV = overlayOf(0);
+  render(V.state);
+  const sideNow = (p) => filled(document.querySelectorAll('#pc' + p + ' .pmap i')[1]);
+  if (sideNow(2) || !sideNow(3) || !sideNow(4))
+    bad.push(
+      'side-base inc (2 to 3) did not move the SIDESET mark — the strip is drawing a stale overlay',
+    );
+  return bad;
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`pin strip draws the wiring marks ${width}×${height}: lanes + the stepper move`, async () => {
+    await load(null, width, height);
+    const bad = await page.evaluate(PINMAP_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `broken wiring marks at ${width}×${height} (a base stepper click must show where the wiring moved)`,
+    );
+  });
+}
+
+// C27: live vs stale. A pad the owner's current wiring still reaches is
+// actively driven (amber); a pad whose wiring has moved away holds its
+// last level and must stop reading as currently driven — the stale
+// class, the gray ring and the gray ▲. The scenario is the mid-run
+// side-base move from the gpio0-panel review: pin 0 in-mapping, pin 1
+// moved-from, both OE with the same owner.
+const STALE_SCAN = `(() => {
+  const bad = [];
+  const owners = new Array(32).fill(-1);
+  owners[0] = 0;
+  owners[1] = 0;
+  render(Object.assign({}, V.state, { gpioOe: 0b11, gpioOut: 0b11, owners, stale: 0b10 }));
+  const live = document.querySelector('#pc0');
+  const was = document.querySelector('#pc1');
+  if (!live || !was) return ['the pin cells went missing'];
+  if (live.classList.contains('stale'))
+    bad.push('the live pad (in the owner wiring) carries the stale class');
+  if (!was.classList.contains('stale'))
+    bad.push('the was-driven pad never got the stale class — the moved-from pin still reads as driven');
+  if (!was.classList.contains('oe') || !live.classList.contains('oe'))
+    bad.push('the OE truth was lost rendering the distinction');
+  if (getComputedStyle(was.querySelector('.pm')).color === getComputedStyle(live.querySelector('.pm')).color)
+    bad.push('the was-driven pad keeps the live mark color — a hold must read gray, not driven');
+  if (!was.dataset.tip.includes('wiring has moved away'))
+    bad.push('the was-driven pad does not narrate the move (the tooltip keeps the driven story)');
+  return bad;
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`was-driven pads read stale, live pads read driven ${width}×${height}`, async () => {
+    await load(null, width, height);
+    const bad = await page.evaluate(STALE_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `broken live-vs-stale distinction at ${width}×${height} (the moved-from pin must stop reading as currently driven)`,
+    );
+  });
+}
