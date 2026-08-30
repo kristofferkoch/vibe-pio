@@ -644,26 +644,24 @@ main > * {
   position: absolute;
   z-index: 50;
   display: flex;
-  flex-direction: column;
   background: var(--well);
   border: 1px solid #000;
   box-shadow: 2px 2px 0 #000; /* the hard offset shadow — no blur */
 }
-#edmain {
-  display: flex;
-}
-/* the live machine-code strip: the editing row's word (or its error)
-   before the commit — the top edge of the editor popup */
+/* C31: the machine-code strip is its own box (it was the popup's top
+   edge) — anchored to the editor row and on for the editor's whole
+   life, so the completion list's coming and going never takes it */
 #edcode {
+  position: absolute;
+  z-index: 50;
+  background: var(--well);
+  border: 1px solid #000;
+  box-shadow: 2px 2px 0 #000;
   padding: 2px 10px;
   font-size: 16px;
   line-height: 18px;
   letter-spacing: 0;
-  border-bottom: 1px solid var(--line);
   white-space: nowrap;
-}
-#edcode:empty {
-  display: none;
 }
 #edcode .ok {
   color: var(--green);

@@ -101,3 +101,16 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   chip dodge, yield (hide on arc-end rows), or does the stepper pair
   move? The C22/C26 gates pin the stepper boxes exactly, so moving
   them is the expensive answer.
+- The `?row=31` demo URL opens its editor and immediately loses it
+  (found in C31's browser session, 2026-08-30; pre-existing — the
+  shipped page does it too): `applyUrlParams` runs on the worker's
+  'ready', `openRow` focuses the instruction cell, and the 'load'
+  state replies that follow rebuild the listing
+  (`buildProgram` → `host.replaceChildren(...nodes, RE)` re-seats the
+  editor node) while the auto-scroll-to-reveal of a below-the-fold row
+  races the focusout-commit path — the editor closes itself
+  (`curRow` back to -1, no error). `?row=2` (above the fold) survives.
+  Open questions if promoted: should the demo-URL row wait for the
+  state replies to settle before opening (or re-focus after the
+  rebuild), and is `replaceChildren` moving a focused RE the general
+  hazard (any state reply while editing scrolls/rebuilds)?

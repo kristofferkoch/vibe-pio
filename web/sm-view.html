@@ -811,12 +811,14 @@
          path is the status line above (one narration store, two mouths) -->
     <div id="tip" hidden></div>
 
+    <!-- C31: the row editor's two boxes — the machine-code strip (#edcode,
+         anchored to the editor row, on for the editor's whole life) and
+         the completion list (#edpop, anchored to the caret), which exists
+         only while it has items for the caret's slot -->
+    <div id="edcode" hidden></div>
     <div id="edpop" hidden>
-      <div id="edcode"></div>
-      <div id="edmain">
-        <div id="edcands"></div>
-        <div id="eddetail"></div>
-      </div>
+      <div id="edcands"></div>
+      <div id="eddetail"></div>
     </div>
 
     <div id="boot"><span class="lamp on"></span>loading wasm engine…</div>

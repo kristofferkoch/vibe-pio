@@ -1579,6 +1579,7 @@ function render(st) {
 const ED = $('edittxt'),
   HL = $('edithl'),
   POP = $('edpop'),
+  STRIP = $('edcode'), // C31: the machine-code strip — its own always-on box
   RE = $('rowedit'),
   HOST = $('progrows');
 const SIDE = $('edside'),
@@ -1898,9 +1899,9 @@ function edRowText() {
 // CURRENT ds allocation, so the word — or the reason there is none — is
 // visible before the commit, not only as the row tooltip afterwards.
 function renderEdCode() {
-  const host = $('edcode');
   if (curRow < 0) {
-    host.innerHTML = '';
+    STRIP.innerHTML = '';
+    STRIP.hidden = true;
     return;
   }
   const text = edRowText();
@@ -1920,8 +1921,24 @@ function renderEdCode() {
       html = `<span class="bad">✗ ${esc(String(e.message))}</span>`;
     }
   }
-  host.innerHTML = html;
+  STRIP.innerHTML = html;
   RE.dataset.tip = html.replace(/<[^>]+>/g, '');
+  placeStrip();
+}
+// The strip anchors to the editor row (never the caret) and is on for
+// the editor's whole life — any cell, any completion-list state (C31).
+function placeStrip() {
+  if (RE.hidden) {
+    STRIP.hidden = true;
+    return;
+  }
+  STRIP.hidden = false;
+  const reb = RE.getBoundingClientRect();
+  const h = STRIP.offsetHeight;
+  let y = reb.bottom + 2;
+  if (y + h > innerHeight - 8) y = reb.top - h - 2;
+  STRIP.style.left = `${reb.left + scrollX}px`;
+  STRIP.style.top = `${Math.max(8, y) + scrollY}px`;
 }
 function openRow(i, focus, seed) {
   if (curRow >= 0) commitRow();
@@ -1942,7 +1959,7 @@ function openRow(i, focus, seed) {
   f.setSelectionRange(f.value.length, f.value.length);
   renderED();
   edSel = 0;
-  popupShow();
+  popupShow(true); // a new row reopens the list (C31)
 }
 function commitRow() {
   if (curRow < 0) return;
@@ -1951,6 +1968,7 @@ function commitRow() {
   curRow = -1;
   refocusListing(); // while the editor still holds focus
   RE.hidden = true;
+  STRIP.hidden = true;
   popupHide();
   pickEnd();
   buildAndPush(); // C19: re-assemble; on success patch the engine image
@@ -1961,6 +1979,7 @@ function cancelRow() {
   curRow = -1;
   refocusListing(); // while the editor still holds focus
   RE.hidden = true;
+  STRIP.hidden = true;
   popupHide();
   pickEnd();
 }
@@ -2016,6 +2035,23 @@ HOST.addEventListener('keydown', (e) => {
 });
 let edSel = 0,
   edCands = [];
+// C31: the completion list is its own box that exists only while it has
+// items for the caret's slot. Esc's close is remembered against the SLOT
+// alone (which blank in the signature the caret sits in) — leaving the
+// slot, a new row, or Ctrl+Space reopens; typing inside the slot keeps
+// it closed. edSeen is the context the list was last computed for, so
+// same-context caret moves leave the box untouched.
+let edSupp = -1; // the slot Esc closed the list on (-1: nothing suppressed)
+let edSeen = ''; // `slot|partial` of the last popupShow
+function edCtx() {
+  const { toks, partial } = lineCtx();
+  return { slot: toks.length, key: `${toks.length}|${partial.toLowerCase()}` };
+}
+// the row editor's key map follows the list's state — the status line
+// narrates whichever is current (the HTML default is the closed map)
+const ROWED_KEYS_OPEN =
+  'row editor: list open — Tab accepts · ↑/↓ walk it · Enter commits the row · Esc closes the list';
+const ROWED_KEYS_CLOSED = RE.dataset.status; // the HTML default is the closed map
 function lineCtx() {
   const upto = ED.value.slice(0, ED.selectionStart);
   const ls = upto.lastIndexOf('\n') + 1;
@@ -2124,30 +2160,27 @@ function detailHTML(c) {
     `<div class="spec">operand of ${toks[0] || '?'}</div>`
   );
 }
-function popupShow() {
+function popupShow(force) {
+  if (force) edSupp = -1; // the explicit reopen: Ctrl+Space, a fresh row
   edCands = computeCands();
-  // no candidates but a non-empty row: the popup stays as the machine-code
-  // strip alone (the pick prompt's digit dismissal must not kill the
-  // preview); fully empty — nothing to say — stands down
-  if (!edCands.length && !edRowText()) {
+  const { slot, key } = edCtx();
+  edSeen = key;
+  if (edSupp >= 0 && slot !== edSupp) edSupp = -1; // the close was spent on leaving
+  if (!edCands.length || edSupp === slot) {
     popupHide();
-    HOST.classList.remove('picking');
     return;
   }
-  edSel = Math.min(edSel, Math.max(0, edCands.length - 1));
+  edSel = Math.min(edSel, edCands.length - 1);
   const wantPick = edCands.some((c) => c.kind === 'pick');
   if (pickLive && !wantPick) pickEnd(); // typed past the pick — stand down
   if (!pickLive) HOST.classList.toggle('picking', wantPick); // the hint
-  $('edmain').style.display = edCands.length ? '' : 'none';
-  if (edCands.length) {
-    $('edcands').innerHTML = edCands
-      .map(
-        (c, i) =>
-          `<div class="ecand${i === edSel ? ' sel' : ''}" data-i="${i}">${esc(c.t)}${c.kind ? `<span class="kind">${esc(c.kind)}</span>` : ''}</div>`,
-      )
-      .join('');
-    $('eddetail').innerHTML = detailHTML(edCands[edSel]);
-  }
+  $('edcands').innerHTML = edCands
+    .map(
+      (c, i) =>
+        `<div class="ecand${i === edSel ? ' sel' : ''}" data-i="${i}">${esc(c.t)}${c.kind ? `<span class="kind">${esc(c.kind)}</span>` : ''}</div>`,
+    )
+    .join('');
+  $('eddetail').innerHTML = detailHTML(edCands[edSel]);
   POP.hidden = false;
   const mir = document.createElement('div');
   const cs = getComputedStyle(ED);
@@ -2165,14 +2198,20 @@ function popupShow() {
   const w = POP.offsetWidth,
     h = POP.offsetHeight;
   const x = Math.max(8, Math.min(x0 - w * 0.15, innerWidth - w - 8));
-  let y = reb.bottom + 2;
+  // stacked under the machine strip — its box is always up (C31)
+  let y = STRIP.getBoundingClientRect().bottom + 2;
   if (y + h > innerHeight - 8) y = reb.top - h - 2;
   POP.style.left = `${x + scrollX}px`;
   POP.style.top = `${Math.max(8, y) + scrollY}px`;
   mir.remove();
+  RE.dataset.status = ROWED_KEYS_OPEN;
+  updateStatus();
 }
 function popupHide() {
   POP.hidden = true;
+  if (!pickLive) HOST.classList.remove('picking');
+  RE.dataset.status = ROWED_KEYS_CLOSED;
+  updateStatus();
 }
 function accept(c) {
   if (c.kind === 'pick') {
@@ -2206,6 +2245,24 @@ ED.addEventListener('scroll', () => {
 SIDE.addEventListener('input', renderEdCode);
 DLY.addEventListener('input', renderEdCode);
 ED.addEventListener('blur', () => popupHide());
+// C31: the list follows the caret. A move that changes the token context
+// (another slot, or a different partial inside this one) recomputes it;
+// same-context moves leave the box untouched. selectionchange covers the
+// keyboard path; the click handler nails the mouse path regardless.
+function caretMoved() {
+  if (curRow < 0 || pickLive || document.activeElement !== ED) return;
+  if (edCtx().key !== edSeen) {
+    edSel = 0;
+    popupShow();
+  }
+}
+document.addEventListener('selectionchange', caretMoved);
+ED.addEventListener('click', caretMoved);
+ED.addEventListener('focus', () => {
+  // the caret is back — so is its list (skipped mid-openRow, before the
+  // strip is placed: openRow's own popupShow presents)
+  if (curRow >= 0 && !pickLive && !STRIP.hidden) popupShow();
+});
 RE.addEventListener('focusout', (e) => {
   if (HOST.classList.contains('picking')) return;
   if (e.relatedTarget && RE.contains(e.relatedTarget)) return;
@@ -2214,8 +2271,14 @@ RE.addEventListener('focusout', (e) => {
     commitRow();
   }, 0);
 });
-HOST.addEventListener('scroll', () => popupHide());
-addEventListener('resize', () => popupHide());
+HOST.addEventListener('scroll', () => {
+  popupHide(); // the caret anchor went stale
+  placeStrip(); // the strip follows its editor row
+});
+addEventListener('resize', () => {
+  popupHide();
+  placeStrip();
+});
 SIDE.addEventListener('focus', () => HOST.classList.remove('picking'));
 DLY.addEventListener('focus', () => HOST.classList.remove('picking'));
 ED.addEventListener('keydown', (e) => {
@@ -2238,7 +2301,14 @@ ED.addEventListener('keydown', (e) => {
     }
     return;
   }
+  if (e.key === ' ' && e.ctrlKey) {
+    e.preventDefault();
+    popupShow(true); // C31: the explicit reopen
+    return;
+  }
   if (!POP.hidden && edCands.length) {
+    // C31: while the list is open it owns the vertical keys and Tab;
+    // Enter commits in BOTH states — one key, one meaning
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       edSel = (edSel + 1) % edCands.length;
@@ -2247,18 +2317,17 @@ ED.addEventListener('keydown', (e) => {
       e.preventDefault();
       edSel = (edSel - 1 + edCands.length) % edCands.length;
       popupShow();
-    } else if (e.key === 'Tab' || e.key === 'Enter') {
+    } else if (e.key === 'Tab') {
       e.preventDefault();
       accept(edCands[edSel]);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      hopRow(1); // commits the row — no Escape-before-Enter dance
     } else if (e.key === 'Escape') {
       e.preventDefault();
       popupHide();
+      edSupp = edCtx().slot; // and it stays closed for this slot
     }
-    return;
-  }
-  if (e.key === ' ' && e.ctrlKey) {
-    e.preventDefault();
-    popupShow();
     return;
   }
   if (e.key === 'Enter' || e.key === 'ArrowDown') {

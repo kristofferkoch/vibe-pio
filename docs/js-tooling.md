@@ -305,7 +305,11 @@ layout gate; not one mouse event, not one `element.click()` — through
 the mouseless core loop: Tab into the machines bar and the pin strip,
 walk the arrows, latch a pin; Tab into the listing (a listbox), walk
 the row cursor, type an instruction (the editor opens under the keys
-alone), commit it, walk the gutter pick; spin a drawn stepper through
+alone), exercise the row editor's completion-list contract (C31 — the
+list is its own box next to the always-on machine-code strip: ←/Home/End
+recompute it under the caret, Esc closes it for its slot while the strip
+stays, Enter commits in both states, Tab is the only accept key), commit
+the row, walk the gutter pick; spin a drawn stepper through
 its wrap; retarget the wave row's lens-pin picker (C28 — one Tab stop,
 −/+/←/→, wrapping both ways); take an Alt+letter mnemonic.
 

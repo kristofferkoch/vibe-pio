@@ -85,6 +85,8 @@ const KEYS = {
   ArrowUp: { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
   ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
   ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 },
+  Home: { key: 'Home', code: 'Home', keyCode: 36 },
+  End: { key: 'End', code: 'End', keyCode: 35 },
   Space: { key: ' ', code: 'Space', keyCode: 32 },
   Backspace: { key: 'Backspace', code: 'Backspace', keyCode: 8 },
 };
@@ -267,12 +269,71 @@ test('the keyboard walk: tab in, walk, type, commit, pick, spin, latch', async (
     (await value("$('edcode').textContent")).includes('0x'),
     'the live preview assembled the row',
   );
-  await press('Escape'); // dismiss the completion popup (31 is a count candidate)
-  await press('Enter'); // commit + hop to the next row, the editor's own model
-  await press('Escape'); // close row 4's fresh popup
-  await press('Escape'); // cancel the empty row — focus returns to the listing
-  assert.strictEqual(await value('ROWS[2]'), 'set x, 3', 'the commit landed in the listing');
+
+  // ---- C31: the list is its own box, and the keys follow its state -----
+  // '3' prefixes exactly one count candidate, so the list is open with 31
+  assert.strictEqual(
+    await value("!$('edpop').hidden && $('edcands').children.length"),
+    1,
+    'the completion list exists while it has items (31 for the count slot)',
+  );
+  assert.ok(
+    (await value("$('statusline').textContent")).includes('Tab accepts'),
+    'the status line narrates the open-list key contract',
+  );
+  // ← moves the caret into the slot's leading space: the partial empties
+  // and all four counts appear — the menu recomputes under the caret
+  // (selectionchange is async, so the walk waits like a user would)
+  await press('ArrowLeft');
+  await until(
+    "$('edcands').children.length === 4",
+    'the list to follow the caret (the four counts, not stale 31 alone)',
+  );
+  // Esc closes the list for this slot — and only the list: the machine
+  // strip is its own always-on box and must survive
+  await press('Escape');
+  assert.strictEqual(await value("$('edpop').hidden"), true, 'Esc closes the list');
+  assert.ok(
+    await value("$('edcode').getBoundingClientRect().height > 0"),
+    'the machine-code strip is its own box — Esc on the list leaves it up',
+  );
+  assert.ok(
+    (await value("$('statusline').textContent")).includes('Tab crosses cells'),
+    'the status line narrates the closed-list contract',
+  );
+  // Home leaves the slot (caret to the opcode): the Esc close was spent,
+  // and the list reopens over the opcode menu
+  await press('Home');
+  await until(
+    "!$('edpop').hidden && $('edcands').children.length === 10",
+    'the caret leaving the Esc-closed slot to reopen the list (the opcodes)',
+  );
+  // End returns to the count slot: the list recomputes to the '3' prefix
+  await press('End');
+  await until(
+    "$('edcands').children.length === 1",
+    'the list to recompute as the caret returns (31 again)',
+  );
+  // Enter commits in BOTH states — the Escape-before-Enter dance is gone
+  await press('Enter');
+  assert.strictEqual(
+    await value('ROWS[2]'),
+    'set x, 3',
+    'Enter commits the row while the list is open — one key, one meaning',
+  );
   assert.ok(await value('BUILT[2] !== 0'), 'the committed row assembled into the live image');
+  assert.strictEqual(await value('RE.style.top'), '60px', 'the commit hops to the next row');
+  assert.strictEqual(
+    await value('document.activeElement.id'),
+    'edittxt',
+    'the fresh row takes focus on its instruction cell',
+  );
+  assert.ok(
+    await value("!$('edpop').hidden"),
+    'a new row reopens the list (the empty row offers the opcodes)',
+  );
+  await press('Escape'); // close the fresh row's list — it stays closed for its slot
+  await press('Escape'); // cancel the empty row — focus returns to the listing
   assert.ok(
     (await value("document.getElementById('pr2').textContent")).includes('set x, 3'),
     'the listing shows the committed instruction',
@@ -283,11 +344,11 @@ test('the keyboard walk: tab in, walk, type, commit, pick, spin, latch', async (
     'the editor hands focus back to the listing',
   );
 
-  // ---- the gutter pick walk: candidate → pick mode → arrows → Enter ----
+  // ---- the gutter pick walk: Tab accepts; pick mode keeps its keys -----
   await press('Enter'); // open the row editor on the cursor row
   await type('jmp ');
   for (let i = 0; i < 7; i++) await press('ArrowDown'); // walk to ↦ pick row
-  await press('Enter');
+  await press('Tab'); // C31: Tab is the only accept key while the list is open
   assert.ok(
     await value("HOST.classList.contains('picking')"),
     'the pick candidate enters gutter-pick mode',
@@ -311,8 +372,7 @@ test('the keyboard walk: tab in, walk, type, commit, pick, spin, latch', async (
     !(await value("!!document.querySelector('.jparc.prev')")),
     'the preview arc goes with it',
   );
-  await press('Escape');
-  await press('Escape');
+  await press('Escape'); // the target is complete — no candidates, so Esc cancels the row
 
   // ---- fifo join: a radio group on the arrows --------------------------
   const toJoin = await tabUntil(`${activeId} === 'segjoin'`, 'the fifo join radio group');

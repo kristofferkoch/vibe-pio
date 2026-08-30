@@ -150,28 +150,7 @@ Web cards: the JS discipline (docs/js-tooling.md), red/green TDD, DOM
 glue verified by the browser session and `make web` — geometry and
 keyboard only through the two sanctioned headless gates. Dependency
 order: C31 → C32 (both touch popupShow/computeCands).
-
-C31 — the row editor's keys mean one thing — the open/closed state of
-the completion list becomes visible and stable, and the keys follow it.
-Split `#edpop`: the machine-code strip stays always-on; the completion
-list is its own box that exists only when it has items (today
-popupShow keeps the popup on screen with the candidate pane hidden, so
-the same-looking screen flips ArrowDown between walk-the-menu and
-commit-and-hop the moment computeCands returns empty). The list follows
-the caret: recompute or close on `selectionchange` and click-in-text
-(today only input/accept/openRow/Ctrl+Space recompute, so ←/→ or a
-click into another operand or the opcode leaves the menu stale); Esc
-closes the list and it stays closed for that slot — the caret leaving
-the slot, a new row, or Ctrl+Space reopens. The key contract while the
-list is open: Tab accepts, ↑/↓ walk it; while closed: Enter commits
-and hops (Enter now commits in both states), ↑/↓ hop rows, second Esc
-cancels the row; ←/→/Home/End always move the caret. The gutter pick
-keeps its keys and its visible mode (the arc) — untouched. The status
-line's row-editor narration follows the new contract. The keyboard
-walk re-baselines red/green: the Escape-before-Enter choreography goes,
-and the walk re-types the commit path through the new contract; the
-browser session checks the split popup's geometry (layout gate extended
-only if the split lands in a pinned region).
+C31 landed 2026-08-30; C32 remains.
 
 C32 — the suggestions match the slot under the caret — the candidate
 model stops being a token index. Per-instruction slot models in
