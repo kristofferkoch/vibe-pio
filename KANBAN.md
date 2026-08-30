@@ -187,3 +187,40 @@ non-canonical). Suggestion suppression when the slot is already
 complete (`set x, 3` offering 31 is noise, not help); with C31's Enter
 rule a lingering list is no longer dangerous, but the surprise stays
 until it goes.
+
+## Web track — state swaps never move boxes (C33)
+
+Scheduled 2026-08-30 by owner request, raised in the same planning
+round as C31–C32 ("while we're planning: buttons change width because
+they change text, like RUN/PAUSE — buttons need to be sized to their
+possible max text" — the owner's wording is the decision; the code read
+below is the evidence). Not via the IDEAS.md hop. Findings on record:
+`brun` ('▶ RUN' ↔ '❚❚ PAUSE', sm-view.js run/pause) is an auto-width
+flex child of the header `.ctrl` bar, so every run/pause toggle
+reflows the bar — the speed select and CYCLE/INSN shift under the
+pointer; `bcopy`'s ✓ flash likewise, and both swaps assign textContent,
+which permanently wipes the `<u>` mnemonic underline — bcopy loses its
+L marker after the first copy, brun loses its R indicator for as long
+as it reads PAUSE (Alt+R itself keeps working through MNEMONICS; only
+the visible indicator vanishes). Inspected and cleared: `savestate`
+('on' ↔ 'failed') is the only other state-swapped text and sits
+right-anchored at the footer line's end — no neighbor to shift; data
+readouts (cyc, the word counts) are out of scope — their content is
+the signal, not a state label. Technique on record: the two-label grid
+stack — both labels live in the button, grid-area 1/1, the inactive
+one visibility:hidden — sizing to the possible max with no tuned
+min-widths and keeping the mnemonic markup in both states; the CUA
+canon already on record in IDEAS.md prescribes stable command-button
+geometry. Web card: the JS discipline (docs/js-tooling.md), red/green
+TDD, DOM glue verified by the browser session and `make web`. Gate:
+the layout test's never-reflow discipline ("hover and press never
+reflow", layout.test.js:503; "drive marks never reflow the strip",
+:827) gains the state-swap leg — brun's box and the `.ctrl` siblings'
+x-positions identical across run()/pause(), bcopy's box stable across
+the flash — run red against the shipped page first, green with the
+stack. Dependency order: C33 ∥ C31/C32 (different region of the page).
+
+C33 — the labels swap, the boxes don't move — brun and bcopy sized to
+their possible max text via the two-label grid stack, the mnemonic
+underlines alive in every state, and the layout gate's state-swap leg
+pinning the bar's geometry across the toggles.
