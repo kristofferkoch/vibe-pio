@@ -25,8 +25,9 @@
   entry points, pad ownership on the pin strip (the last SM to write a
   pin, highest-numbered on same-clk conflicts — CC-7), pin drives +
   hold latches + a pattern generator, the RX drain, IRQ flags, real
-  CLKDIV, and the selectable monitor lens (off / square / uart on a
-  picked pin — a lens, never a judge, until levels). Boots to empty
+  CLKDIV, and the selectable monitor lens (off / square / uart; the pin
+  is the wave row's own drawn picker — a lens, never a judge, until
+  levels). Boots to empty
   memory (all-zero = the jmp-0 park, now on four cursors); the old
   level-02 uart_tx lives on as the loadable demo. Persistence is
   localStorage autosave + JSON export/import of the stored-program
@@ -55,6 +56,11 @@
   (silver chrome, navy title bar, two bitmap fonts — see
   mockups/DESIGN-NOTES.md, "The era skin"); the narration moved from
   title= to data-tip= so the page, not the browser, draws tooltips.
+  C28 moves the lens pin down onto the wave row: the gpio<N> label is a
+  drawn stepper pair riding the row's spin grammar (one Tab stop,
+  −/+/←/→, wrapping 0..31), and the exec-title pin select is gone (the
+  mode select stayed) — following a signal that moved never leaves the
+  wave.
   Serve from the repo root (web/serve.py)
   so the engine resolves at build/web/.
 -->
@@ -199,6 +205,7 @@
               <button
                 type="button"
                 id="ssminus"
+                tabindex="-1"
                 data-g="dec"
                 data-tip="fewer side bits → more delay range"
               >
@@ -208,6 +215,7 @@
               <button
                 type="button"
                 id="ssplus"
+                tabindex="-1"
                 data-g="inc"
                 data-tip="more side bits → less delay range"
               >
@@ -291,14 +299,12 @@
               >MONITOR lens
               <select
                 id="lensmode"
-                data-tip="the receiver monitor is a lens over the picked pin — a lens, never a judge, until levels"
+                data-tip="the receiver monitor is a lens over the wave row's picked pin — a lens, never a judge, until levels"
               >
                 <option value="off" selected>off</option>
                 <option value="square">square</option>
                 <option value="uart">uart 8N1</option>
               </select>
-              · pin
-              <select id="lenspin" data-tip="the lens/waveform target pin"></select>
               · decoded <b id="monbuf"></b> <span id="moncnt"></span></span
             >
           </div>
@@ -363,9 +369,25 @@
                   data-tip="config · PUSH_THRESH: 1–32, steppers wrap; 0 encodes 32"
                 >
                   thr
-                  <button type="button" class="cstep" data-ctl="push-thr" data-g="dec">−</button>
+                  <button
+                    type="button"
+                    class="cstep"
+                    tabindex="-1"
+                    data-ctl="push-thr"
+                    data-g="dec"
+                  >
+                    −
+                  </button>
                   <b id="apthr2">32</b>
-                  <button type="button" class="cstep" data-ctl="push-thr" data-g="inc">+</button>
+                  <button
+                    type="button"
+                    class="cstep"
+                    tabindex="-1"
+                    data-ctl="push-thr"
+                    data-g="inc"
+                  >
+                    +
+                  </button>
                 </span>
               </span>
               <span class="flag" id="isrf">ISR Full</span>
@@ -528,9 +550,25 @@
                   data-tip="config · PULL_THRESH: 1–32, steppers wrap; 0 encodes 32"
                 >
                   thr
-                  <button type="button" class="cstep" data-ctl="pull-thr" data-g="dec">−</button>
+                  <button
+                    type="button"
+                    class="cstep"
+                    tabindex="-1"
+                    data-ctl="pull-thr"
+                    data-g="dec"
+                  >
+                    −
+                  </button>
                   <b id="apthr">32</b>
-                  <button type="button" class="cstep" data-ctl="pull-thr" data-g="inc">+</button>
+                  <button
+                    type="button"
+                    class="cstep"
+                    tabindex="-1"
+                    data-ctl="pull-thr"
+                    data-g="inc"
+                  >
+                    +
+                  </button>
                 </span>
               </span>
               <span class="flag" id="osre" data-tip="osr_cnt ≥ pull threshold">OSRE</span>
@@ -541,7 +579,28 @@
             <div id="fmcells"></div>
           </div>
           <div class="ptitle wavetitle" style="border-top:1px solid var(--line)">
-            <span id="wavelabel">gpio0</span>
+            <!-- C28: the wave row owns its pin — the gpio<N> label is a
+                 drawn lens-pin picker (one Tab stop, −/+/←/→, wrapping
+                 0..31), so following a signal that moved retargets the
+                 wave where the wave lives; the exec-title pin select
+                 moved down to here (the mode select stayed up there) -->
+            <span id="wavelabel" class="lenspick"
+              >gpio
+              <span
+                class="spin"
+                id="spin-lenspin"
+                tabindex="0"
+                data-spin
+                data-rovi
+                data-status="lens pin: −/+ or ←/→ step · wraps"
+                data-tip="the wave + monitor lens target pin — the steppers re-point both; the lens decode replays over the stored history under the new pin"
+              >
+                <button type="button" class="tstep" tabindex="-1" data-lens data-g="dec">−</button
+                ><b id="lenspinval">0</b
+                ><button type="button" class="tstep" tabindex="-1" data-lens data-g="inc">+</button>
+              </span>
+              <span id="lensmodetxt">· raw lens</span></span
+            >
             <span
               class="cfgtag maptag"
               data-tip="config · OUT mapping: OUT_BASE / OUT_COUNT — the steppers are real PINCTRL writes; counts cycle 1..32 (0 encodes 32)"

@@ -350,6 +350,36 @@ test('the keyboard walk: tab in, walk, type, commit, pick, spin, latch', async (
   await press('ArrowLeft');
   await until('OV.shiftctrl.pullThr === 1', '← steps back down');
 
+  // ---- C28: the wave row owns its pin — the lens-pin picker ------------
+  // The gpio<N> label is a drawn stepper pair riding the row's spin
+  // grammar (one Tab stop, −/+/←/→, wrapping 0..31): following a signal
+  // that moved — a side-base remap mid-run, the wave gone flat —
+  // retargets the wave where the wave lives, not up in the exec title
+  // (the pin select moved down to this row; the mode select stayed).
+  await press('Tab');
+  assert.strictEqual(
+    await value(activeId),
+    'spin-lenspin',
+    "the lens-pin picker is the wave title row's first stop (next after the pull-threshold spinbox)",
+  );
+  assert.ok(
+    (await value("$('statusline').textContent")).includes('lens pin'),
+    'the status line narrates the picker when it takes focus',
+  );
+  await press('+');
+  await until('V.state.lens.pin === 1', 'the + key to retarget the wave/lens to pin 1');
+  assert.strictEqual(
+    await value("$('lenspinval').textContent"),
+    '1',
+    'the drawn picker shows the retargeted pin',
+  );
+  await press('ArrowLeft');
+  await until('V.state.lens.pin === 0', '← steps the pin back down');
+  await press('ArrowLeft');
+  await until('V.state.lens.pin === 31', '← wraps down past pin 0 to 31');
+  await press('ArrowRight');
+  await until('V.state.lens.pin === 0', '→ wraps back up past 31');
+
   // ---- the Alt+letter mnemonic on a header button ----------------------
   await press('e', { alt: true }); // Alt+E — reload empty memory
   await until('BUILT.every((w) => !w)', 'Alt+E to reload empty memory');

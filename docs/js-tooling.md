@@ -306,7 +306,8 @@ the mouseless core loop: Tab into the machines bar and the pin strip,
 walk the arrows, latch a pin; Tab into the listing (a listbox), walk
 the row cursor, type an instruction (the editor opens under the keys
 alone), commit it, walk the gutter pick; spin a drawn stepper through
-its wrap; take an Alt+letter mnemonic.
+its wrap; retarget the wave row's lens-pin picker (C28 — one Tab stop,
+−/+/←/→, wrapping both ways); take an Alt+letter mnemonic.
 
 The engine is hermetic: the test's static server answers the engine
 request with `web/tests/fake-engine-module.js` — the suite's own

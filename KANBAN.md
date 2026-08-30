@@ -74,16 +74,15 @@ C27 — the pin strip draws the mapping — landed 2026-08-30: the
 three-lane marks (mock-up round in mockups/pin-strip.html + the
 DESIGN-NOTES "The pin strip draws the mapping" section is the spec),
 the was-driven gray, the layout gate's mark/stale checks.
+C28 — the lens lives on the wave — landed 2026-08-30: the wave row's
+gpio label is a drawn lens-pin picker riding the C25 spin grammar (one
+Tab stop, −/+/←/→, wrapping 0..31; the DESIGN-NOTES "The lens lives on
+the wave" section is the spec), the exec-title pin select moved down to
+it (removed — the mode select stayed), and the stray Tab stops inside
+the ds/thr spinboxes got their tabindex="-1" — the documented
+one-stop-per-pair idiom the maptags already kept. The keyboard walk
+covers the new stop red/green.
 
-- C28 (the lens lives on the wave): the wave row owns its pin — the
-  `gpio<N>` label becomes a drawn lens-pin picker riding the row's
-  spin grammar (C25: one Tab stop, −/+/←/→), so following a signal
-  that moved (side-base remapped mid-run, the wave gone flat) no
-  longer hunts the exec-title select; that select moves down to the
-  row or mirrors it. Done-when: the keyboard walk covers the new stop
-  (red/green against a re-injected defect); `make js` and the layout
-  gate pass; the browser session and `make web` re-verify; the
-  demonstration is recorded in the commit.
 - C29 (the row says what it means): base·count named on the face —
   one letter each (`out b0·c32`-style) so the two numbers per tag
   stop being hover-only — and the `side · —` dash annotated in-face

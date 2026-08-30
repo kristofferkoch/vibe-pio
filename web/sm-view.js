@@ -22,7 +22,9 @@
 // the selected SM's window), the pin I/O strip (drive latches + the
 // pattern generator + engine output ownership — the colored corner is
 // the last SM to write the pin, CC-7), the RX drain panel, the monitor
-// lens selector, and the persistence glue (localStorage autosave + JSON
+// lens (the mode select in the exec title; the pin picked by the wave
+// row's own drawn stepper pair — C28), and the persistence glue
+// (localStorage autosave + JSON
 // export/import of the stored-program format; the serializer itself is
 // pure driver code, CI-checked).
 'use strict';
@@ -1232,13 +1234,21 @@ $('patbits').onchange = sendPattern;
 $('patpin').onchange = sendPattern;
 
 // ---- lens selector ------------------------------------------------------
+// C28: the wave row owns its pin — the gpio label's drawn steppers. The
+// lens is view state, not an overlay field (no reg write lands; the
+// decode replays over the stored history), so the picker rides its own
+// [data-lens] gesture beside the sendCtl table — the keys come from the
+// shared [data-spin] grammar, which clicks these buttons like any pair.
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-lens]');
+  if (!b || !V.ready) return;
+  const dir = b.dataset.g === 'inc' ? 1 : -1;
+  post({ cmd: 'lens', mode: V.state.lens.mode, pin: (lensPin + dir + 32) & 31 });
+});
 function lensUi() {
   $('lensmode').value = V.state.lens.mode;
-  $('lenspin').value = String(lensPin);
 }
 $('lensmode').onchange = () => post({ cmd: 'lens', mode: $('lensmode').value, pin: lensPin });
-$('lenspin').onchange = () =>
-  post({ cmd: 'lens', mode: $('lensmode').value, pin: +$('lenspin').value });
 
 function renderMonitor(st) {
   const mon = st.monitor;
@@ -1292,8 +1302,8 @@ function renderWave(st) {
     if ((c0 + k) % 16 === 0 && k < WIN && Math.abs(x - n * CW) > 56)
       s += `<text x="${x + 3}" y="${RULY}" fill="var(--dimmer)" font-size="16" font-family="var(--mono)">${c0 + k}</text>`;
   }
-  $('wavelabel').textContent =
-    `gpio${lensPin} · ${st.lens.mode === 'off' ? 'raw' : st.lens.mode} lens`;
+  $('lenspinval').textContent = lensPin;
+  $('lensmodetxt').textContent = `· ${st.lens.mode === 'off' ? 'raw' : st.lens.mode} lens`;
   if (!n) {
     svg.innerHTML = s;
     return;
@@ -2330,8 +2340,8 @@ $('irqlamps').addEventListener('click', (e) => {
 });
 
 // ---- the select options (pins 0..31) ------------------------------------
-for (const id of ['lenspin', 'patpin']) {
-  const sel = $(id);
+{
+  const sel = $('patpin');
   for (let p = 0; p < 32; p++) sel.add(new Option(`${p}`, String(p)));
 }
 $('patpin').value = '0';

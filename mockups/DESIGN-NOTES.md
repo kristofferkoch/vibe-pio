@@ -167,6 +167,31 @@ applied to drive state). And the program column is content-anchored
 track carried dead width the wave never saw; the window cap retuned to
 1726px so the cap still lands the wave at its 896px natural scale).
 
+## The lens lives on the wave (C28, 2026-08-30)
+
+Owner-scheduled with C27/C29 from the gpio0-panel review (same round as
+the pin-strip card above). The wave row owns its pin: the `gpio<N>`
+label is a drawn lens-pin picker riding the row's spin grammar — one
+Tab stop, −/+/←/→, wrapping 0..31 — so following a signal that moved
+(a side-base remapped mid-run, the wave gone flat) retargets the wave
+where the wave lives. The exec-title pin select moved down with it
+(removed, not mirrored — one owner per fact); the mode select stayed
+where the decoded readout is.
+
+- **View state, not wiring.** The lens pin writes no register — the
+  driver replays the decode over the stored history on the pin change
+  (`setLens`). So the picker rides its own `[data-lens]` gesture beside
+  the `controlEdit` table (which is per-SM overlay writes only), with
+  the same shared `[data-spin]` keys clicking its buttons. The value
+  keeps the label's own ink, not the mapping tags' cyan: the steppers
+  carry the drawn affordance, the number stays the wave's identity.
+- **One Tab stop per spinbox, honestly.** The ds/thr stepper buttons
+  had missed `tabindex="-1"` (the maptags, join segments and wrap
+  steppers kept it) — stray stops the C25 walk's tolerant `tabUntil`
+  absorbed and the one-stop-per-pair waiver text never got to check.
+  The C28 walk pins the picker as the wave row's *first* stop, which is
+  what exposed them; the pairs are single stops again.
+
 ## Layout
 
 - **Not 80×25.** One SM wants ~1440px in three columns: program listing

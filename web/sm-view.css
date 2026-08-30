@@ -2273,11 +2273,35 @@ button.shiftviz:hover .sv-end {
   flex: none;
 }
 
-/* the pin-mapping tags' spinbox stops: inline like the tag text */
-.maptag .spin {
+/* the spinbox stops (the pin-mapping tags, C28's lens-pin picker):
+   inline like the tag text around them */
+.spin {
   display: inline-flex;
   align-items: center;
   gap: 1px;
+}
+
+/* C28: the lens-pin picker — the wave row owns its pin. The gpio label's
+   drawn steppers ride the maptag spin grammar (one Tab stop, −/+/←/→,
+   wrapping 0..31). The pin is view state, not wiring: the number keeps
+   the label's own ink while the tags around it are cyan config — the
+   steppers carry the drawn affordance, the value stays the wave's
+   identity. */
+#wavelabel.lenspick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.lenspick b {
+  font-family: var(--mono);
+  font-weight: normal;
+  min-width: 16px;
+  text-align: center;
+}
+#lensmodetxt {
+  margin-left: 2px;
+  color: var(--dim);
+  font-weight: normal;
 }
 
 /* the footer status line: the focused owner's key map + narration;
