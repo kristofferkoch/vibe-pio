@@ -65,3 +65,39 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   proofs likewise (the equivalence/synthesis harnesses certify for
   free). Mock-up decisions live in
   `mockups/DESIGN-NOTES.md`.
+- Keyboard-only navigation (DOS/Win3.11 idiom) + the light era skin:
+  **promoted to KANBAN C25/C26** after the 2026-08-29 grilling
+  round 1. Owner decisions on the record: light skin (the dark-slate
+  palette retires); CRT/scanline = none on the chrome — at most
+  sparing *game-transition* effects much later, never WebGL UI sims;
+  one master window (group frames inside, navy title bar — not a
+  desktop of fake-floating windows); hue-true light-tuned semantic
+  palette, not snapped to VGA-16; two bitmap fonts (MS Sans for
+  chrome + a bitmap mono for code, final pick at mockup); and a
+  standing headless keyboard-walk as the second sanctioned DOM-glue
+  exception (after page geometry). Still open here, for later
+  rounds: whether the level shell inherits the skin verbatim or gets
+  its own dressing; zoom policy beyond 100%; transition effects once
+  levels exist. Era canon for whoever picks this up: IBM SAA
+  **CUA '89/'91**; MS Press **"The Windows Interface: An Application
+  Design Guide" (1992)** — archive.org scan; **"The Windows
+  Interface Guidelines for Software Design" (1995)**; the Win95 UI
+  team's design briefing; SerenityOS's LibGUI.
+- The C30 cursor chip behind the wrap steppers (found in the card's own
+  browser session, 2026-08-30, left for a grilling): the chip's margin
+  slot is bounded by the bracket (x < 9), the wrap steppers (x ≥ 15 on
+  the two arc-end rows), and the .cur bar (x 43) — three tenants whose
+  union leaves no x that clears all rows, so the chip (x 9, ~25px wide)
+  rides under the steppers wherever a cursor sits on an arc-end row.
+  The gated boot posture never sees this (all-zero memory is jmp 0;
+  the four cursors park on row 00, whose tenants are bracket + bar
+  only). But the demo preset rests there: WRAP_BOTTOM=0 parks the
+  wrap-bot pair ON row 0, and the resting cluster (SM0 plus the three
+  disabled-but-parked SMs, "0123") sits mostly behind the pair —
+  measured live, only the first digit's left ~7px shows, 0.8px of it
+  clipped. Open questions if promoted: do disabled SMs get gutter
+  marks at all (their PC is a reset artifact — the cluster in the
+  demo is three digits of "parked machines are parked")? Does the
+  chip dodge, yield (hide on arc-end rows), or does the stepper pair
+  move? The C22/C26 gates pin the stepper boxes exactly, so moving
+  them is the expensive answer.
