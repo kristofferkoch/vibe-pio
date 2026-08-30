@@ -603,7 +603,7 @@
             >
             <span
               class="cfgtag maptag"
-              data-tip="config · OUT mapping: OUT_BASE / OUT_COUNT — the steppers are real PINCTRL writes; counts cycle 1..32 (0 encodes 32)"
+              data-tip="config · OUT mapping — b = OUT_BASE, c = OUT_COUNT; the steppers are real PINCTRL writes; counts cycle 1..32 (0 encodes 32)"
             >
               out
               <span
@@ -612,11 +612,11 @@
                 tabindex="0"
                 data-spin
                 data-rovi
-                data-status="−/+ or ←/→ step"
+                data-status="b: −/+ or ←/→ step OUT_BASE"
               >
                 <button type="button" class="tstep" tabindex="-1" data-ctl="out-base" data-g="dec">
                   −
-                </button><b id="outbase">0</b
+                </button><b id="outbase">b0</b
                 ><button type="button" class="tstep" tabindex="-1" data-ctl="out-base" data-g="inc">
                   +
                 </button>
@@ -627,11 +627,11 @@
                 tabindex="0"
                 data-spin
                 data-rovi
-                data-status="−/+ or ←/→ step · wraps 1..32"
+                data-status="c: −/+ or ←/→ step OUT_COUNT · wraps 1..32"
               >
                 <button type="button" class="tstep" tabindex="-1" data-ctl="out-cnt" data-g="dec">
                   −
-                </button><b id="outcnt">32</b
+                </button><b id="outcnt">c32</b
                 ><button type="button" class="tstep" tabindex="-1" data-ctl="out-cnt" data-g="inc">
                   +
                 </button>
@@ -639,7 +639,7 @@
             </span>
             <span
               class="cfgtag maptag"
-              data-tip="config · SIDESET mapping: SIDESET_BASE — the steppers are real PINCTRL writes; the bit count is the ds-field allocator's shared budget (the pips in the program panel)"
+              data-tip="config · SIDESET mapping — b = SIDESET_BASE; c—ds = no side-set allocated, all five ds bits are delay; the count is the ds-field allocator's shared budget (the pips in the program panel); the steppers are real PINCTRL writes"
             >
               side
               <span
@@ -648,11 +648,11 @@
                 tabindex="0"
                 data-spin
                 data-rovi
-                data-status="−/+ or ←/→ step"
+                data-status="b: −/+ or ←/→ step SIDESET_BASE"
               >
                 <button type="button" class="tstep" tabindex="-1" data-ctl="side-base" data-g="dec">
                   −
-                </button><b id="sidebase">0</b
+                </button><b id="sidebase">b0</b
                 ><button
                   type="button"
                   class="tstep"
@@ -663,11 +663,11 @@
                   +
                 </button>
               </span>
-              · <span id="sidecnt">—</span>
+              · <span id="sidecnt">c—<i class="dsnote">ds</i></span>
             </span>
             <span
               class="cfgtag maptag"
-              data-tip="config · IN mapping: IN_BASE / IN_COUNT — the steppers are real PINCTRL/SHIFTCTRL writes; counts cycle 1..32 (0 encodes 32)"
+              data-tip="config · IN mapping — b = IN_BASE, c = IN_COUNT; the steppers are real PINCTRL/SHIFTCTRL writes; counts cycle 1..32 (0 encodes 32)"
             >
               in
               <span
@@ -676,11 +676,11 @@
                 tabindex="0"
                 data-spin
                 data-rovi
-                data-status="−/+ or ←/→ step"
+                data-status="b: −/+ or ←/→ step IN_BASE"
               >
                 <button type="button" class="tstep" tabindex="-1" data-ctl="in-base" data-g="dec">
                   −
-                </button><b id="inbase">0</b
+                </button><b id="inbase">b0</b
                 ><button type="button" class="tstep" tabindex="-1" data-ctl="in-base" data-g="inc">
                   +
                 </button>
@@ -691,11 +691,11 @@
                 tabindex="0"
                 data-spin
                 data-rovi
-                data-status="−/+ or ←/→ step · wraps 1..32"
+                data-status="c: −/+ or ←/→ step IN_COUNT · wraps 1..32"
               >
                 <button type="button" class="tstep" tabindex="-1" data-ctl="in-cnt" data-g="dec">
                   −
-                </button><b id="incnt">32</b
+                </button><b id="incnt">c32</b
                 ><button type="button" class="tstep" tabindex="-1" data-ctl="in-cnt" data-g="inc">
                   +
                 </button>

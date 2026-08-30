@@ -843,11 +843,13 @@ function renderAlloc() {
   $('ssopt').checked = a.opt && !!a.sideBits;
   $('dsinfo').innerHTML =
     `side ${a.sideBits}b${a.opt ? '+opt' : ''} · delay [0..${maxDelay()}] · PINCTRL.SIDESET_COUNT=${ssCntOf(OV)}`;
-  // the side tag's count/opt display — the shared ds budget, owned by
-  // these pips (the tag's steppers write SIDESET_BASE only)
-  $('sidecnt').textContent = ssCntOf(OV)
-    ? `${Math.max(0, ssCntOf(OV) - (sideEnOf(OV) ? 1 : 0))}b${sideEnOf(OV) ? '+opt' : ''}`
-    : '—';
+  // the side tag's count slot — the shared ds budget, owned by the pips
+  // (the tag's steppers write SIDESET_BASE only); C29: the face names it
+  // like its siblings (c<N>, +opt under SIDE_EN) and annotates the none
+  // posture in-face — c—ds: no side-set, the five ds bits are all delay
+  $('sidecnt').innerHTML = ssCntOf(OV)
+    ? `c${Math.max(0, ssCntOf(OV) - (sideEnOf(OV) ? 1 : 0))}${sideEnOf(OV) ? '+opt' : ''}`
+    : 'c—<i class="dsnote">ds</i>';
 }
 function flashWrap() {
   // every bracket of the window flashes (the edge-wrapped posture has two)
@@ -1118,16 +1120,17 @@ function renderRegs(st) {
   lamps.innerHTML = lh;
   applyLampCursor();
 
-  // header chips + the C22 pin-mapping tag numbers (the steppers write)
+  // header chips + the C29-named pin-mapping tag numbers (the steppers
+  // write; the b/c letters live in the HTML around the steppers' values)
   const cd = OV.clkdiv;
   const div = (cd.intg || 65536) + cd.frac / 256;
   $('clkdivtag').textContent = `clkdiv ÷${div.toFixed(2)}`;
   const pc2 = OV.pinctrl;
-  $('outbase').textContent = pc2.outBase;
-  $('outcnt').textContent = pc2.outCnt || 32;
-  $('sidebase').textContent = pc2.ssBase;
-  $('inbase').textContent = pc2.inBase;
-  $('incnt').textContent = sc.inCount || 32;
+  $('outbase').textContent = `b${pc2.outBase}`;
+  $('outcnt').textContent = `c${pc2.outCnt || 32}`;
+  $('sidebase').textContent = `b${pc2.ssBase}`;
+  $('inbase').textContent = `b${pc2.inBase}`;
+  $('incnt').textContent = `c${sc.inCount || 32}`;
 }
 
 // ---- pin strip: drive latches, pattern source, engine outputs ---------
@@ -1156,9 +1159,9 @@ function renderPins(st) {
     const own = owners[p];
     const was = (stale >>> p) & 1;
     const wires = [];
-    if ((map.out >>> p) & 1) wires.push(`out ${pc.outBase}·${pc.outCnt || 32}`);
-    if ((map.side >>> p) & 1) wires.push(`side ${pc.ssBase}·${sideData}`);
-    if ((map.in >>> p) & 1) wires.push(`in ${pc.inBase}·${OV.shiftctrl.inCount || 32}`);
+    if ((map.out >>> p) & 1) wires.push(`out b${pc.outBase}·c${pc.outCnt || 32}`);
+    if ((map.side >>> p) & 1) wires.push(`side b${pc.ssBase}·c${sideData}`);
+    if ((map.in >>> p) & 1) wires.push(`in b${pc.inBase}·c${OV.shiftctrl.inCount || 32}`);
     const cls = [
       'pcell',
       oe ? 'oe' : '',

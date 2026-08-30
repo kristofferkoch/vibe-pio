@@ -2045,6 +2045,13 @@ button.shiftviz:hover .sv-end {
   min-width: 16px;
   text-align: center;
 }
+/* C29: the side count's none annotation — the bare dash read as a broken
+   stepper pair; the dim ds pointer names where the bits went (all five
+   are delay; the program panel's pips own the split) */
+.dsnote {
+  font-style: normal;
+  color: var(--dim);
+}
 .tstep {
   font: inherit;
   font-size: 11px;

@@ -52,7 +52,7 @@ the mockup round + DESIGN-NOTES.md "The era skin" is the spec. No
 cards remain; the next web-track work (level/menu shell) starts from
 IDEAS.md after its own grilling.
 
-## Web track — pin-mapping legibility (C27–C29)
+## Web track — pin-mapping legibility (C27–C29) — COMPLETE
 
 Scheduled 2026-08-30 by owner request straight from the gpio0-panel
 review (the wave-header out/side/in tags and the pin strip; findings
@@ -82,17 +82,22 @@ it (removed — the mode select stayed), and the stray Tab stops inside
 the ds/thr spinboxes got their tabindex="-1" — the documented
 one-stop-per-pair idiom the maptags already kept. The keyboard walk
 covers the new stop red/green.
-
-- C29 (the row says what it means): base·count named on the face —
-  one letter each (`out b0·c32`-style) so the two numbers per tag
-  stop being hover-only — and the `side · —` dash annotated in-face
-  (no side-set allocated; the bits come from the program panel's ds
-  pips) so it stops reading as a broken stepper pair; tooltips and
-  status narrations updated to match. Done-when: `make js` passes;
-  the layout gate pins the row's one-line fit at the 13" widths after
-  the label growth (red/green — the 1520px yield may need revisiting);
-  the browser session and `make web` re-verify; the demonstration is
-  recorded in the commit.
+C29 — the row says what it means — landed 2026-08-30: the wave-header
+tags name base·count on the face, one letter each (`out b0·c32`;
+`side b0·c2`/`c1+opt` under SIDE_EN), so the two numbers per tag stop
+being hover-only, and the none posture of the side count is annotated
+in-face — `c—ds`, dim — pointing at the program panel's ds pips that
+own the split (no side-set allocated; all five ds bits are delay).
+Tooltips and the spins' status narrations use the same b/c letters;
+the pin-strip wiring tips speak the same grammar. The layout gate pins
+the face (all postures: boot dash, allocated, +opt, the widest
+b31·c32 the steppers reach) and the row's one-line fit at the 13"
+widths after the label growth — the 1520px yield stood as shipped
+(measured: the widest posture holds 24.9px at 1280/1366 with the aux
+hidden and at 1521+ with it shown; the pin demonstrably bites — with
+the yield forced open at 1280 the row wraps to 44.9px and the check
+fails in every posture). No cards remain; further web-track legibility
+work starts from IDEAS.md after its own grilling.
 
 ## Web track — listing-gutter legibility (C30)
 

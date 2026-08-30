@@ -853,6 +853,108 @@ test('drive marks never reflow the strip: ▲/D/◆ ride the level line', async 
   );
 });
 
+// C29: the row says what it means. The wave-header tags name base·count
+// on the face — one letter each, `out b0·c32` — so the two numbers per
+// tag stop being hover-only, and the side count's dash is annotated
+// in-face (c—ds: no side-set allocated, all five ds bits are delay, the
+// split owned by the program panel's pips) so it stops reading as a
+// broken stepper pair. The pins: the letters are on the face in every
+// posture (boot — the dash posture is the shipped default — the
+// allocated side-count forms, and the widest face the steppers can
+// reach, b31·c32), the tooltips and status narrations use the same
+// letters, and the row still fits on one line at the 13" widths after
+// the label growth — .ptitle wraps when the tags stop fitting, and a
+// wrapped header row costs the wave a second line.
+const WAVE_ROW_SCAN = `(() => {
+  const bad = [];
+  const author = (pc, sideEn) => {
+    Object.assign(curState.sms[0].pinctrl, {
+      outBase: 0, outCnt: 0, ssBase: 0, ssCnt: 0, setCnt: 5, inBase: 0,
+    });
+    Object.assign(curState.sms[0].shiftctrl, { inCount: 0 });
+    Object.assign(curState.sms[0].execctrl, { sideEn: sideEn === true });
+    if (pc) Object.assign(curState.sms[0].pinctrl, pc);
+    OV = overlayOf(0);
+    buildProgram();
+    render(V.state);
+  };
+  const reads = (id) => document.getElementById(id).textContent.trim();
+  const isNamed = (id, letter) => {
+    const t = reads(id);
+    const n = t.slice(1);
+    return t[0] === letter && n !== '' && !Number.isNaN(+n) && +n >= 0;
+  };
+  const row = document.querySelector('.wavetitle');
+  const oneLine = (where) => {
+    const h = row.getBoundingClientRect().height;
+    if (h > 26)
+      bad.push(
+        where + ': the wave title row wrapped to ' + h.toFixed(1) +
+        'px (one line is ~25px) — the named tags must still fit the 13" row',
+      );
+    if (row.scrollWidth > row.clientWidth + 1)
+      bad.push(where + ': the wave title row overflows horizontally');
+  };
+  const checkFace = (where) => {
+    for (const [id, letter] of [
+      ['outbase', 'b'], ['outcnt', 'c'], ['sidebase', 'b'], ['inbase', 'b'], ['incnt', 'c'],
+    ])
+      if (!isNamed(id, letter))
+        bad.push(where + ': #' + id + ' reads "' + reads(id) + '" — the face must name it (' + letter + '<N>)');
+    return reads('sidecnt');
+  };
+  // boot: the dash posture is the shipped default view
+  author();
+  let side = checkFace('boot');
+  if (side !== 'c—ds')
+    bad.push('boot: #sidecnt reads "' + side + '" (want c—ds — the dash annotated in-face: no side-set, the ds bits are delay)');
+  oneLine('boot');
+  // the allocated side count names itself; only the none posture dashes
+  author({ ssCnt: 2 });
+  side = checkFace('side 2b');
+  if (side !== 'c2') bad.push('side ssCnt=2: #sidecnt reads "' + side + '" (want c2)');
+  author({ ssCnt: 2 }, true);
+  side = checkFace('side 1b+opt');
+  if (side !== 'c1+opt') bad.push('side ssCnt=2+opt: #sidecnt reads "' + side + '" (want c1+opt)');
+  oneLine('side allocated');
+  // the widest face the steppers can reach (b31·c32 everywhere, the dash
+  // posture) must still fit the 13" row
+  author({ outBase: 31, ssBase: 31, inBase: 31 });
+  checkFace('widest');
+  oneLine('widest');
+  // the tooltips quote the letters; the status narrations name theirs
+  const tags = [...document.querySelectorAll('.wavetitle .maptag')];
+  const tip = (i, needle, what) => {
+    if (!tags[i] || !tags[i].dataset.tip.includes(needle))
+      bad.push('the ' + what + ' tag tooltip does not say "' + needle + '" — the letters must be named where they are drawn');
+  };
+  tip(0, 'b = OUT_BASE', 'out');
+  tip(0, 'c = OUT_COUNT', 'out');
+  tip(1, 'b = SIDESET_BASE', 'side');
+  tip(1, 'c—ds', 'side');
+  tip(2, 'b = IN_BASE', 'in');
+  tip(2, 'c = IN_COUNT', 'in');
+  for (const [id, letter] of [
+    ['spin-outbase', 'b'], ['spin-outcnt', 'c'], ['spin-sidebase', 'b'],
+    ['spin-inbase', 'b'], ['spin-incnt', 'c'],
+  ])
+    if (!(document.getElementById(id).dataset.status || '').startsWith(letter + ':'))
+      bad.push('#' + id + ' status narration does not name its number (' + letter + ': …)');
+  return bad;
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`the wave row says what it means ${width}×${height}: named base·count on one line`, async () => {
+    await load(null, width, height);
+    const bad = await page.evaluate(WAVE_ROW_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `unnamed wave-row numbers at ${width}×${height} (base·count must be on the face, the side dash annotated, one line at 13")`,
+    );
+  });
+}
+
 // The program column is content-anchored: the widest in-flow resident is
 // the row editor (measured 364px); the old 32vw track gave it 461px at
 // 1440 — dead width the wave never saw. The pins: the column lands
