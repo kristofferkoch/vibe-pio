@@ -14,10 +14,12 @@
 //     minimum once spilled the join-deep FIFO row over the panels below
 //     and made the drawn controls unclickable), and every drawn control
 //     must actually be under the pointer (elementFromPoint).
-//   * hover never reflows (the C26 era skin): the first cut bolded
-//     hovered buttons and the bitmap bold face ran wider — controls
-//     grew under the pointer and re-flowed their rows. Hover restyles
-//     are color-only.
+//   * hover and press never reflow (the C26 era skin): the first cut
+//     bolded hovered buttons and the bitmap bold face ran wider —
+//     controls grew under the pointer and re-flowed their rows; the
+//     pressed nudge then leaked through specificity onto the drawn
+//     mini-controls. Hover restyles are color-only; the padding swap
+//     belongs to the push-button faces alone.
 //   * the column priority (the layout reprioritization): the register
 //     column is not the exec waveform's leftover — at the reference
 //     viewports it gets its measured floor (its drawn control rows
@@ -464,15 +466,17 @@ test(`desktop cap 1920×1080: center at natural scale, register column at its ce
   );
 });
 
-// hover must never reflow: the C26 era skin first shipped a bold hover
-// face, and Pixelated MS Sans Serif's bold runs wider — auto-width
-// buttons grew under the pointer and re-flowed their rows (found by
-// hand, the user feeling the toolbar shift). The pin: sweep the pointer
-// across every interactive control family and require the whole set's
-// boxes to hold exactly. Hover restyles are color-only; the one
-// sanctioned box-adjacent effect is the pressed bevel swap, whose
-// padding keeps its sum (label nudges 1px, box does not move), and it
-// rides :active, not :hover.
+// hover and press must never reflow: the C26 era skin first shipped a
+// bold hover face (Pixelated MS Sans bold runs wider — auto-width
+// buttons grew under the pointer and re-flowed their rows), then a
+// pressed nudge whose padding swap leaked onto the drawn mini-controls
+// (button:active/button.on out-rank the single-class rules, so the
+// autopull toggle and inspector paddles grew on press/on and the fixed
+// 13px steppers had their glyphs crushed). The pin: sweep the pointer
+// across every interactive control family requiring the boxes to hold
+// exactly, then press one representative per button face. Hover
+// restyles are color-only; the pressed bevel swap keeps its padding sum
+// on the push-button faces and does not reach the drawn ones at all.
 const HOVER_SEL =
   'header button, #smsbar .smcell, .cstep, .ctgl, .segjoin button, .tstep, .wstep, .ipulse, #rxmeta button';
 const HOVER_RECTS = `[...document.querySelectorAll('${HOVER_SEL}')].map((e) => {
@@ -480,7 +484,23 @@ const HOVER_RECTS = `[...document.querySelectorAll('${HOVER_SEL}')].map((e) => {
   return [e.id || e.textContent.trim().slice(0, 12), +b.left.toFixed(1), +b.top.toFixed(1), +b.width.toFixed(1), +b.height.toFixed(1)];
 })`;
 
-test('hover never reflows: controls keep their boxes under the pointer', async () => {
+// one representative per face family; releases mutate machine state
+// (toggles flip, steppers step), so each iteration recaptures the
+// reference boxes — the assertions are about box stability under the
+// pointer/press, never about the page being frozen
+const PRESS_SELS = [
+  '#bstep', // the base push face (its own padding swap keeps its sum)
+  '#bempty', // the header mini face
+  '#aptgl', // .ctgl — the auto-width leak
+  '#spin-pullthr button[data-g="inc"]', // .cstep — the fixed-box crush
+  '#spin-outbase button[data-g="inc"]', // .tstep
+  '.wstep', // the wrap steppers
+  '#segsplit', // .segjoin button
+  '.ipulse', // inspector paddles — the other auto-width leak
+  '#bdrain', // #rxmeta face
+];
+
+test('hover and press never reflow: controls keep their boxes under the pointer', async () => {
   await load(null, 1280, 800);
   const before = await page.evaluate(HOVER_RECTS);
   assert.ok(
@@ -499,6 +519,41 @@ test('hover never reflows: controls keep their boxes under the pointer', async (
       before,
       `hovering at ${Math.round(x)},${Math.round(y)} re-flowed the page — a hover restyle changed metrics (font-weight/border/padding); hover is color-only in the era skin`,
     );
+  }
+  for (const sel of PRESS_SELS) {
+    const center = await page.evaluate(
+      `(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; })()`,
+    );
+    assert.ok(center, `press scan: ${sel} not found on the page`);
+    const ref = await page.evaluate(HOVER_RECTS);
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: center[0], y: center[1] });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepStrictEqual(
+      await page.evaluate(HOVER_RECTS),
+      ref,
+      `hovering ${sel} re-flowed the page`,
+    );
+    await page.send('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      x: center[0],
+      y: center[1],
+      button: 'left',
+      clickCount: 1,
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepStrictEqual(
+      await page.evaluate(HOVER_RECTS),
+      ref,
+      `pressing ${sel} re-flowed the page — the :active/:on padding swap leaked onto this face; the label nudge belongs to the push-button faces only`,
+    );
+    await page.send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x: center[0],
+      y: center[1],
+      button: 'left',
+      clickCount: 1,
+    });
+    await new Promise((r) => setTimeout(r, 30));
   }
   await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
 });

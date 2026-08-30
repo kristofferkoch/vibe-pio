@@ -1991,6 +1991,24 @@ button.shiftviz:hover .sv-end {
   border-color: var(--cfg);
   color: var(--cfg);
 }
+/* press neutrality: the push-button nudge (button:active/button.on)
+   out-ranks these single-class rules and would leak onto the drawn
+   mini-controls — growing the auto-width faces (ctgl/ipulse) and
+   crushing the fixed 13px boxes (cstep/tstep/wstep). Their pressed
+   look is the bevel swap alone; each keeps its own padding under
+   press/on. (The layout gate's press sweep pins this.) */
+.ctgl:active,
+.ctgl.on {
+  padding: 0 7px;
+}
+.ipulse:active {
+  padding: 0 5px;
+}
+.cstep:active,
+.tstep:active,
+.wstep:active {
+  padding: 0;
+}
 
 /* ============ C24: the four-machine playground ========================== */
 :root {
