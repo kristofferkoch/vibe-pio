@@ -71,6 +71,16 @@ legend swatches read the same variables, so the legend retunes itself.
 - 2px bevels as inset box-shadows (white TL / `#808080` BR on raised
   controls; swapped on pressed/active and on stuck toggles, label
   nudged 1px via padding). Sunken wells are the same shadow reversed.
+- **Hover never changes metrics.** The first era cut bolded hovered
+  buttons; the bold MS Sans face runs wider, auto-width controls grew
+  under the pointer and re-flowed their rows — felt immediately by
+  hand, now gated (the layout test sweeps the pointer over every
+  control family and requires the boxes to hold exactly). Hover
+  restyles are color-only where they exist at all (the cyan drawn
+  controls keep their pre-era color hovers); plain buttons have none —
+  the cursor and the tooltip carry affordance. The pressed bevel swap
+  is the one sanctioned box-adjacent effect, and its padding keeps its
+  sum so only the label nudges.
 - No border-radius, no gradients, no blur, no glow text-shadows, no
   subpixel motion (all transitions removed — state changes are palette
   swaps; the `blink` keyframes stay, they are hard steps(2) toggles).

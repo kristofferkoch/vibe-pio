@@ -14,6 +14,10 @@
 //     minimum once spilled the join-deep FIFO row over the panels below
 //     and made the drawn controls unclickable), and every drawn control
 //     must actually be under the pointer (elementFromPoint).
+//   * hover never reflows (the C26 era skin): the first cut bolded
+//     hovered buttons and the bitmap bold face ran wider — controls
+//     grew under the pointer and re-flowed their rows. Hover restyles
+//     are color-only.
 //   * the column priority (the layout reprioritization): the register
 //     column is not the exec waveform's leftover — at the reference
 //     viewports it gets its measured floor (its drawn control rows
@@ -458,6 +462,45 @@ test(`desktop cap 1920×1080: center at natural scale, register column at its ce
     strip.sw <= strip.cw + 1,
     `pin strip overflows at the cap: content ${strip.sw}px in a ${strip.cw}px box — the legend is squeezing pins behind the scroll`,
   );
+});
+
+// hover must never reflow: the C26 era skin first shipped a bold hover
+// face, and Pixelated MS Sans Serif's bold runs wider — auto-width
+// buttons grew under the pointer and re-flowed their rows (found by
+// hand, the user feeling the toolbar shift). The pin: sweep the pointer
+// across every interactive control family and require the whole set's
+// boxes to hold exactly. Hover restyles are color-only; the one
+// sanctioned box-adjacent effect is the pressed bevel swap, whose
+// padding keeps its sum (label nudges 1px, box does not move), and it
+// rides :active, not :hover.
+const HOVER_SEL =
+  'header button, #smsbar .smcell, .cstep, .ctgl, .segjoin button, .tstep, .wstep, .ipulse, #rxmeta button';
+const HOVER_RECTS = `[...document.querySelectorAll('${HOVER_SEL}')].map((e) => {
+  const b = e.getBoundingClientRect();
+  return [e.id || e.textContent.trim().slice(0, 12), +b.left.toFixed(1), +b.top.toFixed(1), +b.width.toFixed(1), +b.height.toFixed(1)];
+})`;
+
+test('hover never reflows: controls keep their boxes under the pointer', async () => {
+  await load(null, 1280, 800);
+  const before = await page.evaluate(HOVER_RECTS);
+  assert.ok(
+    before.length >= 15,
+    `hover scan lost its targets: ${before.length} controls matched ${HOVER_SEL}`,
+  );
+  const centers = await page.evaluate(
+    `[...document.querySelectorAll('${HOVER_SEL}')].map((e) => { const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; })`,
+  );
+  for (const [x, y] of centers) {
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await new Promise((r) => setTimeout(r, 30));
+    const after = await page.evaluate(HOVER_RECTS);
+    assert.deepStrictEqual(
+      after,
+      before,
+      `hovering at ${Math.round(x)},${Math.round(y)} re-flowed the page — a hover restyle changed metrics (font-weight/border/padding); hover is color-only in the era skin`,
+    );
+  }
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
 });
 
 // the wrap arc's steppers in the degenerate WRAP_TOP == WRAP_BOTTOM state

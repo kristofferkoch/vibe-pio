@@ -240,7 +240,10 @@ header {
   gap: 6px;
 }
 /* the era push button: silver, 2px bevel; pressed swaps the bevel and
-   nudges the label 1px; focus is the dotted rect inside the bevel */
+   nudges the label 1px (the padding swap keeps its sum — the box never
+   moves); focus is the dotted rect inside the bevel. Hover restyles are
+   color-only where they exist at all: a hover face that changes metrics
+   re-flows the row under the pointer (gated by the layout test). */
 button {
   font-family: var(--sans);
   font-size: 11px;
@@ -253,9 +256,6 @@ button {
   box-shadow:
     inset 2px 2px 0 var(--hi),
     inset -2px -2px 0 var(--line);
-}
-button:hover {
-  font-weight: bold;
 }
 button:active {
   box-shadow:
@@ -276,9 +276,6 @@ button.on {
 button:disabled {
   color: var(--dimmer);
   cursor: default;
-  font-weight: normal;
-}
-button:disabled:hover {
   font-weight: normal;
 }
 select {
@@ -1608,7 +1605,7 @@ header .mini.imp {
     inset -2px -2px 0 var(--line);
 }
 #rxmeta button:hover:not(:disabled) {
-  font-weight: bold;
+  color: var(--cfg);
 }
 #rxmeta button:disabled {
   color: var(--dimmer);
@@ -1768,7 +1765,7 @@ input.ihex {
     inset -1px -1px 0 var(--line);
 }
 .ipulse:hover {
-  font-weight: bold;
+  color: var(--amber);
 }
 #inspector .ptitle {
   position: sticky;
@@ -1801,9 +1798,6 @@ button.shiftviz {
   color: inherit;
   font: inherit;
   letter-spacing: normal;
-}
-button.shiftviz:hover {
-  font-weight: normal;
 }
 button.shiftviz .sv-arrow {
   display: block;
@@ -1841,7 +1835,6 @@ button.shiftviz:hover .sv-end {
 }
 .ctgl:hover {
   color: var(--cfg);
-  font-weight: bold;
 }
 .ctgl.on {
   color: var(--cfg);
@@ -1884,7 +1877,6 @@ button.shiftviz:hover .sv-end {
 }
 .cstep:hover {
   color: var(--cfg);
-  font-weight: bold;
 }
 /* the FIFO-mode segmented control: the drawn join, direct — one button
    per reachable mode (SPEC-6-2/3), the active one lit; aux modes are
@@ -1914,7 +1906,6 @@ button.shiftviz:hover .sv-end {
 }
 .segjoin button:hover {
   color: var(--cfg);
-  font-weight: bold;
 }
 .segjoin button.on {
   color: #fff;
@@ -1960,7 +1951,6 @@ button.shiftviz:hover .sv-end {
 .wstep:hover {
   border-color: var(--cfg);
   color: var(--txt);
-  font-weight: bold;
 }
 .wstep.dec {
   left: 29px;
@@ -2000,7 +1990,6 @@ button.shiftviz:hover .sv-end {
 .tstep:hover {
   border-color: var(--cfg);
   color: var(--cfg);
-  font-weight: bold;
 }
 
 /* ============ C24: the four-machine playground ========================== */
@@ -2031,9 +2020,6 @@ button.shiftviz:hover .sv-end {
   box-shadow:
     inset 2px 2px 0 var(--hi),
     inset -2px -2px 0 var(--line);
-}
-.smcell:hover {
-  font-weight: bold;
 }
 .smcell.sel {
   /* the selected machine reads pressed — the chip is "in" */

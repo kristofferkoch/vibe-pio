@@ -205,6 +205,12 @@ project has hit by hand:
   over the panels below while the boxes "fit" any viewport.
 - **Hit targets** — every drawn control in the fixed rows is topmost at
   its center (`elementFromPoint`), the C22 buried-controls failure.
+- **Hover never reflows** (the C26 era skin): the first cut bolded
+  hovered buttons and the bitmap bold face ran wider — auto-width
+  controls grew under the pointer and re-flowed their rows. The gate
+  sweeps the pointer (CDP `mouseMoved`) over every control family and
+  requires the whole set's boxes to hold exactly; hover restyles are
+  color-only, and the pressed bevel swap keeps its padding sum.
 - **Priority** — the register column is not the exec pane's leftover
   (the layout reprioritization, four passes): at the 13" references
   its drawn control rows render single-line (the measured wrapped
