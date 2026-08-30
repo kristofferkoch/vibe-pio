@@ -661,7 +661,7 @@ function buildProgram() {
       r.id = `pr${i}`;
       r.dataset.tip =
         '0x0000 · jmp 0 — untouched memory (all-zero reset); if executed, control jumps to slot 00';
-      r.innerHTML = `<span class="addr"><span class="smcur"></span>${i.toString().padStart(2, '0')}</span><span class="ins">·</span><span></span><span></span><span class="chips"></span>`;
+      r.innerHTML = `<span class="smcur"></span><span class="addr">${i.toString().padStart(2, '0')}</span><span class="ins">·</span><span></span><span></span><span class="chips"></span>`;
       nodes.push(r);
       continue;
     }
@@ -680,7 +680,7 @@ function buildProgram() {
     const tgtHtml =
       p.tgt != null ? `${p.args ? ', ' : ''}<span class="pcaddr">${p.tgt}</span>` : '';
     r.innerHTML =
-      `<span class="addr"><span class="smcur"></span>${i.toString().padStart(2, '0')}</span>` +
+      `<span class="smcur"></span><span class="addr">${i.toString().padStart(2, '0')}</span>` +
       `<span class="ins"><span class="op">${esc(p.op)}</span> <span>${esc(p.args)}${tgtHtml}</span></span>` +
       `<span class="cside">${sideHtml}</span><span class="cdly">${dlyHtml}</span>` +
       `<span class="chips"></span>`;
@@ -905,8 +905,9 @@ function renderBits(host, val, spent) {
 }
 
 function renderProgram(st) {
-  // four PC cursors on the shared listing: each SM's displayPc lights a
-  // colored mark in the gutter; the selected SM keeps the full .cur row
+  // four PC cursors on the shared listing: the SMs at a row render as one
+  // boxed chip in the row's left margin (C30 — out of the address cell,
+  // which stays digits-only); the selected SM keeps the full .cur row
   // treatment (chips, the editor's anchor)
   const here = st.sms
     ? st.sms.map((s, k) => ({ k, pc: s.displayPc }))

@@ -99,35 +99,28 @@ the yield forced open at 1280 the row wraps to 44.9px and the check
 fails in every posture). No cards remain; further web-track legibility
 work starts from IDEAS.md after its own grilling.
 
-## Web track — listing-gutter legibility (C30)
+## Web track — listing-gutter legibility (C30) — COMPLETE
 
 Scheduled 2026-08-30 by owner request straight from the address-00
 review (the program listing's address gutter; findings from a live
 browser session plus a code read of sm-view.js / sm-view.css — the
 same evidence path as the gpio0-panel round). Not via the IDEAS.md
 hop — the review plus the owner's scheduling instruction stand in for
-the grilling. The finding: C24's four per-SM PC cursor marks
-(`.smcur`) render inline in the 30px address cell, and the boot
-posture parks all four SMs at PC 0 — row 00's gutter reads
-"0123 00", the mark cluster overflows the cell (measured live:
-scrollWidth 36 vs clientWidth 30) and spills into the margin lane.
-Owner decision: the marks leave the address cell entirely — the
-coincident cluster is absolutely positioned in the row's left margin
-as one boxed chip riding the pin-ownership chip grammar
-(`.pcell.ow .po`), colored digits, per-SM identity by color plus the
-`SM<k> PC` tooltip; the address digits always render clean. The
-margin's other tenants bound the chip's slot: the wrap bracket and
-the C25 wrap steppers (x ≥ 15) at rows 0–1, the `.cur` bar at 43px —
-the chip's x-position must not collide with either. Web card: the JS
-discipline (docs/js-tooling.md), red/green TDD, DOM glue verified by
-the browser session and `make web`.
-
-- C30 (the cursor marks leave the address cell): the `.smcur` cluster
-  out of the address cell's text flow, per the preamble's owner
-  decision. Done-when: `make js` passes; the layout gate pins the
-  boot posture red/green — with all four cursors on row 00, `.addr`
-  does not overflow (scrollWidth ≤ clientWidth) and the mark chip
-  does not intersect the address digits' box; the check runs red
-  against the shipped page before the fix; the browser session and
-  `make web` re-verify; the demonstration is recorded in the commit.
-  Standalone — no cross-dependency with C29.
+the grilling. Web card: the JS discipline (docs/js-tooling.md),
+red/green TDD, DOM glue verified by the browser session and
+`make web`.
+C30 — the cursor marks leave the address cell — landed 2026-08-30:
+the `.smcur` cluster out of the address cell's text flow, per the
+owner decision — the coincident cluster is one boxed chip absolutely
+positioned in the row's left margin (left 9, inside the row's 20px
+band, riding the pin-ownership chip grammar), colored digits, the
+`SM<k> PC` tooltip, and the address digits always clean. The layout
+gate pins the boot posture red/green at both 13" viewports — all four
+cursors on row 00, `.addr` does not overflow, the chip does not
+intersect the address digits, and it clears the margin's tenants
+(bracket, steppers, `.cur` bar). The session also surfaced the one
+posture the slot cannot clear (the demo's wrap-bot pair parks on
+row 0 and the resting cluster rides under it — no x clears every
+tenant on that row); recorded in IDEAS.md for a grilling, not
+silently expanded. No cards remain; further web-track legibility
+work starts from IDEAS.md after its own grilling.

@@ -2172,21 +2172,43 @@ button.shiftviz:hover .sv-end {
   font-style: normal;
 }
 
-/* the shared listing's four PC cursors: colored digits in the gutter,
-   the selected machine's mark lit. These are marks, not reading text —
-   they stay sub-scale (the one sanctioned exception to the two-font
-   scale); the selected machine's mark is bold, no glow */
-.prow .addr .smcur {
+/* the shared listing's four PC cursors (C30): the marks left the address
+   cell — the boot posture parks all four SMs at PC 0, and the inline
+   cluster overflowed the 30px cell into the margin lane (scrollWidth 36
+   in a 30px box). The coincident cluster is one boxed chip absolutely
+   positioned in the row's left margin, riding the pin-ownership chip
+   grammar (.pcell.ow .po): colored digits, the selected machine's mark
+   lit. These are marks, not reading text — they stay sub-scale (the one
+   sanctioned exception to the two-font scale); the selected machine's
+   mark is bold, no glow. The slot is bounded by the margin's other
+   tenants: the wrap bracket's box runs to x 9 (the chip hugs its right
+   edge), the wrap steppers own x ≥ 15 — the chip stays inside its row's
+   20px band, clear of the neighboring rows' pairs — and the .cur bar
+   sits at 43. The chip is a row child, so it paints under the margin's
+   absolutely-positioned furniture (arcs, arrow, steppers): the newcomer
+   yields, nothing that already drew gets covered */
+.prow .smcur {
+  position: absolute;
+  left: 9px;
+  top: 4px;
+  display: flex;
+  gap: 1px;
+  padding: 1px 2px;
+  background: var(--panel);
+  border: 1px solid var(--line);
   font-size: 8px;
+  line-height: 1;
   letter-spacing: 0;
 }
-.prow .addr .smcur .smk {
+.prow .smcur:empty {
+  display: none; /* rows no machine sits on draw no box */
+}
+.prow .smcur .smk {
   font-style: normal;
-  margin-right: 1px;
   color: var(--smc);
   opacity: 0.55;
 }
-.prow .addr .smcur .smk.on {
+.prow .smcur .smk.on {
   opacity: 1;
   font-weight: bold;
 }

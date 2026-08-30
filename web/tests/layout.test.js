@@ -955,6 +955,85 @@ for (const [width, height] of VIEWPORTS) {
   });
 }
 
+// C30: the cursor marks leave the address cell. C24's four per-SM PC
+// marks rendered inline in the 30px address cell, and the boot posture
+// parks all four SMs at PC 0 — row 00's gutter read "0123 00", the
+// cluster overflowed the cell (measured live: scrollWidth 36 vs
+// clientWidth 30) and spilled into the margin lane. The marks now live
+// in the row's left margin as one boxed chip riding the pin-ownership
+// chip grammar: the address digits render clean, and the chip's slot is
+// bounded by the margin's other tenants — the wrap bracket, the wrap
+// steppers, the selected machine's .cur bar. The posture is the shipped
+// boot (newState): all four SMs at PC 00, WRAP 1/31 — bracket rows 0–1,
+// steppers rows 1 and 31, so a chip that escapes its row's band hits a
+// stepper and the check names it.
+const SMCUR_SCAN = `(() => {
+  const bad = [];
+  render(Object.assign({}, V.state, {
+    displayPc: 0,
+    sms: [0, 1, 2, 3].map(() => ({ displayPc: 0, phase: 'EXEC' })),
+  }));
+  const row = document.querySelector('#pr0');
+  const addr = row.querySelector('.addr');
+  const chip = row.querySelector('.smcur');
+  if (!chip || chip.children.length !== 4)
+    bad.push(
+      'expected the four per-SM marks on row 00, found ' + (chip ? chip.children.length : 'no cluster'),
+    );
+  if (addr.querySelector('.smcur, .smk'))
+    bad.push('the mark cluster still renders inside the address cell — the digits must render clean');
+  if (addr.scrollWidth > addr.clientWidth + 1)
+    bad.push(
+      'the address cell overflows: content ' + addr.scrollWidth + 'px in a ' + addr.clientWidth +
+      'px box — the boot posture (all four SMs at PC 0) parks the mark cluster in the 30px cell',
+    );
+  if (chip) {
+    const cb = chip.getBoundingClientRect();
+    const ab = addr.getBoundingClientRect();
+    if (cb.left < ab.right && ab.left < cb.right && cb.top < ab.bottom && ab.top < cb.bottom)
+      bad.push('the mark chip intersects the address digits');
+    const rb = row.getBoundingClientRect();
+    if (cb.top < rb.top - 0.5 || cb.bottom > rb.bottom + 0.5)
+      bad.push(
+        'the mark chip escapes its row band (' +
+          (cb.top - rb.top).toFixed(1) + '..' + (cb.bottom - rb.bottom).toFixed(1) +
+        'px) — it would collide with the tenants of neighboring rows',
+      );
+    const tenants = [
+      ...[...document.querySelectorAll('.wraparc')].map((e, i) => ['wrap bracket ' + i, e.getBoundingClientRect()]),
+      ...[...document.querySelectorAll('.wstep')].map((e) => [
+        'wrap stepper ' + e.dataset.ctl + '/' + e.dataset.g,
+        e.getBoundingClientRect(),
+      ]),
+    ];
+    const cs = getComputedStyle(row, '::before'); // the .cur bar is a pseudo
+    if (cs.content !== 'none') {
+      const l = parseFloat(cs.left), t = parseFloat(cs.top);
+      tenants.push([
+        'cur bar',
+        { left: rb.left + l, right: rb.left + l + parseFloat(cs.width),
+          top: rb.top + t, bottom: rb.top + t + parseFloat(cs.height) },
+      ]);
+    }
+    for (const [name, b] of tenants)
+      if (cb.left < b.right && b.left < cb.right && cb.top < b.bottom && b.top < cb.bottom)
+        bad.push('the mark chip collides with the ' + name);
+  }
+  return bad;
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`the cursor marks leave the address cell ${width}×${height}: clean digits, chip clear of the margin`, async () => {
+    await load(null, width, height);
+    const bad = await page.evaluate(SMCUR_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `address gutter broken at ${width}×${height} (boot: all four cursors on row 00 — the digits render clean, the chip clears the margin's tenants)`,
+    );
+  });
+}
+
 // The program column is content-anchored: the widest in-flow resident is
 // the row editor (measured 364px); the old 32vw track gave it 461px at
 // 1440 — dead width the wave never saw. The pins: the column lands
