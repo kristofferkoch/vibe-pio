@@ -114,3 +114,24 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   state replies to settle before opening (or re-focus after the
   rebuild), and is `replaceChildren` moving a focused RE the general
   hazard (any state reply while editing scrolls/rebuilds)?
+- Level learning curve, explored 2026-09-04 — full notes in
+  `mockups/LEVELS-NOTES.md` (input to the pending level grilling, not
+  agreed work). Shape: the first chapter *is* the notional machine
+  (du Boulay/Sorva) — L0 is a prefilled 2-row `set pins` program under
+  a stripped UI (CYCLE, transport, listing, one wave row; no FIFOs,
+  no registers, no pin strip), with wrap taught as the free loop
+  before `jmp` debuts (Rich et al.'s sequence→repetition→conditionals;
+  gentler than HRM, whose Year 2 already needs JUMP). Slope = a concept
+  DAG, one new concept per level, levels typed by PRIMM verbs
+  (predict/modify/make rungs, plus Parsons-style scrambled-row
+  levels); UI panels unlock exactly with their concept — the level
+  shell's visible state is the player's knowledge state — and the row
+  editor's completions scope to the unlocked opcodes. Fun leg: the
+  monitor's partial decode as near-miss feedback, par = the
+  hyperoptimizer Pareto front hidden until first solve (expertise
+  reversal), monitor-profile tiers as the within-level difficulty dial
+  (Larche: under-challenge is the biggest flow-killer), Coffee-Time
+  breathers between chapters, and ch.4 re-solving the ch.3 boss UART
+  level with side-set once the ds allocator exists. Open: row-count
+  honesty, predict-gate replay, par-visibility timing, read-before-
+  write chapter order.
