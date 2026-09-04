@@ -203,3 +203,87 @@ C33 — the labels swap, the boxes don't move — brun and bcopy sized to
 their possible max text via the two-label grid stack, the mnemonic
 underlines alive in every state, and the layout gate's state-swap leg
 pinning the bar's geometry across the toggles.
+
+## Game track — level campaign, chapters 0–1 (C34–C37)
+
+Scheduled 2026-09-04 by the level grilling over mockups/LEVELS-NOTES.md
+(the 2026-09-04 didactics exploration, recorded from the IDEAS game and
+learning-curve entries; that file stays the design spec). Owner
+decisions on the record: the first card is a **vertical slice through
+L0**, not a shell-first or referee-first build; **locked panels are
+absent** (display:none) — the level page is its own geometry, never
+ghosted placeholders, and absence covers the Tab order too; **the
+listing keeps all 32 rows in every level** (row-count honesty resolved:
+the machine is honest from cycle one, `·` rows dim); every level ships
+a **reference solution + par** (words/cycles from tools/hyperopt.py,
+committed per level), gated by a levels test in `make js` — each
+reference solution green against its own monitor profile, perturbed
+variants red; the **predict gate locks Run on first run of a
+non-authored program only**; the level shell **inherits the era skin
+verbatim** — one master window, plus a level band (name, goal,
+monitor/profile status, pass state) as a group frame under the
+toolbar; **chapter order output-first** (reading second, feeder
+third); **par becomes visible in the band only after first solve**
+(expertise reversal); the scrambler is **click-pair row swap** (click
+A, click B, contents trade; keyboard per the C25 grammar), not drag.
+Chapters 2+ stay in IDEAS/LEVELS-NOTES until the fun gate reads on
+0–1. Web cards: the JS discipline (docs/js-tooling.md), red/green TDD,
+DOM glue verified by the browser session and `make web` — geometry and
+keyboard only through the two sanctioned headless gates. The levels
+gate (web/tests/levels.test.js) is engine-side `node --test`, not a
+DOM-glue exception — it drives level definitions against the engine
+the way golden vectors anchor pio-asm. Dependency order: C34 → C35 →
+C36 ∥ C37 (C36 first by value; level unlock order at runtime stays
+L3 → L4 → L5 regardless).
+
+C34 — the L0 slice — the level shell is the sandbox page minus what
+the level hasn't taught. Level definition format (classic-script
+loadable, dependency-free, one file per level under web/levels/):
+id/name/chapter, goal text (subgoal phrasing), SM overlay + prefilled
+words (the C22 overlay compose/decompose round-trips it), stimulus
+feeds, unlocked panels, unlocked opcodes (row-editor whitelist; empty
+for L0), monitor profile, predict prompt with candidate waves,
+reference solution + par. Panel gating is absence: hidden panels leave
+layout and Tab order both (the walk must find no orphan stops); the
+layout gate gains the reduced-geometry leg (L0's page pinned; a later
+unlock — L1's delay column — never moves what's already on screen).
+The level band lands here. L0 First light is the proof: prefilled
+`set pins,1` / `set pins,0`; UI = CYCLE, transport, listing (32
+rows), one wave row (the C28 lens pinned to gpio0); the predict gate
+asks the wrap question (pick the wave that happens after the PC
+passes the last row) before Run unlocks; acceptance = the square-wave
+monitor profile, relaxed tier.
+
+C35 — chapter 0 completes — the delay column and the editor's leash.
+L1 Metronome (modify): the delay column debuts (the side column stays
+hidden — no sideset until ch.4) and the timing monitor profile is
+born as the profile ladder's first skeleton: one square-wave receiver
+parameterized by tolerance tiers (relaxed/exact/strict), versioned
+with the level per the IDEAS contract. L2 Author's hand (make): the
+row editor opens in levels for the first time, completions scoped to
+the unlocked opcode set (a filter over C32's slot-aware candidates —
+`set` + the delay cell only). levels.test.js covers both (reference
+solutions green; period-wrong and opcode-locked variants red); the
+walk covers the delay cell (Tab-crossing per the C25/C31 contract).
+
+C36 — jmp debuts with a job, and par reveals the cost — L3 Two ways
+to loop: a task wrap cannot do (run a preamble once, then loop a
+different region), so `jmp` arrives as structure, not syntax; then
+the committed par line reveals what the player is meant to discover —
+wrap is free, jmp costs a slot and a cycle (the same wave, one cycle
+faster with wrap alone). L5 The long blink: the [31] delay ceiling
+and the first feel of the 5-bit ds budget (all five bits are delay
+until sideset exists — the allocator itself stays hidden until
+ch.4). Par machinery: fronts from tools/hyperopt.py, numbers
+committed per level; levels.test.js asserts reference ≤ par on both
+axes, the hyperopt suite re-derives the front (drift-checked like
+the golden vectors).
+
+C37 — the scrambler — comprehension by reordering (Parsons). L4: rows
+shuffled, the task is to reorder them until the wave matches; the
+mechanic is click-pair row swap — a listing gesture like the gutter
+pick, not an editor mode: the row editor never opens, the vocabulary
+is the given rows (keyboard: one Tab stop on the listing, arrows +
+Enter to mark and swap, per the C25 grammar). levels.test.js: the
+reference order green, a planted wrong order red; the walk covers
+the swap keys.

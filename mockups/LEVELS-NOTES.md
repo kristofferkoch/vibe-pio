@@ -3,10 +3,12 @@
 Session notes for the level track: what the programming-education
 research says about the slope, a concept DAG derived from it, a
 chapter/level sketch, and the open questions this leaves for the
-grilling. **Nothing here is agreed work** — it is input to the level
-grilling already pending in IDEAS.md's game entry (monitor profiles as
-the visible spec, receiver-style acceptance, score metric, 1-tick-
-1-cycle rendering). The owner's starting instincts on the record:
+grilling. **Chapters 0–1 were promoted to KANBAN C34–C37 by the
+2026-09-04 grilling — the owner decisions made that day are recorded
+on the cards and resolve five of the six open questions below;
+chapters 2+ remain pre-grilling input.** This file stays the design
+spec for the promoted chapters the way DESIGN-NOTES is the spec for
+the sandbox. The owner's starting instincts on the record:
 first level = a very reduced view of the UI, few instructions, the
 loop comes from wrap, `jmp` only later. The research leg, done
 2026-09-04, backs all three — see the mapping below.
@@ -240,9 +242,9 @@ The sandbox keeps everything always — the contrast is the motivator
 (the campaign *is* the unlock sequence of the sandbox). The row
 editor's completion tables scope to unlocked ops; the C32
 candidates-match-the-slot work means a whitelist is a filter, not new
-machinery. Early listings show few rows (open question below —
-DESIGN-NOTES pins 32-always for the *sandbox*, where the memory budget
-is the point; levels may prefer honesty-later). Config drawings unlock
+machinery. Listings keep all 32 rows in every level (owner decision,
+2026-09-04 grilling — the machine is honest from cycle one, `·` rows
+dim; row-count honesty resolved). Config drawings unlock
 with the concepts they wire: set-base/count pinned invisibly until the
 pin strip debuts, wrap steppers only when a level asks for a non-default
 wrap, thresholds at autopull time.
@@ -277,17 +279,20 @@ three chapters; the fun gate can cut deeper.
 
 ## Open questions for the grilling
 
-- How few rows is honest? The 32-slot budget is itself PIO content —
-  does the constraint become curriculum at L11 (autopull frees slots)
-  or earlier, the first time a solution does not fit?
-- Does the predict gate survive replay (a re-run level with locked Run
-  is a chore — gate on first-run only, per profile?)
-- Par visibility: after first solve, or after first *profile-tier*?
-- Where does the level shell sit between "sandbox with panels hidden"
-  and its own dressing (already open in IDEAS for the skin)?
-- Chapter 2 before 3 or swapped — reading (in/push) before writing
-  data out (pull/out)? PRIMM says read-first; the wave-first instinct
-  says set/delay output is the friendlier opener (kept: chapters 0–1
-  are output-only).
+- How few rows is honest? — **Resolved 2026-09-04: all 32 rows,
+  always** (the machine is honest from cycle one; the budget becomes
+  curriculum the first time a solution does not fit, not by reveal
+  mechanics).
+- Does the predict gate survive replay? — **Resolved 2026-09-04:
+  first run of a non-authored program only.**
+- Par visibility — **Resolved 2026-09-04: after first solve** (dimmed
+  but present once passed).
+- Level shell dressing — **Resolved 2026-09-04: inherit the era skin
+  verbatim + a level band** (name, goal, monitor/profile status, pass
+  state) as a group frame under the toolbar.
+- Chapter 2 before 3 or swapped — **Resolved 2026-09-04:
+  output-first stands** (chapters 0–1 output-only; reading second,
+  feeder third).
 - Does L12's "re-solve with sideset in ch.4" pattern generalize
-  (re-solve levels as a standing chapter-capstone type)?
+  (re-solve levels as a standing chapter-capstone type)? — **Still
+  open**, with the chapter 2+ grilling.

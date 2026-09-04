@@ -58,13 +58,18 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   stricter parameterized tolerances over one receiver skeleton
   (profiles are the level's visible spec, versioned with the model);
   whether levels keep the 1-tick-1-cycle, clkdiv-abstracted
-  rendering (sandbox exposes the real divider, levels need not);
+  rendering (sandbox exposes the real divider, levels need not — the
+  2026-09-04 level grilling answered it for chapters 0–1: abstracted);
   progression one SM → multi-SM parallel buses → DMA at most as
-  late-game fixed-function pacing; score metric open (the
-  hyperoptimizer's Pareto front is the natural fit), par/solvability
-  proofs likewise (the equivalence/synthesis harnesses certify for
-  free). Mock-up decisions live in
-  `mockups/DESIGN-NOTES.md`.
+  late-game fixed-function pacing; score metric + par/solvability
+  resolved 2026-09-04 by the level grilling — par = committed
+  hyperopt Pareto fronts, solvability = per-level reference
+  solutions, both gated in `make js`. The campaign's first chapters
+  are KANBAN C34–C37 (the grilling's shape decisions on the cards);
+  the chapter 2+ remainder is the learning-curve entry below.
+  Mock-up decisions live in
+  `mockups/DESIGN-NOTES.md`; the level curve in
+  `mockups/LEVELS-NOTES.md`.
 - Keyboard-only navigation (DOS/Win3.11 idiom) + the light era skin:
   **promoted to KANBAN C25/C26** after the 2026-08-29 grilling
   round 1. Owner decisions on the record: light skin (the dark-slate
@@ -114,24 +119,16 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   state replies to settle before opening (or re-focus after the
   rebuild), and is `replaceChildren` moving a focused RE the general
   hazard (any state reply while editing scrolls/rebuilds)?
-- Level learning curve, explored 2026-09-04 — full notes in
-  `mockups/LEVELS-NOTES.md` (input to the pending level grilling, not
-  agreed work). Shape: the first chapter *is* the notional machine
-  (du Boulay/Sorva) — L0 is a prefilled 2-row `set pins` program under
-  a stripped UI (CYCLE, transport, listing, one wave row; no FIFOs,
-  no registers, no pin strip), with wrap taught as the free loop
-  before `jmp` debuts (Rich et al.'s sequence→repetition→conditionals;
-  gentler than HRM, whose Year 2 already needs JUMP). Slope = a concept
-  DAG, one new concept per level, levels typed by PRIMM verbs
-  (predict/modify/make rungs, plus Parsons-style scrambled-row
-  levels); UI panels unlock exactly with their concept — the level
-  shell's visible state is the player's knowledge state — and the row
-  editor's completions scope to the unlocked opcodes. Fun leg: the
-  monitor's partial decode as near-miss feedback, par = the
-  hyperoptimizer Pareto front hidden until first solve (expertise
-  reversal), monitor-profile tiers as the within-level difficulty dial
-  (Larche: under-challenge is the biggest flow-killer), Coffee-Time
-  breathers between chapters, and ch.4 re-solving the ch.3 boss UART
-  level with side-set once the ds allocator exists. Open: row-count
-  honesty, predict-gate replay, par-visibility timing, read-before-
-  write chapter order.
+- Level learning curve — chapters 0–1 promoted to KANBAN C34–C37 by
+  the 2026-09-04 grilling (owner decisions on the cards; the notes in
+  `mockups/LEVELS-NOTES.md` stay the design spec). Still open there,
+  for the chapter 2+ grilling once the fun gate reads on 0–1: the
+  monitor flip to receiver-style conformance (decoded-byte acceptance,
+  SPEC-16-9 machinery — the C35 timing-profile ladder is the skeleton
+  it parameterizes), the stall-as-curriculum level (pull on a dry TX),
+  the designed fencepost on `jmp x--` (SPEC-3.1-4), autopull as
+  reward, the ch.3 UART boss and whether its ch.4 sideset re-solve
+  generalizes into a standing capstone type, Coffee-Time breather
+  levels between chapters, sideset's garbling spectacle, wait and
+  multi-SM, and whether later chapters keep the 1-tick-1-cycle
+  clkdiv-abstracted rendering.
