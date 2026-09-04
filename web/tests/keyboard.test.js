@@ -7,9 +7,13 @@
 //
 //   Tab into the machines bar and the pin strip, walk the arrows, latch
 //   a pin; Tab into the listing (a listbox), walk the row cursor, type
-//   an instruction (the editor opens under the keys alone), commit it;
-//   walk the gutter pick; spin a drawn stepper through its wrap; take
-//   the Alt+letter mnemonic. The engine is the suite's fake ABI behind
+//   an instruction (the editor opens under the keys alone), exercise
+//   the completion-list contract (C31 the list is its own box; C32 the
+//   suggestions match the slot under the caret — wait's polarity first,
+//   push's flags mid-instruction, irq's keywords at their positions,
+//   complete slots quiet), commit it; walk the gutter pick; spin a
+//   drawn stepper through its wrap; take the Alt+letter mnemonic. The
+//   engine is the suite's fake ABI behind
 //   the REAL worker transport (fake-engine-module.js served at the
 //   engine URL), so every keystroke's effect — the drive latch, the
 //   threshold wrap — is the engine truth the view renders, not a stub.
@@ -271,23 +275,28 @@ test('the keyboard walk: tab in, walk, type, commit, pick, spin, latch', async (
   );
 
   // ---- C31: the list is its own box, and the keys follow its state -----
-  // '3' prefixes exactly one count candidate, so the list is open with 31
+  // C32: 'set x, 3' — the count slot holds a complete value, so the list
+  // is quiet (31 for a typed 3 was noise, not help)
   assert.strictEqual(
-    await value("!$('edpop').hidden && $('edcands').children.length"),
-    1,
-    'the completion list exists while it has items (31 for the count slot)',
+    await value("$('edpop').hidden"),
+    true,
+    "a complete slot offers nothing — the strip is the editor's other box",
   );
   assert.ok(
-    (await value("$('statusline').textContent")).includes('Tab accepts'),
-    'the status line narrates the open-list key contract',
+    (await value("$('statusline').textContent")).includes('Tab crosses cells'),
+    'the status line narrates the closed-list contract',
   );
   // ← moves the caret into the slot's leading space: the partial empties
   // and all four counts appear — the menu recomputes under the caret
   // (selectionchange is async, so the walk waits like a user would)
   await press('ArrowLeft');
   await until(
-    "$('edcands').children.length === 4",
-    'the list to follow the caret (the four counts, not stale 31 alone)',
+    "!$('edpop').hidden && $('edcands').children.length === 4",
+    'the list to follow the caret (the four counts over the empty slot)',
+  );
+  assert.ok(
+    (await value("$('statusline').textContent")).includes('Tab accepts'),
+    'the status line narrates the open-list key contract',
   );
   // Esc closes the list for this slot — and only the list: the machine
   // strip is its own always-on box and must survive
@@ -297,10 +306,6 @@ test('the keyboard walk: tab in, walk, type, commit, pick, spin, latch', async (
     await value("$('edcode').getBoundingClientRect().height > 0"),
     'the machine-code strip is its own box — Esc on the list leaves it up',
   );
-  assert.ok(
-    (await value("$('statusline').textContent")).includes('Tab crosses cells'),
-    'the status line narrates the closed-list contract',
-  );
   // Home leaves the slot (caret to the opcode): the Esc close was spent,
   // and the list reopens over the opcode menu
   await press('Home');
@@ -308,12 +313,10 @@ test('the keyboard walk: tab in, walk, type, commit, pick, spin, latch', async (
     "!$('edpop').hidden && $('edcands').children.length === 10",
     'the caret leaving the Esc-closed slot to reopen the list (the opcodes)',
   );
-  // End returns to the count slot: the list recomputes to the '3' prefix
+  // End returns to the count slot: its value is complete, so the list
+  // stays quiet (pre-C32 it re-offered 31 — the C32 suppression)
   await press('End');
-  await until(
-    "$('edcands').children.length === 1",
-    'the list to recompute as the caret returns (31 again)',
-  );
+  await until("$('edpop').hidden", 'the complete count slot to stay quiet');
   // Enter commits in BOTH states — the Escape-before-Enter dance is gone
   await press('Enter');
   assert.strictEqual(
@@ -373,6 +376,71 @@ test('the keyboard walk: tab in, walk, type, commit, pick, spin, latch', async (
     'the preview arc goes with it',
   );
   await press('Escape'); // the target is complete — no candidates, so Esc cancels the row
+
+  // ---- C32: the suggestions match the slot under the caret -------------
+  // wait's first slot is the polarity — gpio/pin/irq moved down to the
+  // source slot that follows it
+  await type('w'); // type-ahead opens the editor on the cursor row
+  await until(
+    "!$('edpop').hidden && $('edcands').children.length === 1",
+    'the opcode menu to complete the typed w',
+  );
+  await press('Tab'); // C31: Tab is the only accept key
+  assert.strictEqual(await value('ED.value'), 'wait ', 'accept lands in the polarity slot');
+  await until("$('edcands').children.length === 2", 'wait offers its polarity (0/1) first');
+  await type('1 ');
+  await until("$('edcands').children.length === 4", 'the source slot offers gpio/pin/irq/jmppin');
+  await press('Tab'); // accept 'gpio' — the first entry
+  await type('5');
+  assert.strictEqual(
+    await value('ED.value'),
+    'wait 1 gpio 5',
+    'the accepts composed the canonical spelling (spaces, no comma)',
+  );
+  assert.strictEqual(await value("$('edpop').hidden"), true, 'the complete wait goes quiet');
+  await press('Enter'); // commits the row — the editor hops to the next
+  assert.strictEqual(await value('ROWS[3]'), 'wait 1 gpio 5', 'the canonical wait committed');
+
+  // push's flags have slots — the menu no longer empties mid-instruction
+  await type('push ');
+  await until(
+    "!$('edpop').hidden && $('edcands').children.length === 3",
+    'push offers both flags at its first slot',
+  );
+  await type('iffull ');
+  await until(
+    "$('edcands').children.length === 2",
+    'the block flag slot follows iffull — the menu no longer empties mid-instruction',
+  );
+  await press('Tab'); // accept 'block'
+  assert.strictEqual(
+    await value('ED.value'),
+    'push iffull block',
+    'Tab composes the canonical flags (no comma after iffull)',
+  );
+  assert.strictEqual(await value("$('edpop').hidden"), true, 'the complete push goes quiet');
+  await press('Enter');
+  assert.strictEqual(await value('ROWS[4]'), 'push iffull block', 'the canonical push committed');
+
+  // irq's keywords appear at their positions: set/wait/clear first, the
+  // typed index, then rel/prev/next
+  await type('irq ');
+  await until(
+    "!$('edpop').hidden && $('edcands').children.length === 3",
+    'the mode slot offers set/wait/clear',
+  );
+  await type('wait 3 ');
+  await until(
+    "$('edcands').children.length === 3",
+    'rel/prev/next appear after the index — not back at the mode slot',
+  );
+  await press('Escape'); // close the list — Esc never destroys the row
+  assert.strictEqual(await value('RE.hidden'), false, 'Esc closed the list only');
+  await press('Enter'); // Enter commits in both states
+  assert.strictEqual(await value('ROWS[5]'), 'irq wait 3', 'the irq row committed');
+  assert.strictEqual(await value('RE.style.top'), '120px', 'the commit hops to row 6');
+  await press('Escape'); // close row 6's fresh list
+  await press('Escape'); // cancel the empty row — focus returns to the listing
 
   // ---- fifo join: a radio group on the arrows --------------------------
   const toJoin = await tabUntil(`${activeId} === 'segjoin'`, 'the fifo join radio group');

@@ -3,7 +3,8 @@
 // adds the keyboard surface: keys owned by focus — the accelerators on
 // body focus only, the listing as a listbox, every arrow group one Tab
 // stop with an internal cursor, Alt+letter mnemonics, the focus-tracking
-// status line).
+// status line; C32's completion slot model lives in row-complete.js —
+// the row editor's suggestions are module logic, not DOM glue).
 //
 // Every machine value rendered here (pins, the four PC cursors, phases,
 // X/Y, OSR/ISR, counters, FIFO levels, IRQ flags, pad ownership) comes
@@ -1696,6 +1697,10 @@ function buildAndPush() {
 }
 
 const ISA = {
+  // C32: the completion vocabularies live in the slot model
+  // (row-complete.js, derived from PioAsm's own tables); this table is
+  // the signature-help face — kind, sig, the params rows the detail pane
+  // highlights (the slot model names the row), and the description.
   jmp: {
     sig: 'jmp [cond] <target>',
     kind: 'control',
@@ -1704,19 +1709,18 @@ const ISA = {
       ['target', 'address 0–31 or a label'],
     ],
     desc: 'Jump if the condition holds. x--/y-- test BEFORE decrementing.',
-    args: ['!x', 'x--', '!y', 'y--', 'x != y', 'pin', '!osre'],
   },
   wait: {
-    sig: 'wait <pol> gpio|pin|irq <index>',
+    sig: 'wait <pol> gpio|pin|irq|jmppin <index>',
     kind: 'control',
     params: [
       ['pol', '0 wait for low · 1 wait for high'],
       ['gpio', 'absolute GPIO number'],
       ['pin', 'pin relative to IN_BASE'],
       ['irq', 'flag; IRQ waits may use rel/prev/next'],
+      ['jmppin', 'the EXECCTRL JMP_PIN input pin'],
     ],
     desc: 'Stall the SM until the source matches the polarity.',
-    args: ['gpio', 'pin', 'irq'],
   },
   in: {
     sig: 'in <src>, <count>',
@@ -1726,7 +1730,6 @@ const ISA = {
       ['count', '1–32 bits (0 means 32) shifted into ISR'],
     ],
     desc: 'Shift count bits from src into the ISR (right unless configured).',
-    args: ['pins', 'x', 'y', 'null', 'isr', 'osr'],
   },
   out: {
     sig: 'out <dst>, <count>',
@@ -1736,7 +1739,6 @@ const ISA = {
       ['count', '1–32 bits (0 means 32) shifted out of OSR'],
     ],
     desc: 'Shift count bits from the OSR to dst. pc = jump; exec = self-modifying.',
-    args: ['pins', 'x', 'y', 'null', 'pindirs', 'pc', 'isr', 'exec'],
   },
   push: {
     sig: 'push [iffull] [block|noblock]',
@@ -1746,7 +1748,6 @@ const ISA = {
       ['block', 'stall until RX has room (default)'],
     ],
     desc: 'Write ISR to the RX FIFO and clear the shift counter.',
-    args: ['iffull', 'block', 'noblock'],
   },
   pull: {
     sig: 'pull [ifempty] [block|noblock]',
@@ -1756,7 +1757,6 @@ const ISA = {
       ['block', 'stall until TX has data (default)'],
     ],
     desc: 'Load OSR from the TX FIFO and clear the shift counter.',
-    args: ['ifempty', 'block', 'noblock'],
   },
   mov: {
     sig: 'mov <dst>, [<op>] <src>',
@@ -1767,17 +1767,16 @@ const ISA = {
       ['src', 'pins · x · y · null · status · isr · osr'],
     ],
     desc: 'Copy src to dst, optionally inverted or bit-reversed.',
-    args: ['pins', 'x', 'y', 'pindirs', 'exec', 'pc', 'isr', 'osr'],
   },
   irq: {
     sig: 'irq [set|wait|clear] <n> [rel|prev|next]',
     kind: 'sync',
     params: [
+      ['mode', 'set — the default · wait — stall until it clears · clear — deassert'],
       ['n', 'flag 0–7'],
-      ['rel', 'index relative to this SM'],
+      ['rel', 'rel · prev · next — index relative to this SM'],
     ],
     desc: 'Signal other SMs; wait blocks until the flag clears.',
-    args: ['wait', 'clear', 'rel', 'prev', 'next'],
   },
   set: {
     sig: 'set <dst>, <data>',
@@ -1787,14 +1786,12 @@ const ISA = {
       ['data', '5-bit immediate 0–31'],
     ],
     desc: 'Write a 5-bit constant to the destination.',
-    args: ['pins', 'x', 'y', 'pindirs'],
   },
   nop: {
     sig: 'nop',
     kind: 'control',
     params: [],
     desc: 'mov y, y — one free cycle.',
-    args: [],
   },
 };
 const ARG_NOTES = {
@@ -1828,6 +1825,7 @@ const ARG_NOTES = {
   gpio: 'absolute GPIO number',
   pin2: 'pin relative to IN base',
   irq: 'IRQ flag',
+  jmppin: 'the EXECCTRL JMP_PIN input pin',
 };
 function esc(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -2040,102 +2038,65 @@ let edSel = 0,
 // alone (which blank in the signature the caret sits in) — leaving the
 // slot, a new row, or Ctrl+Space reopens; typing inside the slot keeps
 // it closed. edSeen is the context the list was last computed for, so
-// same-context caret moves leave the box untouched.
-let edSupp = -1; // the slot Esc closed the list on (-1: nothing suppressed)
+// same-context caret moves leave the box untouched. C32: the slot is the
+// completion model's identity (row-complete.js — 'push.blk', 'wait.pol'),
+// not a token index: push's block flag sits at token 1 or 2 depending on
+// whether iffull was given.
+let edSupp = null; // the slot Esc closed the list on (null: nothing suppressed)
+let edSlot = ''; // the slot the list on show was computed for
 let edSeen = ''; // `slot|partial` of the last popupShow
-function edCtx() {
-  const { toks, partial } = lineCtx();
-  return { slot: toks.length, key: `${toks.length}|${partial.toLowerCase()}` };
-}
 // the row editor's key map follows the list's state — the status line
 // narrates whichever is current (the HTML default is the closed map)
 const ROWED_KEYS_OPEN =
   'row editor: list open — Tab accepts · ↑/↓ walk it · Enter commits the row · Esc closes the list';
 const ROWED_KEYS_CLOSED = RE.dataset.status; // the HTML default is the closed map
 function lineCtx() {
-  const upto = ED.value.slice(0, ED.selectionStart);
-  const ls = upto.lastIndexOf('\n') + 1;
-  const line = upto.slice(ls);
-  const m = line.match(/([A-Za-z_~!<>:[\]-]*[\w![\]]*)$/);
-  const partial = m ? m[1] : '';
-  const before = line.slice(0, line.length - partial.length);
-  const toks = before.split(/[\s,]+/).filter(Boolean);
-  return { line, toks, partial };
+  // the caret's token context — the completion module's tokenizer (C32:
+  // the same split drives the slot model; one source, no drift)
+  return RowComplete.splitCtx(ED.value.slice(0, ED.selectionStart));
 }
-function computeCands() {
-  const { toks, partial } = lineCtx();
-  const p = partial.toLowerCase();
-  const match = (list) =>
-    list.map((c) => ({ t: c, kind: 'operand' })).filter((c) => c.t.toLowerCase().startsWith(p));
-  if (!toks.length) {
-    return Object.entries(ISA)
-      .filter(([k]) => k.startsWith(p))
-      .map(([k, v]) => ({ t: k, kind: v.kind, detail: v }));
-  }
-  const op = ISA[toks[0]];
-  if (!op) return [];
-  const n = toks.length - 1;
-  if (toks[0] === 'jmp') {
-    if (n === 0) {
-      const conds = op.args
-        .map((c) => ({ t: c, kind: 'cond', detail: ARG_NOTES[c] }))
-        .filter((c) => c.t.toLowerCase().startsWith(p));
-      return /[0-9]/.test(p)
-        ? conds
-        : [
-            ...conds,
-            {
-              t: '↦ pick row',
-              kind: 'pick',
-              detail:
-                'No condition = always jump. Click an address in the gutter — the arc shows the edge. Or type a condition first.',
-            },
-          ];
-    }
-    return [
-      {
-        t: '↦ pick row',
-        kind: 'pick',
-        detail:
-          'Click an address in the gutter — the jump arc shows the edge. Or type 0–31; typing digits dismisses this.',
-      },
-    ].filter(() => !/[0-9]/.test(p));
-  }
-  if (toks[0] === 'mov') {
-    const srcs = ['pins', 'x', 'y', 'null', 'status', 'isr', 'osr'];
-    if (n === 0) return match(op.args).map((c) => ({ ...c, detail: ARG_NOTES[c.t] }));
-    const opApplied = toks.slice(1).some((t) => t === '~' || t === '::');
-    return match(opApplied ? srcs : ['~', '::', ...srcs]).map((c) => ({
-      ...c,
+// C32: the suggestions come from the completion slot model
+// (row-complete.js — per-instruction slots over the canonical
+// signatures the disassembler spells, PioAsm-anchored, unit-tested; a
+// slot whose token is already complete offers nothing). The view adds
+// presentation: kinds, the detail notes, and the jmp target's
+// gutter-pick gesture (a listing click/walk, not text — typing digits
+// dismisses it, as ever).
+function edModel() {
+  const a = RowComplete.analyze(ED.value.slice(0, ED.selectionStart));
+  const cands = a.cands.map((c) =>
+    a.slot === ''
+      ? { t: c.t, kind: ISA[c.t].kind, detail: ISA[c.t], sep: c.sep }
+      : {
+          t: c.t,
+          kind: c.param === 'cond' ? 'cond' : 'operand',
+          detail: c.note || ARG_NOTES[c.t] || (/^\d+$/.test(c.t) ? 'number' : ''),
+          sep: c.sep,
+          param: c.param,
+        },
+  );
+  if ((a.slot === 'jmp.cond' || a.slot === 'jmp.target') && !/\d/.test(a.partial))
+    cands.push({
+      t: '↦ pick row',
+      kind: 'pick',
       detail:
-        ARG_NOTES[c.t] ||
-        (c.t === '~' ? 'bitwise invert the source' : "reverse the source's bit order"),
-    }));
-  }
-  const SECOND = {
-    in: ['1', '4', '8', '16', '32'],
-    out: ['1', '4', '8', '16', '32'],
-    set: ['0', '1', '7', '31'],
-    push: ['block', 'noblock'],
-    pull: ['block', 'noblock'],
-  };
-  if (op.args.length)
-    return match(n === 0 ? op.args : SECOND[toks[0]] || []).map((c) => ({
-      ...c,
-      detail: ARG_NOTES[c.t] || (c.t === op.sig.split(' ')[1] ? '' : 'number'),
-    }));
-  return match(op.args);
+        a.slot === 'jmp.cond'
+          ? 'No condition = always jump. Click an address in the gutter — the arc shows the edge. Or type a condition first.'
+          : 'Click an address in the gutter — the jump arc shows the edge. Or type 0–31; typing digits dismisses this.',
+    });
+  return { slot: a.slot, partial: a.partial, cands };
 }
 function detailHTML(c) {
   const { toks } = lineCtx();
   const op = ISA[toks[0]];
   if (op && c.kind !== 'pick' && c.detail && !c.detail.sig) {
-    const n = toks.length - 1;
     const note = c.detail || '';
+    // C32: the slot model names the params row the caret's slot is
+    const hl = c.param || c.t;
     const rows = op.params
       .map(
-        (p, i) =>
-          `<tr class="${i === n ? 'curp' : ''}"><td class="k">${esc(p[0])}</td><td>${esc(p[1])}</td></tr>`,
+        (p) =>
+          `<tr class="${p[0] === hl ? 'curp' : ''}"><td class="k">${esc(p[0])}</td><td>${esc(p[1])}</td></tr>`,
       )
       .join('');
     return (
@@ -2161,12 +2122,13 @@ function detailHTML(c) {
   );
 }
 function popupShow(force) {
-  if (force) edSupp = -1; // the explicit reopen: Ctrl+Space, a fresh row
-  edCands = computeCands();
-  const { slot, key } = edCtx();
-  edSeen = key;
-  if (edSupp >= 0 && slot !== edSupp) edSupp = -1; // the close was spent on leaving
-  if (!edCands.length || edSupp === slot) {
+  if (force) edSupp = null; // the explicit reopen: Ctrl+Space, a fresh row
+  const m = edModel();
+  edCands = m.cands;
+  edSlot = m.slot;
+  edSeen = `${m.slot}|${m.partial.toLowerCase()}`;
+  if (edSupp !== null && edSlot !== edSupp) edSupp = null; // the close was spent on leaving
+  if (!edCands.length || edSupp === edSlot) {
     popupHide();
     return;
   }
@@ -2224,10 +2186,11 @@ function accept(c) {
   const s = ED.selectionStart;
   const before = ED.value.slice(0, s - partial.length);
   const after = ED.value.slice(s);
-  const toks = before.split(/[\s,]+/).filter(Boolean);
-  const sep = !ISA[toks[0]] ? ' ' : toks.length === 1 ? ', ' : '';
-  ED.value = before + c.t + sep + after;
-  const np = (before + c.t + sep).length;
+  // C32: the separator comes from the slot model — the canonical
+  // spelling the disassembler emits (', ' only where it has a comma),
+  // not a universal ', ' after the first operand
+  ED.value = before + c.t + c.sep + after;
+  const np = (before + c.t + c.sep).length;
   ED.setSelectionRange(np, np);
   renderED();
   edSel = 0;
@@ -2251,7 +2214,8 @@ ED.addEventListener('blur', () => popupHide());
 // keyboard path; the click handler nails the mouse path regardless.
 function caretMoved() {
   if (curRow < 0 || pickLive || document.activeElement !== ED) return;
-  if (edCtx().key !== edSeen) {
+  const a = RowComplete.analyze(ED.value.slice(0, ED.selectionStart));
+  if (`${a.slot}|${a.partial.toLowerCase()}` !== edSeen) {
     edSel = 0;
     popupShow();
   }
@@ -2326,7 +2290,7 @@ ED.addEventListener('keydown', (e) => {
     } else if (e.key === 'Escape') {
       e.preventDefault();
       popupHide();
-      edSupp = edCtx().slot; // and it stays closed for this slot
+      edSupp = edSlot; // and it stays closed for this slot
     }
     return;
   }

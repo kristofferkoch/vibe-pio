@@ -13,10 +13,11 @@ behavior change.
 | `web/engine-driver.js` | the client core (the sandbox driver: overlay→reg-write mapping, pin drives + pattern generator, RX drain + mirrors, the monitor lens, the stored-program serializer) — the same module runs in the browser worker, under the `make web` client gate's nine model-oracle legs (five sandbox + four multi-SM), and under `node --test` against the fake engine |
 | `web/engine-worker.js` | the Web Worker transport around the driver |
 | `web/pio-asm.js` | the in-browser assembler/disassembler — a JS port of pio_model's asm/disasm/encoding trio, anchored to that oracle by golden bit-vectors + the 65536-word canonical round-trip (never to itself) |
+| `web/row-complete.js` | the C32 row-editor completion slot model (extracted from sm-view.js's computeCands) — per-instruction slots over the canonical signatures the disassembler spells, vocabularies derived from PioAsm's own operand tables, canonical accept separators, complete-slot suppression; the pre-C32 token-index model ships as its `{defect:'token-index'}` hook |
 | `web/sm-view.js` | the view's DOM glue (**extract-on-touch**: lint/format always; logic migrates into require-able tested modules only as it is touched) — the listing itself is assembler-derived: rows disassemble from the loaded words and committed edits re-assemble through `pio-asm.js` into a live imem patch |
 | `web/sm-view.html` / `web/sm-view.css` | the shipped page and its stylesheet (the `<style>` extracted so css joins the gate) |
 | `web/node_gate.js` / `web/node_client_gate.js` | the headless `make web` runners (wasm engine / client-vs-oracle; the client gate also round-trips the level listing through `pio-asm.js`) |
-| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface), `pin-map.test.js` (the C27 mapping marks: `pinExtents` ranges + the was-driven mask), `browser.js` + `layout.test.js` (the headless-Chromium layout gate — see below), `fake-engine-module.js` + `keyboard.test.js` (the headless-Chromium keyboard walk — see below) |
+| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `row-complete.test.js` (the C32 slot model), `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface), `pin-map.test.js` (the C27 mapping marks: `pinExtents` ranges + the was-driven mask), `browser.js` + `layout.test.js` (the headless-Chromium layout gate — see below), `fake-engine-module.js` + `keyboard.test.js` (the headless-Chromium keyboard walk — see below) |
 | `tools/gen_pio_asm_golden.py` | generates `web/tests/pio-asm-golden.json` from pio_model (stdlib-only; `--check` is the drift gate in `make js`) |
 | `biome.json` | the format+lint configuration (waivers documented below) |
 | `package.json` + `package-lock.json` | dev-only dependency: `@biomejs/biome` |
@@ -153,6 +154,15 @@ against the oracle gate. Prefer that route over blanket `--unsafe`.
   `assemble(disassemble(w)) === w` over all 65536 words x 4 side-set
   configs, with the canonical/reserved partition pinned to the oracle
   total (141912 — pio_model's own count over those configs).
+  `row-complete.test.js` (C32) pins the completion slot model the
+  same way: the vocabularies must equal PioAsm's own operand tables,
+  and every accept-composed row must round-trip through
+  assemble/disassemble to *itself* — the canonical spelling, not just
+  an assembler-tolerated one (`push iffull, block` assembles but is
+  not what the disassembler says). The pre-C32 token-index model is
+  the module's standing `{defect:'token-index'}` hook and every C32
+  behavior asserts divergence from it, so reverting the fix turns the
+  suite red on its own checks.
 - **The defect hooks are the cheap red cases** (the
   `TestMutationsDiverge` idiom): `create(M, {pin:true})` /
 `{mirror:true}` re-inject the mutation-demo defects; the suite
@@ -321,6 +331,13 @@ drive latch, a threshold wrap) is the engine truth the view renders,
 not a stub. Note for CDP key events: the DOM event's modifier state
 (`e.altKey` & co.) rides the `modifiers` bitmask (alt 1, ctrl 2, meta
 4, shift 8); the per-modifier boolean params alone do not set it.
+C32 adds the slot-sense legs: typing `set x, 3` leaves the list
+closed (a complete slot offers nothing; the empty slot behind ←
+still lists its four counts), and the walks for `wait` (polarity
+first, then the sources), `push` (the block flag slot follows
+iffull — the menu no longer empties mid-instruction) and `irq`
+(set/wait/clear at the mode slot, rel/prev/next after the index)
+compose and commit their canonical spellings.
 
 The focus model the walk pins: keys are owned by focus — text surfaces
 type, every interactive group ([data-rovi]) is ONE Tab stop with an

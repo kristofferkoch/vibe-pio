@@ -125,7 +125,7 @@ tenant on that row); recorded in IDEAS.md for a grilling, not
 silently expanded. No cards remain; further web-track legibility
 work starts from IDEAS.md after its own grilling.
 
-## Web track — the row editor's key contract (C31–C32)
+## Web track — the row editor's key contract (C31–C32) — COMPLETE
 
 Scheduled 2026-08-30 by owner request straight from the program-memory
 editor review (findings from a code read of sm-view.js — the row
@@ -150,22 +150,18 @@ Web cards: the JS discipline (docs/js-tooling.md), red/green TDD, DOM
 glue verified by the browser session and `make web` — geometry and
 keyboard only through the two sanctioned headless gates. Dependency
 order: C31 → C32 (both touch popupShow/computeCands).
-C31 landed 2026-08-30; C32 remains.
-
-C32 — the suggestions match the slot under the caret — the candidate
-model stops being a token index. Per-instruction slot models in
-computeCands: wait offers its polarity first (gpio/pin/irq today sit in
-the polarity slot), push/pull get their flag slots (SECOND has no
-entries for them — the menu silently empties mid-instruction), irq's
-set/wait/clear/rel/prev/next appear at their positions. accept()'s
-separator comes per-instruction from the disassembler's canonical
-spellings — pio-asm.js is the golden anchor, the same discipline as the
-browser assembler port — replacing today's universal ", " after the
-first operand (`push iffull,` / `irq wait,` — assembler-tolerated,
-non-canonical). Suggestion suppression when the slot is already
-complete (`set x, 3` offering 31 is noise, not help); with C31's Enter
-rule a lingering list is no longer dangerous, but the surprise stays
-until it goes.
+C31 landed 2026-08-30; C32 landed 2026-09-04: the suggestions match
+the slot under the caret — the candidate model stops being a token
+index and becomes per-instruction slots in web/row-complete.js (the
+extracted completion module: vocabularies derived from PioAsm's own
+operand tables, accept separators from the disassembler's canonical
+spellings, suppression when the slot is already complete; the
+pre-C32 token-index model is its standing defect hook). wait offers
+its polarity first (gpio/pin/irq/jmppin moved down to the source
+slot), push/pull keep their flag slots (the menu no longer empties
+mid-instruction), irq's set/wait/clear/rel/prev/next appear at their
+positions, and `set x, 3` offering 31 is gone. No cards remain;
+further row-editor work starts from IDEAS.md after its own grilling.
 
 ## Web track — state swaps never move boxes (C33)
 

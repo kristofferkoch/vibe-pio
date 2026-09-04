@@ -119,6 +119,20 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   state replies to settle before opening (or re-focus after the
   rebuild), and is `replaceChildren` moving a focused RE the general
   hazard (any state reply while editing scrolls/rebuilds)?
+- A source-less `wait <pol>` reports a nonsense operand name (found in
+  C32's browser session, 2026-09-04; pre-existing — pio-asm.js and
+  edRowText are untouched by C32): committing or previewing `wait 1`
+  (edRowText trims, so the live mid-typing state `wait 1 ` previews
+  it too) fails with "unknown wait operand Cannot read properties of
+  undefined (reading 'replace')" — encodeCore's wait path does
+  `stripCommas(parts[1])` with parts[1] undefined, and the TypeError
+  boundary that exists to convert badOperand's TypeError into an
+  AsmError mislabels this unrelated TypeError as an operand problem.
+  The strip's job (say why there is no word) is right; the words are
+  gibberish to a learner. Open questions if promoted: guard the wait
+  parser (a real "wait needs pol src index" AsmError), and is the
+  TypeError-as-operand-error boundary too broad generally (any
+  accidental TypeError inside encodeCore would wear the same mask)?
 - Level learning curve — chapters 0–1 promoted to KANBAN C34–C37 by
   the 2026-09-04 grilling (owner decisions on the cards; the notes in
   `mockups/LEVELS-NOTES.md` stay the design spec). Still open there,
