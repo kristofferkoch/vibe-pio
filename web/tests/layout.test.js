@@ -20,6 +20,12 @@
 //     pressed nudge then leaked through specificity onto the drawn
 //     mini-controls. Hover restyles are color-only; the padding swap
 //     belongs to the push-button faces alone.
+//   * state swaps never move boxes (C33): brun's RUN/PAUSE toggle and
+//     bcopy's ✓ flash used to assign textContent — the auto-width
+//     buttons re-flowed the .ctrl bar on every swap and the <u>
+//     mnemonics were wiped for good. Both are two-label grid stacks
+//     now: the box holds its possible max text and the underline
+//     survives every state.
 //   * the column priority (the layout reprioritization): the register
 //     column is not the exec waveform's leftover — at the reference
 //     viewports it gets its measured floor (its drawn control rows
@@ -556,6 +562,92 @@ test('hover and press never reflow: controls keep their boxes under the pointer'
     await new Promise((r) => setTimeout(r, 30));
   }
   await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
+});
+
+// C33: state swaps never move boxes. brun ('▶ RUN' ↔ '❚❚ PAUSE') is an
+// auto-width flex child of the header .ctrl bar, so every run/pause
+// toggle re-flowed the bar — the speed select and CYCLE/INSN shifted
+// under the pointer — and bcopy's ✓ flash did the same to everything
+// after it. Both swaps assigned textContent, which also permanently
+// wiped the <u> mnemonic markup: bcopy lost its L after the first copy,
+// brun its R for as long as it read PAUSE (the Alt keys themselves kept
+// working; only the visible indicator died). The pins: every header
+// box identical across run()/pause() and across the copy flash (the
+// never-reflow rule, now for label state instead of hover/press), and
+// every MNEMONICS button still underlining a letter that is its own Alt
+// key in every state — the swap may hide a label, never the markup.
+const HDR_BOXES = `[...document.querySelectorAll('header button, header select, header .ctrl')].map((e) => {
+  const b = e.getBoundingClientRect();
+  return [e.id || e.tagName + '.' + e.className, +b.left.toFixed(1), +b.top.toFixed(1), +b.width.toFixed(1), +b.height.toFixed(1)];
+})`;
+const MNEM_SCAN = `(() => {
+  const bad = [];
+  for (const [k, id] of Object.entries(MNEMONICS)) {
+    const btn = document.getElementById(id);
+    const us = [...btn.querySelectorAll('u')].filter((u) => getComputedStyle(u).visibility !== 'hidden');
+    if (!us.length) {
+      bad.push(id + ' shows no mnemonic underline in this state');
+      continue;
+    }
+    for (const u of us) {
+      if (MNEMONICS[u.textContent.trim().toLowerCase()] !== id)
+        bad.push(id + ' underlines ' + u.textContent + ' — a letter that is not its Alt key');
+    }
+  }
+  return bad;
+})()`;
+
+test('state swaps never reflow: run/pause and the copy flash keep their boxes', async () => {
+  await load(null, 1280, 800);
+  // run() needs the engine-ready flag the hermetic page never gets —
+  // raise it by hand; the transport posts go unanswered (the worker is
+  // parked in importScripts), which is exactly the silence run/pause
+  // manage. The copy flash needs a clipboard that resolves.
+  await page.evaluate('V.ready = true');
+  await page.evaluate(
+    "Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.resolve() } })",
+  );
+  const idle = await page.evaluate(HDR_BOXES);
+  const mnemIdle = await page.evaluate(MNEM_SCAN);
+  await page.evaluate('run()');
+  assert.deepStrictEqual(
+    await page.evaluate(HDR_BOXES),
+    idle,
+    'the run/pause toggle re-flowed the header — brun must be sized to its possible max text, not its current label',
+  );
+  assert.deepStrictEqual(
+    await page.evaluate(MNEM_SCAN),
+    mnemIdle,
+    'the PAUSE face lost the mnemonic underline — the swap hides a label, never the markup',
+  );
+  await page.evaluate('pause()');
+  assert.deepStrictEqual(await page.evaluate(HDR_BOXES), idle, 'pausing re-flowed the header');
+  assert.deepStrictEqual(
+    await page.evaluate(MNEM_SCAN),
+    mnemIdle,
+    'the RUN face lost its mnemonic underline on the way back — the textContent wipe is permanent',
+  );
+  await page.evaluate("$('bcopy').click()");
+  await new Promise((r) => setTimeout(r, 150));
+  assert.deepStrictEqual(
+    await page.evaluate(HDR_BOXES),
+    idle,
+    'the copy flash (✓ LISTING) re-flowed the header — same rule, same fix: the possible max text',
+  );
+  assert.deepStrictEqual(
+    await page.evaluate(MNEM_SCAN),
+    mnemIdle,
+    'the copy flash wiped the L underline — Alt+L keeps working with no indicator',
+  );
+  // the flash settles back on its own (setTimeout 900): the box and the
+  // underline must survive the round trip
+  await new Promise((r) => setTimeout(r, 1000));
+  assert.deepStrictEqual(await page.evaluate(HDR_BOXES), idle, 'the flash did not settle back');
+  assert.deepStrictEqual(
+    await page.evaluate(MNEM_SCAN),
+    mnemIdle,
+    'the flash round trip left bcopy with no mnemonic underline',
+  );
 });
 
 // the wrap arc's steppers in the degenerate WRAP_TOP == WRAP_BOTTOM state

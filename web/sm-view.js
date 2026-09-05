@@ -261,7 +261,8 @@ function run() {
     return;
   }
   timer = setInterval(runTick, +$('speed').value);
-  $('brun').textContent = '❚❚ PAUSE';
+  // C33: the PAUSE face rides .on — both faces are authored twin labels,
+  // so the box (and the bar behind it) never moves on the swap
   $('brun').classList.add('on');
 }
 function runTick() {
@@ -274,7 +275,6 @@ function pause() {
   clearInterval(timer);
   timer = null;
   V.inflight = false;
-  $('brun').textContent = '▶ RUN';
   $('brun').classList.remove('on');
 }
 function enableCtrls(on) {
@@ -334,6 +334,9 @@ function textSurface(el) {
 // accesskey collides with browser chrome. The letters are unique per the
 // 3.11 handbook's rule and underlined in the labels; the glyph-only
 // reset button has none (its keyboard path is the 0 accelerator).
+// brun carries one per face (C33's twin labels): R on RUN, P on PAUSE —
+// both live whatever the button currently shows, so the underline never
+// names a dead key.
 const MNEMONICS = {
   e: 'bempty',
   d: 'bdemo',
@@ -341,6 +344,7 @@ const MNEMONICS = {
   i: 'bimport',
   l: 'bcopy',
   r: 'brun',
+  p: 'brun',
   c: 'bstep',
   n: 'binsn',
 };
@@ -610,8 +614,10 @@ $('bcopy').onclick = () => {
   const txt = `${lines.join('\n')}\n`;
   navigator.clipboard?.writeText(txt).then(
     () => {
-      $('bcopy').textContent = '✓ LISTING';
-      setTimeout(() => ($('bcopy').textContent = '⧉ LISTING'), 900);
+      // C33: the ✓ face rides .done — the authored twin labels keep the
+      // box and the L underline alive across the flash
+      $('bcopy').classList.add('done');
+      setTimeout(() => $('bcopy').classList.remove('done'), 900);
     },
     () => {},
   );

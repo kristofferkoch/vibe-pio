@@ -163,7 +163,7 @@ mid-instruction), irq's set/wait/clear/rel/prev/next appear at their
 positions, and `set x, 3` offering 31 is gone. No cards remain;
 further row-editor work starts from IDEAS.md after its own grilling.
 
-## Web track — state swaps never move boxes (C33)
+## Web track — state swaps never move boxes (C33) — COMPLETE
 
 Scheduled 2026-08-30 by owner request, raised in the same planning
 round as C31–C32 ("while we're planning: buttons change width because
@@ -195,10 +195,20 @@ x-positions identical across run()/pause(), bcopy's box stable across
 the flash — run red against the shipped page first, green with the
 stack. Dependency order: C33 ∥ C31/C32 (different region of the page).
 
-C33 — the labels swap, the boxes don't move — brun and bcopy sized to
-their possible max text via the two-label grid stack, the mnemonic
-underlines alive in every state, and the layout gate's state-swap leg
-pinning the bar's geometry across the toggles.
+C33 landed 2026-09-05: the labels swap, the boxes don't move — brun and
+bcopy are two-label grid stacks (both faces authored markup in the
+button, grid-area 1/1, the inactive face visibility:hidden), so each
+button sizes to its possible max text and the run/pause toggle and the
+✓ flash cannot re-flow the .ctrl bar; the swaps ride classes
+(.on/.done), so the `<u>` mnemonics survive every state — brun's PAUSE
+face underlines its own live key (Alt+P joined Alt+R in MNEMONICS;
+letters stay unique), bcopy's ✓ face keeps its L. The layout gate's
+state-swap leg pins it (layout.test.js): every header box identical
+across run()/pause() and across the flash, and every MNEMONICS button
+underlining its own Alt key in every state — run red against the
+shipped page first (brun 67.6→75px on toggle, the bar's boxes moved),
+green with the stack; verified live in the browser session. No cards
+remain.
 
 ## Game track — level campaign, chapters 0–1 (C34–C37)
 

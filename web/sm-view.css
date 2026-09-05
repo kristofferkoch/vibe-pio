@@ -292,6 +292,33 @@ select {
   outline: 1px dotted #000;
   outline-offset: -3px;
 }
+/* C33 — state swaps never move boxes: the two-label grid stack. Both
+   faces of a state-swapped button are authored markup living in the
+   button (grid-area 1/1, the inactive one visibility:hidden), so the
+   box sizes to its possible max text — the run/pause toggle and the
+   copy flash cannot re-flow the .ctrl bar under the pointer — and the
+   <u> mnemonics survive every swap (a swap hides a face, never the
+   markup; brun's PAUSE face underlines P, its own MNEMONICS key, R
+   staying live on the hidden RUN face). The layout gate's state-swap
+   leg pins the bar's geometry across both toggles. */
+button.twin {
+  display: grid;
+  place-items: center;
+}
+button.twin > span {
+  grid-area: 1 / 1;
+}
+button.twin > .alt {
+  visibility: hidden;
+}
+button.twin.on > span:not(.alt),
+button.twin.done > span:not(.alt) {
+  visibility: hidden;
+}
+button.twin.on > .alt,
+button.twin.done > .alt {
+  visibility: visible;
+}
 
 /* ---------- main grid ---------- */
 /* column priority (the layout reprioritization): the program column is

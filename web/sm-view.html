@@ -113,18 +113,23 @@
           ⇧ <u>I</u>MPORT
         </button>
         <input type="file" id="impfile" accept=".json,application/json" hidden>
+        <!-- C33: the twin faces — both labels authored in the button, the
+             box sized to the possible max text, so the ✓ flash never
+             re-flows the bar and the L underline survives every copy -->
         <button
           type="button"
           id="bcopy"
-          class="mini"
+          class="mini twin"
           data-tip="copy the program as a canonical pioasm listing"
         >
-          ⧉ <u>L</u>ISTING
+          <span>⧉ <u>L</u>ISTING</span> <span class="alt">✓ <u>L</u>ISTING</span>
         </button>
         <div class="ctrl">
           <button type="button" id="breset" data-tip="reset SM (0)">⟲</button>
-          <button type="button" id="brun" class="primary" data-tip="run / pause (R)">
-            ▶ <u>R</u> RUN
+          <!-- C33: run/pause swap by face — the box never moves, and each
+               face underlines its own live Alt key (R / P) -->
+          <button type="button" id="brun" class="primary twin" data-tip="run / pause (R)">
+            <span>▶ <u>R</u> RUN</span> <span class="alt">❚❚ <u>P</u>AUSE</span>
           </button>
           <select id="speed" data-tip="run speed">
             <option value="120">×1</option>
