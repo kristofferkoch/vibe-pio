@@ -2440,6 +2440,43 @@ main.level #program.col-delay .cdly,
 main.level #program.col-delay .phead > span:nth-child(4) {
   display: block;
 }
+/* C35: the editor's cells follow the columns — a level without the side
+   column keeps the side cell out of layout AND Tab order (the leash is
+   structural, not advisory) */
+main.level #program:not(.col-side) #edside {
+  display: none;
+}
+/* C35: the delay-cell editor — L1's one-cell modification surface, over
+   the row's delay track (the 38px column the delayCol unlock drew) */
+#dlyedit {
+  position: absolute;
+  right: 8px;
+  width: 38px;
+  height: 20px;
+  z-index: 6;
+  background: var(--well);
+  box-shadow:
+    inset 1px 1px 0 var(--line),
+    inset -1px -1px 0 var(--hi);
+  border: 1px solid var(--amber-dim);
+}
+#dlycell {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--txt);
+  font-size: 16px;
+  line-height: 18px;
+  padding: 0 4px;
+  caret-color: var(--amber);
+}
+#dlycell:focus {
+  background: rgba(0, 106, 120, 0.08);
+}
+#dlyedit.deny #dlycell {
+  background: rgba(178, 34, 34, 0.18);
+}
 
 /* ---- the level band: one era group frame under the toolbar ---- */
 #lvband {

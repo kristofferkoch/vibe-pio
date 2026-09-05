@@ -96,7 +96,14 @@ let curState = LEVEL ? PioLevels.programState(LEVEL) : savedState() || VD.newSta
 if (LEVEL) {
   LVSURF = PioLevels.applySurface(document, LEVEL);
   $('savestate').textContent = 'off';
-  $('progrows').dataset.status = 'listing: ↑/↓ rows — authoring arrives in a later level';
+  // the listing's status narrates the level's own gestures: C35's L1
+  // edits the delay cell (Enter or a digit), L2+ edits rows (the row
+  // editor is authoring's debut), L0 only walks
+  $('progrows').dataset.status = LEVEL.opcodes.length
+    ? 'listing: ↑/↓ rows · Enter or a letter edits the row'
+    : lvUnlock('delayCol')
+      ? 'listing: ↑/↓ rows · Enter or a digit edits the [delay] cell — the instruction stays as given'
+      : 'listing: ↑/↓ rows — authoring arrives in a later level';
   // the chrome names the level, not the sandbox (nothing on the page
   // may claim features the level has not taught)
   document.title = `vibe-pio // levels — ${LEVEL.id.toUpperCase()} ${LEVEL.name}`;
@@ -1029,7 +1036,9 @@ function buildProgram() {
     t.style.top = `${a.tgt * 20 + 6}px`;
     nodes.push(t);
   }
-  host.replaceChildren(...nodes, RE);
+  // the static editor overlays ride along through every rebuild (C35:
+  // the delay cell with them) — replaceChildren would otherwise eat them
+  host.replaceChildren(...nodes, RE, DED);
   const usedN = ROWS.filter(Boolean).length;
   $('usedct').textContent = `${usedN}/32`;
   $('wordsct').textContent = usedN;
@@ -1813,6 +1822,9 @@ const ED = $('edittxt'),
   HOST = $('progrows');
 const SIDE = $('edside'),
   DLY = $('eddly');
+// C35: L1's one-cell modification surface — the delay-cell editor
+const DED = $('dlyedit'),
+  DCELL = $('dlycell');
 let curRow = -1;
 let asmErr = null; // row error of the last failed re-assembly (C19)
 
@@ -2241,12 +2253,22 @@ HOST.addEventListener('click', (e) => {
     return;
   }
   if (e.target.closest('#rowedit')) return;
+  if (e.target.closest('#dlyedit')) return;
   const r = e.target.closest('.prow');
-  if (r) openRow(+r.id.slice(2));
+  // C35: in a delayCol-without-opcodes level the click edits the delay
+  // cell (the row's one editable cell); openRow would no-op its empty
+  // whitelist and leave the click dead
+  if (r) {
+    if (dlyLive()) openDly(+r.id.slice(2));
+    else openRow(+r.id.slice(2));
+  }
 });
 // the listbox keys (C25): the arrows move the row cursor, Enter opens
 // the row on the instruction cell, and typing opens it with the char
-// inserted. The editor's own cells have their own model (below).
+// inserted. The editor's own cells have their own model (below). C35:
+// in a delayCol-without-opcodes level the same gestures address the
+// delay cell — Enter opens it, digits type ahead into it, letters are
+// not authoring and do nothing.
 HOST.addEventListener('keydown', (e) => {
   if (e.target !== HOST) return;
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -2256,10 +2278,16 @@ HOST.addEventListener('keydown', (e) => {
     $(`pr${kc}`)?.scrollIntoView({ block: 'nearest' });
   } else if (e.key === 'Enter') {
     e.preventDefault();
-    openRow(kc, 'ins');
+    if (dlyLive()) openDly(kc);
+    else openRow(kc, 'ins');
   } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    e.preventDefault();
-    openRow(kc, 'ins', e.key); // the char the row editor opened under
+    if (dlyLive() && /\d/.test(e.key)) {
+      e.preventDefault();
+      openDly(kc, e.key); // the digit the delay cell opened under
+    } else if (!dlyLive()) {
+      e.preventDefault();
+      openRow(kc, 'ins', e.key); // the char the row editor opened under
+    }
   }
 });
 let edSel = 0,
@@ -2294,7 +2322,13 @@ function lineCtx() {
 // gutter-pick gesture (a listing click/walk, not text — typing digits
 // dismisses it, as ever).
 function edModel() {
-  const a = RowComplete.analyze(ED.value.slice(0, ED.selectionStart));
+  // C35: the leash — in a level, the completion menu is scoped to the
+  // level's unlocked opcode set (a filter over the slot model's
+  // candidates); the sandbox's menu stays whole
+  const a = RowComplete.analyze(
+    ED.value.slice(0, ED.selectionStart),
+    LEVEL ? { opcodes: LEVEL.opcodes } : undefined,
+  );
   const cands = a.cands.map((c) =>
     a.slot === ''
       ? { t: c.t, kind: ISA[c.t].kind, detail: ISA[c.t], sep: c.sep }
@@ -2306,7 +2340,11 @@ function edModel() {
           param: c.param,
         },
   );
-  if ((a.slot === 'jmp.cond' || a.slot === 'jmp.target') && !/\d/.test(a.partial))
+  if (
+    (a.slot === 'jmp.cond' || a.slot === 'jmp.target') &&
+    !/\d/.test(a.partial) &&
+    (!LEVEL || LEVEL.opcodes.includes('jmp'))
+  )
     cands.push({
       t: '↦ pick row',
       kind: 'pick',
@@ -2565,6 +2603,112 @@ $('edcands').addEventListener('mousedown', (e) => {
     e.preventDefault();
     accept(edCands[+c.dataset.i]);
   }
+});
+
+// ---- C35: the delay cell — L1's one-cell modification ---------------------
+// The fade's first rung after the worked example: a level that has taught
+// the delay column but not authoring (opcodes still empty — the row
+// editor is L2's debut) edits exactly one cell, the row's [n] delay. The
+// instruction stays as given; the delay cell is the whole editor. The
+// sandbox never routes here (its row editor owns delay edits) and neither
+// does L2+ (the row editor's own delay cell does) — this surface exists
+// for delayCol-without-opcodes levels alone.
+let dlyRow = -1;
+let dlyStatusTimer = 0;
+const dlyLive = () => !!LEVEL && !LEVEL.opcodes.length && lvUnlock('delayCol');
+function openDly(i, seed) {
+  if (!dlyLive() || !ROWS[i]) return; // only a row that exists has a delay
+  dlyRow = i;
+  kc = dlyRow; // the listing cursor follows the cell being edited
+  applyRowCursor();
+  DED.hidden = false;
+  DED.style.top = `${dlyRow * 20}px`;
+  DCELL.value = seed !== undefined ? String(seed) : String(parseRow(ROWS[dlyRow]).delay || '');
+  DCELL.focus();
+  DCELL.setSelectionRange(DCELL.value.length, DCELL.value.length);
+}
+// the row with its delay replaced — parseRow splits the canonical parts,
+// the cell re-composes them (the same compose edRowText performs)
+function dlyRowText(n) {
+  const p = parseRow(ROWS[dlyRow]);
+  const ins = `${p.op}${p.args ? ` ${p.args}` : ''}${
+    p.tgt != null ? `${p.args ? ', ' : ' '}${p.tgt}` : ''
+  }${p.side != null ? ` side ${p.side}` : ''}`;
+  return n ? `${ins} [${n}]` : ins;
+}
+function dlyDeny(n) {
+  // the 5-bit ceiling is legible, not silent — L5 teaches the budget
+  // formally; here it just refuses, with the reason on the status line
+  DED.dataset.status = `delay ${n} won't fit — the field is 0..${maxDelay()}`;
+  updateStatus();
+  DED.classList.remove('deny');
+  void DED.offsetWidth;
+  DED.classList.add('deny');
+  clearTimeout(dlyStatusTimer);
+  dlyStatusTimer = setTimeout(() => {
+    DED.dataset.status = 'delay cell: type 0–31 · Enter commits · Tab crosses rows · Esc cancels';
+    updateStatus();
+  }, 1600);
+}
+function commitDly() {
+  if (dlyRow < 0) return;
+  const t = DCELL.value.trim();
+  if (/^\d+$/.test(t) && +t > maxDelay()) {
+    dlyDeny(+t);
+    DCELL.focus();
+    return; // out of range: the edit stays open until it fits or cancels
+  }
+  const n = /^\d+$/.test(t) ? +t : 0;
+  ROWS[dlyRow] = dlyRowText(n);
+  kc = dlyRow;
+  dlyRow = -1;
+  dlyRefocus();
+  DED.hidden = true;
+  buildAndPush(); // re-assemble; on success patch the engine image (C19)
+  buildProgram();
+  render(V.state);
+}
+function cancelDly() {
+  dlyRow = -1;
+  dlyRefocus();
+  DED.hidden = true;
+}
+// the row editor's own refocus rule: transfer focus BEFORE hiding, or
+// Chromium's next rendering update stomps it back to body
+function dlyRefocus() {
+  if (DED.contains(document.activeElement)) HOST.focus();
+}
+function hopDly(delta) {
+  const from = dlyRow;
+  commitDly();
+  // the crossing lands on the next row that HAS an instruction — an
+  // empty slot has no delay to edit
+  for (let n = from + delta; n >= 0 && n < 32; n += delta) if (ROWS[n]) return openDly(n);
+}
+DCELL.addEventListener('input', () => {
+  DCELL.value = DCELL.value.replace(/\D/g, '').slice(0, 2);
+});
+DCELL.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    hopDly(1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    hopDly(-1);
+  } else if (e.key === 'Tab') {
+    e.preventDefault();
+    hopDly(e.shiftKey ? -1 : 1); // Tab crosses rows (the C25/C31 contract)
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    cancelDly();
+  }
+});
+DED.addEventListener('focusout', (e) => {
+  if (e.relatedTarget && DED.contains(e.relatedTarget)) return;
+  setTimeout(() => {
+    if (document.activeElement && DED.contains(document.activeElement)) return;
+    commitDly(); // a click-away commits, exactly like the row editor
+  }, 0);
 });
 
 // ---- ds allocator: REAL PINCTRL/EXECCTRL writes through the overlay ----

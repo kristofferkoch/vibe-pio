@@ -603,3 +603,145 @@ test('the L0 walk: absence covers Tab order, predict unlocks Run by keys', async
     'the row editor must not open in L0 — the opcode whitelist is empty',
   );
 });
+
+// C35 — the L1 walk: the delay cell IS the editor. The row editor never
+// opens (authoring is L2's debut); Enter on the listing opens the row's
+// delay cell instead, digits type ahead into it, Tab commits and crosses
+// rows (the C25/C31 cell-crossing contract at one-cell grain), Esc
+// cancels, and the committed [n] lands on the row's face.
+test('the L1 walk: the delay cell is the whole editor, Tab crosses rows', async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/sm-view.html?level=l1`);
+  await until('V.ready === true', 'the level page engine to boot');
+
+  // ---- no orphan stops; no predict group (L1 never locks the gate) ------
+  const stops = [];
+  for (let i = 0; i < 10; i++) {
+    await press('Tab');
+    stops.push(await value(activeId));
+  }
+  const allowed = new Set(['brun', 'bstep', 'breset', 'progrows', 'BODY']);
+  for (const s of stops)
+    assert.ok(
+      allowed.has(s),
+      `orphan stop ${JSON.stringify(s)} — a locked panel left a focusable behind (${stops.join(', ')})`,
+    );
+
+  // ---- Enter opens the DELAY cell, not the row editor --------------------
+  await tabUntil(`${activeId} === 'progrows'`, 'the listing');
+  await press('Enter');
+  await until(`${activeId} === 'dlycell'`, 'Enter to open the delay cell');
+  assert.strictEqual(await value('RE.hidden'), true, 'the row editor stays shut in L1');
+
+  // ---- digits type ahead; Tab commits and crosses to the next row -------
+  await type('3');
+  await press('Tab');
+  await until(`${activeId} === 'dlycell'`, "Tab to cross into row 1's delay cell");
+  assert.ok(
+    (await value("document.querySelector('#pr0 .cdly').textContent")).includes('[3]'),
+    "the committed delay is on the row's face",
+  );
+  await type('3');
+  await press('Enter'); // commits; focus returns to the listing
+  await until(`${activeId} === 'progrows'`, 'Enter to commit the cell');
+  assert.ok(
+    (await value("document.querySelector('#pr1 .cdly').textContent")).includes('[3]'),
+    'row 1 carries its delay too',
+  );
+
+  // ---- Esc cancels: the row keeps what it had ---------------------------
+  await press('Enter'); // kc still 1 — the cursor kept the editor's anchor
+  await until(`${activeId} === 'dlycell'`, 'reopen the delay cell');
+  await type('7');
+  await press('Escape');
+  await until(`${activeId} === 'progrows'`, 'Esc to cancel the cell');
+  assert.ok(
+    (await value("document.querySelector('#pr1 .cdly').textContent")).includes('[3]'),
+    'a cancelled edit writes nothing',
+  );
+
+  // ---- Shift+Tab crosses up ----------------------------------------------
+  await press('Enter');
+  await until(`${activeId} === 'dlycell'`, "row 1's delay cell again");
+  await press('Tab', { shift: true });
+  await until(`${activeId} === 'dlycell'`, 'Shift+Tab to cross back up');
+  assert.strictEqual(await value('kc'), 0, 'the crossing landed on row 0');
+  await press('Escape');
+  assert.strictEqual(await value("$('dlyedit').hidden"), true, 'the cell closes');
+});
+
+// C35 — the L2 walk: the row editor debuts in levels, ON THE LEASH. The
+// empty listing authors from scratch under keys alone: type-ahead opens
+// the editor, the mnemonic menu offers exactly the unlocked set (set —
+// a locked mnemonic typed mid-word offers nothing), the side cell is
+// absent from the Tab order (no side column until chapter 4), and Tab
+// crosses from the instruction cell into the delay cell, then onward to
+// the next row — the C25/C31 contract.
+test('the L2 walk: the editor debuts leashed — set only, Tab crosses into the delay cell', async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/sm-view.html?level=l2`);
+  await until('V.ready === true', 'the level page engine to boot');
+
+  // ---- the listing boots empty and honest --------------------------------
+  assert.strictEqual(
+    await value("document.querySelectorAll('#progrows .prow.empty').length"),
+    32,
+    'from scratch: 32 honest · rows',
+  );
+
+  // ---- Enter opens the editor; the menu shows the leash ------------------
+  await tabUntil(`${activeId} === 'progrows'`, 'the listing');
+  await press('Enter');
+  await until(`${activeId} === 'edittxt'`, 'Enter to open the row editor');
+  assert.strictEqual(await value('RE.hidden'), false, 'the row editor opens in L2');
+  const offered = await value(
+    "[...document.querySelectorAll('#edcands .ecand')].map((e) => e.firstChild.textContent)",
+  );
+  assert.deepStrictEqual(offered, ['set'], 'the mnemonic menu offers exactly the unlocked set');
+
+  // ---- author row 0: set pins, 1 (no delay) ------------------------------
+  await type('set pins, 1');
+  await press('Tab'); // the list is closed at a complete row: Tab crosses cells
+  await until(`${activeId} === 'eddly'`, 'Tab to cross into the delay cell');
+  await press('Tab'); // DLY's Tab hops to the next row's instruction cell
+  await until(`${activeId} === 'edittxt'`, 'Tab to cross into row 1');
+
+  // ---- author row 1: set pins, 0 [2] -------------------------------------
+  await type('set pins, 0');
+  await press('Tab');
+  await until(`${activeId} === 'eddly'`, 'the delay cell of row 1');
+  await type('2');
+  await press('Enter'); // commits row 1 and hops to row 2 (list open on it)
+  await until(`${activeId} === 'edittxt'`, 'Enter to commit and hop rows');
+  await press('Escape'); // C31: the first Esc closes the completion list…
+  await until("$('edpop').hidden === true", 'the list to close');
+  await press('Escape'); // …the second stands the editor down
+  await until(`${activeId} === 'progrows'`, 'Esc to stand down');
+  assert.ok(
+    (await value("document.querySelector('#pr0 .ins').textContent")).includes('set pins, 1'),
+    'row 0 says what was typed',
+  );
+  assert.ok(
+    (await value("document.querySelector('#pr1 .cdly').textContent")).includes('[2]'),
+    'row 1 carries its delay',
+  );
+
+  // ---- the side cell is absent: no side column until chapter 4 -----------
+  assert.strictEqual(
+    await value("$('edside').offsetParent === null"),
+    true,
+    'the side cell leaves layout and Tab order both',
+  );
+
+  // ---- a locked mnemonic offers nothing ----------------------------------
+  await press('Enter'); // the cursor sits on row 2 (the editor's anchor)
+  await until(`${activeId} === 'edittxt'`, 'row 2 opens for authoring');
+  await type('nop');
+  await until("ED.value === 'nop'", 'the typed mnemonic to land');
+  assert.strictEqual(
+    await value("$('edpop').hidden"),
+    true,
+    'the locked mnemonic is never suggested — the menu stays shut',
+  );
+  await press('Escape');
+});

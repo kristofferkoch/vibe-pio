@@ -275,17 +275,43 @@ disabled machines no longer render ghost PC chips (the demo's SM1–3
 parked cursors were a lie; make web re-verified the driver, 32 client
 checks + the three mutation demos).
 
-C35 — chapter 0 completes — the delay column and the editor's leash.
-L1 Metronome (modify): the delay column debuts (the side column stays
-hidden — no sideset until ch.4) and the timing monitor profile is
-born as the profile ladder's first skeleton: one square-wave receiver
-parameterized by tolerance tiers (relaxed/exact/strict), versioned
-with the level per the IDEAS contract. L2 Author's hand (make): the
-row editor opens in levels for the first time, completions scoped to
-the unlocked opcode set (a filter over C32's slot-aware candidates —
-`set` + the delay cell only). levels.test.js covers both (reference
-solutions green; period-wrong and opcode-locked variants red); the
-walk covers the delay cell (Tab-crossing per the C25/C31 contract).
+C35 landed 2026-09-05: chapter 0 completes — the delay column and the
+editor's leash. L1 Metronome (modify): the delay column debuts
+(`delayCol`, the C34 CSS stub) and the timing monitor profile gets its
+first real tier — the exact ladder (6..10 / 8..8 / 8..8) judges one
+flash every 8 clk; the boot program is L0's un-slowed blink (running it
+teaches "period 2 clk — outside (8..8 clk)"), and the one-cell
+modification is a dedicated delay-cell editor (`#dlyedit` over the
+row's delay track): click a row, or Enter/digit from the listing
+cursor; type 0–31, Enter commits, Tab/Shift+Tab cross rows that have
+instructions, Esc cancels, 99 is refused with the 5-bit reason on the
+status line. The row editor never opens in L1 (L2's debut, per the
+card). L2 Author's hand (make): the listing boots EMPTY (32 honest `·`
+rows), the row editor opens in a level for the first time on the leash
+— `RowComplete.analyze`'s new `opts.opcodes` whitelist (a filter over
+the C32 slot-aware candidates: the mnemonic menu offers exactly `set`,
+a locked mnemonic's operand slots stay silent, the jmp gutter-pick
+pseudo-candidate is leashed too) — and `#edside` is absent from layout
+and Tab order both (no side column until ch.4), so Tab crosses
+ins→delay→next row. The level format grows `reference.listing`
+(validator + generator): the reference solution ships separately from
+the boot program, and the golden carries a `boot` case whenever they
+differ — the levels gate asserts the boot reds (the task is real from
+cycle one) alongside the reference green and the period-wrong /
+opcode-locked perturbations red (L2's red set: L1's answer, and the
+nop-can't-bring-the-pin-low attempt). Par committed per level (L1
+2 words · 8 clk; L2 2 · 4; the hyperopt-derived front machinery is
+C36's). Gates: levels.test.js (19 checks, engine-side — the leash
+check ran red against the pre-C35 module: the menu offered all ten
+mnemonics), the layout gate's L1 leg (the delay column debuts without
+moving the L0 page — every box keeps its left edge and width, main's
+clamp-fixed columns identical; ran red: no #dlyedit existed), the
+keyboard walk's L1+L2 legs (delay-cell Tab-crossing; the leashed
+editor debut — ran red: Enter found no delay cell, and the menu
+offered all ten), the browser session (L1: run-red verdict, edit both
+cells by mouse, PASS + par reveal, 99-refusal, solved reload; L2:
+author the 1:3 wave through the leashed editor, PASS at 25% duty),
+make web re-verified.
 
 C36 — jmp debuts with a job, and par reveals the cost — L3 Two ways
 to loop: a task wrap cannot do (run a preamble once, then loop a

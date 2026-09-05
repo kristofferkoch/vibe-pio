@@ -1274,3 +1274,117 @@ for (const [width, height] of VIEWPORTS) {
     );
   });
 }
+
+// C35 — the delay-column unlock: the L1 page is the L0 page plus one
+// 38px track inside the listing's grid. The C34 comment above made this
+// the recorded discipline: the unlock must never move what is already on
+// screen — the program column is clamp-fixed by the level grid, so the
+// track comes out of the instruction cell, and every pinned box (band,
+// transport, program, wave, title) stays bit-identical to the L0 page's.
+// The delay-cell editor (L1's one-cell modification surface) is absent
+// from layout at rest and, once open, sits exactly over the row's delay
+// track.
+const L1_SCAN = `(() => {
+  const bad = [];
+  const box = (sel) => document.querySelector(sel)?.getBoundingClientRect();
+  const gone = (sel) => {
+    const el = document.querySelector(sel);
+    return !el || el.offsetParent === null;
+  };
+  for (const sel of ${JSON.stringify(L0_ABSENT)}) {
+    if (document.querySelectorAll(sel).length && !gone(sel))
+      bad.push(sel + ' is still laid out — a locked panel is absence, not a ghost');
+  }
+  const band = box('#lvband');
+  if (!band || band.height < 20) bad.push('the level band has no box');
+  if (document.querySelectorAll('#progrows .prow').length !== 32)
+    bad.push('the listing lost rows — 32 rows in every level (row-count honesty)');
+  if (document.querySelectorAll('.wstep').length)
+    bad.push('the wrap steppers are built — L1 asks for timing, not EXECCTRL edits');
+  // the delay column is PRESENT this time: the taught cell has a box, the
+  // header names it, and the editor overlay is out of layout at rest
+  const cdly = document.querySelector('#pr0 .cdly');
+  if (!cdly || cdly.offsetParent === null || cdly.getBoundingClientRect().width < 4)
+    bad.push('the delay column is missing — L1 taught it');
+  const head = document.querySelectorAll('#program .phead > span')[3];
+  if (!head || head.offsetParent === null) bad.push('the delay header is missing');
+  const de = document.getElementById('dlyedit');
+  if (!de) bad.push('the delay-cell editor does not exist');
+  else if (de.offsetParent !== null) bad.push('the delay-cell editor is laid out at rest');
+  const wave = box('#wavesvg');
+  if (!wave || wave.height < 64) bad.push('the wave lost its 64px floor');
+  if (!wave || wave.width < 420) bad.push('the wave is squeezed under 420px');
+  const pin = (sel) => {
+    const b = box(sel);
+    return b && [b.left, b.top, b.width, b.height].map((v) => Math.round(v));
+  };
+  return {
+    bad,
+    boxes: {
+      lvband: pin('#lvband'), program: pin('#program'), wavesvg: pin('#wavesvg'),
+      progrows: pin('#progrows'), brun: pin('#brun'), breset: pin('#breset'),
+      titlebar: pin('#titlebar'), header: pin('header'),
+    },
+  };
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`the L1 page: the delay column debuts without moving the L0 page ${width}×${height}`, async () => {
+    await page.setViewport(width, height);
+    // the baseline first: L0's pinned boxes, measured in this very session
+    await page.goto(`${pageUrl()}?level=l0`);
+    await page.evaluate('document.fonts.ready.then(() => {})');
+    await page.evaluate("document.getElementById('boot')?.remove()");
+    const l0 = await page.evaluate(L0_SCAN);
+    const l0cols = await page.evaluate(
+      'getComputedStyle(document.querySelector("main")).gridTemplateColumns',
+    );
+
+    await page.goto(`${pageUrl()}?level=l1`);
+    await page.evaluate('document.fonts.ready.then(() => {})');
+    await page.evaluate("document.getElementById('boot')?.remove()");
+    const { bad, boxes } = await page.evaluate(L1_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `L1 geometry broken at ${width}×${height} — the delay column debuts as a column, the rest holds`,
+    );
+    // the never-move discipline: the unlock takes its 38px out of the
+    // instruction cell, never out of the page — every box keeps its
+    // left edge and width bit-identical (main's clamp-fixed columns),
+    // and the chrome above the band holds its full box. The boxes below
+    // the band may shift UP with the band's own content (L1 carries no
+    // predict row, so the band is one row shorter) — shrinking with
+    // content is not moving.
+    const above = new Set(['titlebar', 'header']);
+    for (const key of Object.keys(boxes)) {
+      const want = above.has(key) ? l0.boxes[key] : [l0.boxes[key][0], l0.boxes[key][2]];
+      assert.deepStrictEqual(
+        above.has(key) ? boxes[key] : [boxes[key][0], boxes[key][2]],
+        want,
+        `${key} moved when the delay column unlocked at ${width}×${height}`,
+      );
+    }
+    assert.deepStrictEqual(
+      await page.evaluate('getComputedStyle(document.querySelector("main")).gridTemplateColumns'),
+      l0cols,
+      'the level grid columns changed with the unlock',
+    );
+
+    // the delay-cell editor, once open, sits over the row's delay track
+    const cell = await page.evaluate(`(() => {
+      openDly(0);
+      const de = document.getElementById('dlyedit').getBoundingClientRect();
+      const cd = document.querySelector('#pr0 .cdly').getBoundingClientRect();
+      const r = { de: [de.left, de.top, de.width, de.height].map(Math.round),
+                  cd: [cd.left, cd.top, cd.width, cd.height].map(Math.round) };
+      cancelDly();
+      return r;
+    })()`);
+    assert.ok(
+      Math.abs(cell.de[0] + cell.de[2] - (cell.cd[0] + cell.cd[2])) <= 2 &&
+        Math.abs(cell.de[1] - cell.cd[1]) <= 2,
+      `the open delay cell must sit on the delay track: ${JSON.stringify(cell)}`,
+    );
+  });
+}

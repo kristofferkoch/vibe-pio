@@ -13,11 +13,11 @@ behavior change.
 | `web/engine-driver.js` | the client core (the sandbox driver: overlay→reg-write mapping, pin drives + pattern generator, RX drain + mirrors, the monitor lens, the stored-program serializer) — the same module runs in the browser worker, under the `make web` client gate's nine model-oracle legs (five sandbox + four multi-SM), and under `node --test` against the fake engine |
 | `web/engine-worker.js` | the Web Worker transport around the driver |
 | `web/pio-asm.js` | the in-browser assembler/disassembler — a JS port of pio_model's asm/disasm/encoding trio, anchored to that oracle by golden bit-vectors + the 65536-word canonical round-trip (never to itself) |
-| `web/row-complete.js` | the C32 row-editor completion slot model (extracted from sm-view.js's computeCands) — per-instruction slots over the canonical signatures the disassembler spells, vocabularies derived from PioAsm's own operand tables, canonical accept separators, complete-slot suppression; the pre-C32 token-index model ships as its `{defect:'token-index'}` hook |
+| `web/row-complete.js` | the C32 row-editor completion slot model (extracted from sm-view.js's computeCands) — per-instruction slots over the canonical signatures the disassembler spells, vocabularies derived from PioAsm's own operand tables, canonical accept separators, complete-slot suppression; the pre-C32 token-index model ships as its `{defect:'token-index'}` hook, and `analyze`'s `opts.opcodes` whitelist is the C35 level leash |
 | `web/levels.js` | the C34 level-campaign runtime — the registry level files register into (`PIO_LEVEL`), the versioned square-wave monitor judge (the profile ladder's tier parameters; `{defect:'judge'}` re-injects the single-glitch pass), the predict gate (`{defect:'gate'}` re-injects never-locks), the level→stored-program builder (canonical listing + overlay through `PioAsm`/`VibeDriver.parseState`), and the SURFACE table (panel gating = absence) |
 | `web/sm-view.js` | the view's DOM glue (**extract-on-touch**: lint/format always; logic migrates into require-able tested modules only as it is touched) — the listing itself is assembler-derived: rows disassemble from the loaded words and committed edits re-assemble through `pio-asm.js` into a live imem patch |
-| `web/sm-view.html` / `web/sm-view.css` | the shipped page and its stylesheet (the `<style>` extracted so css joins the gate) — `?level=<id>` boots the page as a level (the band + the absence-gated surface, C34) |
-| `web/levels/` | one classic-script level definition per level (`l0.js`): pure data registering through `PIO_LEVEL` — the payload is strict JSON so `tools/gen_level_goldens.py` can parse it back out (which is why the directory is outside biome's `files.includes`: the payload's format owner is the generator's JSON parse, not the JS formatter's quote style) |
+| `web/sm-view.html` / `web/sm-view.css` | the shipped page and its stylesheet (the `<style>` extracted so css joins the gate) — `?level=<id>` boots the page as a level (the band + the absence-gated surface, C34; the delay-cell editor and the leashed row editor, C35) |
+| `web/levels/` | one classic-script level definition per level (`l0.js`–`l2.js`): pure data registering through `PIO_LEVEL` — the payload is strict JSON so `tools/gen_level_goldens.py` can parse it back out (which is why the directory is outside biome's `files.includes`: the payload's format owner is the generator's JSON parse, not the JS formatter's quote style) |
 | `web/node_gate.js` / `web/node_client_gate.js` | the headless `make web` runners (wasm engine / client-vs-oracle; the client gate also round-trips the level listing through `pio-asm.js`) |
 | `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `row-complete.test.js` (the C32 slot model), `levels.test.js` (the C34 level gate) + the committed `levels-golden.json` fixture, `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface), `pin-map.test.js` (the C27 mapping marks: `pinExtents` ranges + the was-driven mask), `browser.js` + `layout.test.js` (the headless-Chromium layout gate — see below), `fake-engine-module.js` + `keyboard.test.js` (the headless-Chromium keyboard walk — see below) |
 | `tools/gen_pio_asm_golden.py` | generates `web/tests/pio-asm-golden.json` from pio_model (stdlib-only; `--check` is the drift gate in `make js`) |
@@ -167,23 +167,27 @@ against the oracle gate. Prefer that route over blanket `--unsafe`.
   the module's standing `{defect:'token-index'}` hook and every C32
   behavior asserts divergence from it, so reverting the fix turns the
   suite red on its own checks.
-  `levels.test.js` (C34) is the level campaign's engine-side gate —
+  `levels.test.js` (C34/C35) is the level campaign's engine-side gate —
   it drives the level DEFINITIONS against engine truth the way the
   golden vectors anchor the assembler: `tools/gen_level_goldens.py`
-  runs each level's program (and its perturbed variants) through
-  pio_model over the driver's exact load timeline and commits the pin
-  series as `levels-golden.json`; the suite then asserts the canonical
-  rows assemble to the oracle words bit-for-bit, the overlay survives
-  the C22 compose/decompose round-trip (and composes to the oracle's
-  stim-built words per SM), the reference series passes its own
-  monitor profile (full series and last-128 window alike — the verdict
-  must not depend on where the wave window sits), every perturbed
-  series goes red with a legible reason, par dominates the reference
-  on both axes, and the predict gate locks/unlocks per the owner
-  decision (first run of a non-authored program only, never
-  re-locking). The judge's `{defect:'judge'}` (single-glitch pass) and
-  the gate's `{defect:'gate'}` (never locks) run their red/green
-  divergence in-process.
+  runs each level's reference solution (and its perturbed variants,
+  and — since C35's modify/make fade — the boot program whenever it
+  differs from the reference) through pio_model over the driver's exact
+  load timeline and commits the pin series as `levels-golden.json`; the
+  suite then asserts the canonical rows assemble to the oracle words
+  bit-for-bit, the overlay survives the C22 compose/decompose
+  round-trip (and composes to the oracle's stim-built words per SM),
+  the reference series passes its own monitor profile (full series and
+  last-128 window alike — the verdict must not depend on where the wave
+  window sits), every perturbed series goes red with a legible reason,
+  the boot program of a modify/make level reds (the task is real from
+  cycle one), the editor's completion leash scopes to the level's
+  opcode whitelist, par dominates the reference on both axes, and the
+  predict gate locks/unlocks per the owner decision (first run of a
+  non-authored program only, never re-locking). The judge's
+  `{defect:'judge'}` (single-glitch pass) and the gate's
+  `{defect:'gate'}` (never locks) run their red/green divergence
+  in-process.
 - **The defect hooks are the cheap red cases** (the
   `TestMutationsDiverge` idiom): `create(M, {pin:true})` /
 `{mirror:true}` re-inject the mutation-demo defects; the suite

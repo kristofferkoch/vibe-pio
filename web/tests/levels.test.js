@@ -1,4 +1,4 @@
-// levels.test.js — the C34 level-campaign gate (KANBAN C34; engine-side
+// levels.test.js — the C34/C35 level-campaign gate (engine-side
 // node --test, NOT a DOM-glue exception: it drives the level definitions
 // against engine truth the way pio-asm-golden.json anchors the assembler).
 //
@@ -44,12 +44,24 @@ const GOLDEN = JSON.parse(fs.readFileSync(path.join(__dirname, 'levels-golden.js
 // -writes the level file before sm-view.js evaluates)
 globalThis.PIO_LEVEL = PioLevels.register;
 require('../levels/l0.js');
+require('../levels/l1.js');
+require('../levels/l2.js');
 
 const L0 = PioLevels.get('l0');
 const G0 = GOLDEN.levels.l0;
+const L1 = PioLevels.get('l1');
+const G1 = GOLDEN.levels.l1;
+const L2 = PioLevels.get('l2');
+const G2 = GOLDEN.levels.l2;
+const RowComplete = require('../row-complete.js');
 const bits = (s) => [...s].map(Number);
 const case_ = (name) => {
   const c = G0.cases.find((c) => c.name === name);
+  assert.ok(c, `golden case ${name} exists`);
+  return c;
+};
+const caseOf = (g, name) => {
+  const c = g.cases.find((c) => c.name === name);
   assert.ok(c, `golden case ${name} exists`);
   return c;
 };
@@ -191,4 +203,182 @@ test('par dominates the reference solution on both axes', () => {
   assert.ok(used <= L0.reference.par.words, `${used} words > par ${L0.reference.par.words}`);
   const v = PioLevels.judge(bits(case_('reference').series), L0.profile);
   assert.ok(v.period <= L0.reference.par.period, `${v.period} clk/cycle > par period`);
+});
+
+// ---- C35: L1 Metronome — the delay column, the timing profile ---------------
+// The fade's first rung: a one-cell modification. The program arrives as
+// L0 left it; the monitor now TIMES it (the profile ladder's first real
+// tier — exact period); the reference solution ships separately from the
+// boot program for the first time.
+test('l1 registers complete: delay column unlocked, exact-time profile, no gate', () => {
+  assert.equal(L1.id, 'l1');
+  assert.equal(L1.name, 'Metronome');
+  assert.equal(L1.chapter, 0);
+  assert.ok(L1.goal.length > 8);
+  assert.ok(L1.panels.includes('delayCol'), "the delay column is L1's debut");
+  assert.ok(!L1.panels.includes('sideCol'), 'no side column until chapter 4');
+  // no authoring yet: the delay cell is the whole editor (the row editor
+  // opens in a level for the first time in L2)
+  assert.deepEqual(L1.opcodes, []);
+  // the timing monitor is born: the active tier demands the exact period
+  assert.equal(L1.profile.v, 1);
+  assert.equal(L1.profile.tier, 'exact');
+  assert.equal(L1.profile.tiers.exact.periodLo, 8);
+  assert.equal(L1.profile.tiers.exact.periodHi, 8);
+  // modify-from-given levels never lock the gate (only predict levels do)
+  assert.equal(PioLevels.gateOpen(L1, {}), true);
+  // the shipped answer, separate from the boot program
+  assert.deepEqual(L1.reference.listing, ['set pins, 1 [3]', 'set pins, 0 [3]']);
+  assert.ok(L1.reference.par.words > 0 && L1.reference.par.period > 0);
+});
+
+test('l2 registers complete: the empty boot, the set leash, the 1:3 target', () => {
+  assert.equal(L2.id, 'l2');
+  assert.equal(L2.name, "Author's hand");
+  assert.equal(L2.chapter, 0);
+  assert.ok(L2.goal.length > 8);
+  // from scratch: the listing boots EMPTY — row-count honesty means the
+  // player sees 32 honest `·` rows and writes into them
+  assert.deepEqual(L2.program.listing, []);
+  assert.ok(L2.panels.includes('delayCol'), 'the delay cell stays in scope');
+  assert.ok(!L2.panels.includes('sideCol'), 'no side column until chapter 4');
+  // the row editor opens in a level for the first time — on the leash
+  assert.deepEqual(L2.opcodes, ['set']);
+  assert.equal(L2.profile.v, 1);
+  assert.equal(L2.profile.tier, 'exact');
+  assert.equal(L2.profile.tiers.exact.periodLo, 4);
+  assert.equal(L2.profile.tiers.exact.periodHi, 4);
+  // the player authored the program from the first keystroke: no gate
+  assert.equal(PioLevels.gateOpen(L2, {}), true);
+  assert.deepEqual(L2.reference.listing, ['set pins, 1', 'set pins, 0 [2]']);
+  assert.ok(L2.reference.par.words > 0 && L2.reference.par.period > 0);
+});
+
+test('l1/l2 reference listings are canonical spellings', () => {
+  const prog = PioAsm.createProgram('c35-check');
+  prog.sidesetBits = 0; // no side-set in chapter 0 (all five ds bits are delay)
+  for (const L of [L1, L2])
+    for (const row of L.reference.listing) {
+      const w = PioAsm.assembleInstruction(row, prog, {}, `${L.id} reference ${row}`);
+      assert.equal(PioAsm.disassemble(w, false, 0), row, `${row} is not the canonical spelling`);
+    }
+});
+
+test('l1/l2 references assemble bit-equal with pio_model; the boots are their own words', () => {
+  const prog = PioAsm.createProgram('c35-words');
+  prog.sidesetBits = 0;
+  for (const [L, G] of [
+    [L1, G1],
+    [L2, G2],
+  ]) {
+    const words = new Array(32).fill(0);
+    L.reference.listing.forEach((row, i) => {
+      words[i] = PioAsm.assembleInstruction(row, prog, {}, `${L.id} ref row ${i}`);
+    });
+    assert.deepEqual(words, G.words, `${L.id}: the JS assembler drifted from pio_model`);
+    // the boot program is what the page loads (programState), and the
+    // golden carries it separately whenever it differs from the reference
+    const st = PioLevels.programState(L, PioAsm, VibeDriver);
+    if (L.program.listing.join('|') !== L.reference.listing.join('|')) {
+      assert.ok(G.boot, `${L.id}: the boot case is committed`);
+      assert.deepEqual(st.words, G.boot.words, `${L.id}: the page boots the golden's boot words`);
+    } else {
+      assert.deepEqual(st.words, G.words);
+    }
+  }
+  // L2 boots the empty machine: 32 untouched slots
+  assert.ok(PioLevels.programState(L2, PioAsm, VibeDriver).words.every((w) => w === 0));
+});
+
+test('the metronome: the reference keeps exact time, every wrong time reds', () => {
+  const ref = caseOf(G1, 'reference');
+  const full = PioLevels.judge(bits(ref.series), L1.profile);
+  assert.equal(full.pass, true, full.verdict);
+  assert.equal(full.period, 8);
+  assert.equal(full.dutyPct, 50);
+  const win = PioLevels.judge(bits(ref.series).slice(-128), L1.profile);
+  assert.equal(win.pass, true, win.verdict);
+  // the boot program (as L0 left it) reds: the task is real from cycle one
+  const boot = PioLevels.judge(bits(G1.boot.series), L1.profile);
+  assert.equal(boot.pass, false);
+  assert.match(boot.verdict, /outside/, 'the boot flash is timed, and legibly');
+  // the wrong answers red with reasons
+  for (const name of ['too-slow', 'lopsided', 'one-row']) {
+    const c = caseOf(G1, name);
+    const v = PioLevels.judge(bits(c.series), L1.profile);
+    assert.equal(v.pass, false, `${name} must not pass the metronome`);
+    assert.ok(v.verdict.length > 8, `${name} fails with a reason, not silence`);
+  }
+  // the near-miss is legible as a DUTY failure: period 8, duty 25
+  assert.match(PioLevels.judge(bits(caseOf(G1, 'lopsided').series), L1.profile).verdict, /duty/);
+});
+
+test("the 1:3 target: the reference passes, last level's answer and the boot red", () => {
+  const ref = caseOf(G2, 'reference');
+  const full = PioLevels.judge(bits(ref.series), L2.profile);
+  assert.equal(full.pass, true, full.verdict);
+  assert.equal(full.period, 4);
+  assert.equal(full.dutyPct, 25);
+  assert.equal(PioLevels.judge(bits(ref.series).slice(-128), L2.profile).pass, true);
+  // L1's solution is this level's red case: the target moved
+  const l1a = PioLevels.judge(bits(caseOf(G2, 'l1-answer').series), L2.profile);
+  assert.equal(l1a.pass, false);
+  assert.match(l1a.verdict, /period/);
+  // the opcode-locked attempt: nop cannot bring the pin low — the wave
+  // rises once and holds
+  const nop = PioLevels.judge(bits(caseOf(G2, 'nop-wait').series), L2.profile);
+  assert.equal(nop.pass, false, 'the locked-opcode variant must not pass');
+  // the empty boot never rises
+  const boot = PioLevels.judge(bits(G2.boot.series), L2.profile);
+  assert.equal(boot.pass, false);
+  assert.match(boot.verdict, /never rose/);
+});
+
+// ---- C35: the editor's leash (the completion whitelist) ----------------------
+// The row editor opens in a level for the first time in L2, scoped to the
+// unlocked opcode set: a filter over C32's slot-aware candidates. The
+// menu never suggests what the level has not unlocked — not at the
+// mnemonic slot, and not inside a locked mnemonic's operand slots.
+test('the leash: L2 completions scope to the unlocked opcode set', () => {
+  const wl = { opcodes: L2.opcodes };
+  assert.deepEqual(
+    RowComplete.analyze('', wl).cands.map((c) => c.t),
+    ['set'],
+    'the mnemonic menu offers exactly the unlocked set',
+  );
+  assert.deepEqual(
+    RowComplete.analyze('mo', wl).cands,
+    [],
+    'a locked mnemonic mid-word is never suggested',
+  );
+  assert.deepEqual(
+    RowComplete.analyze('mov x', wl).cands,
+    [],
+    "a locked mnemonic's operand slots stay silent",
+  );
+  assert.deepEqual(
+    RowComplete.analyze('', { opcodes: [] }).cands,
+    [],
+    "an empty whitelist offers nothing at all (L0's world)",
+  );
+  // the filter is load-bearing: unscoped, the menu offers all ten
+  assert.deepEqual(
+    RowComplete.analyze('').cands.map((c) => c.t),
+    ['jmp', 'wait', 'in', 'out', 'push', 'pull', 'mov', 'irq', 'set', 'nop'],
+  );
+  // and the leash never touches the sandbox: no whitelist, full menu —
+  // including set's own operand slots inside the whitelist
+  assert.ok(RowComplete.analyze('set ', wl).cands.some((c) => c.t === 'pins'));
+});
+
+test('par dominates the l1/l2 reference solutions on both axes', () => {
+  for (const [L, G] of [
+    [L1, G1],
+    [L2, G2],
+  ]) {
+    const used = G.words.filter((w) => w !== 0).length;
+    assert.ok(used <= L.reference.par.words, `${L.id}: ${used} words > par`);
+    const v = PioLevels.judge(bits(G.cases[0].series), L.profile);
+    assert.ok(v.period <= L.reference.par.period, `${L.id}: ${v.period} clk/cycle > par`);
+  }
 });

@@ -57,6 +57,14 @@
     if (!def?.program || !Array.isArray(def.program.listing))
       throw new Error('level: program.listing missing');
     for (const row of def.program.listing) str(row, 'program.listing row');
+    // C35: the reference solution is its own field when the boot program
+    // is not the answer (the modify/make fade — L1 boots the un-slowed
+    // program, L2 boots empty); every level ships one either way
+    if (def?.reference?.listing !== undefined) {
+      if (!Array.isArray(def.reference.listing) || !def.reference.listing.length)
+        throw new Error('level: reference.listing must be a non-empty list');
+      for (const row of def.reference.listing) str(row, 'reference.listing row');
+    }
     const pr = def.profile;
     if (pr?.kind !== 'square' || !Number.isInteger(pr?.v))
       throw new Error('level: profile must be a versioned square receiver');

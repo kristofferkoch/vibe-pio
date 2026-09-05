@@ -242,3 +242,30 @@ test('the mnemonic menu and the caret tokenizer (unchanged surfaces)', () => {
   assert.match(RC.analyze('wait ').cands[0].note, /low/);
   assert.match(RC.analyze('mov x, ').cands[0].note, /invert/);
 });
+
+// C35: the level leash — opts.opcodes scopes the menu to an opcode
+// whitelist (the level's `opcodes` field): the mnemonic slot offers
+// only the unlocked set, a locked mnemonic's operand slots stay silent,
+// and no whitelist leaves the sandbox menu whole.
+test('the opcode whitelist scopes the menu — the level leash', () => {
+  assert.deepStrictEqual(ts('', { opcodes: ['set'] }), ['set']);
+  assert.deepStrictEqual(ts('s', { opcodes: ['set'] }), ['set']);
+  assert.deepStrictEqual(ts('mo', { opcodes: ['set'] }), []); // never suggest the locked
+  assert.deepStrictEqual(ts('mov x', { opcodes: ['set'] }), []); // operand slots silent too
+  assert.deepStrictEqual(ts('', { opcodes: [] }), []); // empty whitelist: no authoring
+  // an unlocked mnemonic's own operand slots flow through untouched
+  assert.deepStrictEqual(ts('set ', { opcodes: ['set'] }), ts('set '));
+  assert.strictEqual(sepOf('set', 'set', { opcodes: ['set'] }), ' ');
+  assert.deepStrictEqual(ts(''), [
+    'jmp',
+    'wait',
+    'in',
+    'out',
+    'push',
+    'pull',
+    'mov',
+    'irq',
+    'set',
+    'nop',
+  ]);
+});

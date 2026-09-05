@@ -25,6 +25,9 @@
 // Runtime JS is dependency-free: classic <script> after pio-asm.js
 // (globalThis.RowComplete) or CommonJS (web/tests) — the engine-driver /
 // pio-asm.js pattern.
+//
+// C35 adds the level leash: analyze's `opts.opcodes` whitelist scopes the
+// menu to a level's unlocked opcode set (see the entry point below).
 
 ((global) => {
   'use strict';
@@ -300,14 +303,28 @@
   }
 
   // The entry point. `upto` is the editor text up to the caret; the
-  // {defect:'token-index'} opt re-injects the pre-C32 model.
+  // {defect:'token-index'} opt re-injects the pre-C32 model. C35 adds the
+  // level leash: `opts.opcodes` (an opcode whitelist — the level's
+  // `opcodes` field) scopes every candidate the menu may offer — the
+  // mnemonic slot offers only the unlocked set, and a locked mnemonic's
+  // operand slots stay silent (the menu never teaches ahead of the level;
+  // a filter over the slot model, not new machinery). No whitelist, no
+  // filter: the sandbox menu stays whole.
   function analyze(upto, opts) {
     const ctx = splitCtx(upto);
+    let out;
     if (opts && opts.defect === 'token-index') {
       const d = defect(ctx.toks, ctx.partial.toLowerCase());
-      return { toks: ctx.toks, partial: ctx.partial, slot: d.slot, cands: d.cands };
+      out = { toks: ctx.toks, partial: ctx.partial, slot: d.slot, cands: d.cands };
+    } else {
+      out = slots(upto);
     }
-    return slots(upto);
+    if (opts && Array.isArray(opts.opcodes)) {
+      const wl = opts.opcodes.map((o) => String(o).toLowerCase());
+      if (!ctx.toks.length) out.cands = out.cands.filter((c) => wl.includes(c.t.toLowerCase()));
+      else if (!wl.includes(ctx.toks[0].toLowerCase())) out.cands = [];
+    }
+    return out;
   }
 
   const api = { splitCtx, analyze };

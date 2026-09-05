@@ -317,6 +317,25 @@
                 spellcheck="false"
               ></textarea>
             </div>
+            <!-- C35: L1's one-cell modification — the delay-cell editor.
+                 A level that has taught the delay column but not authoring
+                 (opcodes still empty; the row editor is L2's debut) edits
+                 exactly this cell: click a row, or Enter/digit from the
+                 listing cursor. Position lives over the row's delay track. -->
+            <div
+              id="dlyedit"
+              hidden
+              data-status="delay cell: type 0–31 · Enter commits · Tab crosses rows · Esc cancels"
+            >
+              <input
+                id="dlycell"
+                inputmode="numeric"
+                placeholder="[dly]"
+                aria-label="delay"
+                maxlength="2"
+                autocomplete="off"
+              >
+            </div>
           </div>
           <div id="progfoot">
             <span>words <b id="wordsct">0</b></span><span>free <b id="freect">32</b></span>

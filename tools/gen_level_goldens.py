@@ -24,6 +24,12 @@ arrives here, committed: for every level under web/levels/ this tool
     the driver's allPins()/wave window carries — load clks included),
     for the reference program AND the perturbed variants (the gate's
     red cases: a judge that accepts these is a lens, not a judge),
+  - carries `reference.listing` separately from `program.listing` (C35:
+    the modify/make fade — L1 boots the un-slowed program but its
+    reference solution delays it; L2 boots empty but its reference is
+    the answer). A level whose boot differs from its reference also
+    gets a `boot` case, so the gate can assert the boot program does
+    NOT pass its own profile (the task is real from cycle one),
   - records the per-SM config words it composed, so the JS side can pin
     VibeDriver.composeOverlay against the oracle words (the merge over
     hardware-reset values is part of the level format's contract).
@@ -85,6 +91,20 @@ PERTURBATIONS: dict[str, list[tuple[str, list[str]]]] = {
         ("both-high", ["set pins, 1", "set pins, 1"]),  # freezes on: the held-wave belief
         ("one-row", ["set pins, 1"]),  # jmp-0 park after row 0: one blink, flat high
         ("flat-low", ["set pins, 0", "set pins, 0"]),  # never rises
+    ],
+    # C35 L1: period-wrong answers — the metronome's exact tier reds
+    # every wrong time, legibly (the verdict names the window)
+    "l1": [
+        ("too-slow", ["set pins, 1 [7]", "set pins, 0 [7]"]),  # period 16: doubled the delays
+        ("lopsided", ["set pins, 1 [1]", "set pins, 0 [5]"]),  # period 8 but duty 25: only one row stretched
+        ("one-row", ["set pins, 1 [3]"]),  # delay can't save a one-row program: park after row 0
+    ],
+    # C35 L2: wrong duty/period answers and the opcode-locked attempt —
+    # nop is mov y,y in canonical dress, and it is NOT unlocked (nor can
+    # it drive a pin low: the wave rises once and holds)
+    "l2": [
+        ("l1-answer", ["set pins, 1 [3]", "set pins, 0 [3]"]),  # duty 50: last level's answer, this level's red
+        ("nop-wait", ["set pins, 1", "nop [4]"]),  # the opcode-locked belief: nop doesn't bring the pin low
     ],
 }
 
@@ -204,13 +224,26 @@ def generate() -> dict[str, Any]:
         lid, defn = parse_level_file(path)
         sms = defn["program"].get("sms") or [None, None, None, None]
         pin = defn["profile"]["pin"]
-        words = new_words(assemble(defn["program"]["listing"], sms[0], lid))
-        cases = [{"name": "reference", "listing": defn["program"]["listing"], "series": pin_series(words, sms, pin)}]
+        # the reference solution is its own field since C35 (the fade):
+        # levels that boot something else (L1's un-slowed program, L2's
+        # empty listing) still ship their answer here
+        ref_listing = defn.get("reference", {}).get("listing") or defn["program"]["listing"]
+        boot_listing = defn["program"]["listing"]
+        words = new_words(assemble(ref_listing, sms[0], lid))
+        cases = [{"name": "reference", "listing": ref_listing, "series": pin_series(words, sms, pin)}]
         for name, listing in PERTURBATIONS.get(lid, []):
             w = new_words(assemble(listing, sms[0], f"{lid}:{name}"))
             cases.append({"name": name, "listing": listing, "series": pin_series(w, sms, pin)})
+        # the boot program, when it is not the reference (L1/L2): the gate
+        # asserts it does NOT pass its own profile — the task is real
+        # from cycle one
+        boot: dict[str, Any] = {}
+        if boot_listing != ref_listing:
+            bw = new_words(assemble(boot_listing, sms[0], f"{lid}:boot"))
+            boot = {"listing": boot_listing, "words": bw, "series": pin_series(bw, sms, pin)}
         out["levels"][lid] = {
             "words": words,
+            **({"boot": boot} if boot else {}),
             "config": [  # per-SM composed reg words (the composeOverlay pin)
                 [w["pinctrl"], w["execctrl"], w["shiftctrl"], w["clkdiv"]]  # type: ignore[index]
                 for w in compose_all(sms)
