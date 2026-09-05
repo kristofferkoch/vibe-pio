@@ -393,3 +393,17 @@ def test_level_front_checks_flag_a_tampered_par(tmp_path) -> None:
     checks = dict(H.level_front_checks(tmp_path))
     assert checks["front-l0-par"] is False
     assert checks["front-l0-reference"] is True  # the reference still fits within the lying par
+
+
+def test_level_front_flags_a_tampered_scramble_par(tmp_path) -> None:
+    # C37: the scramble front (every order of the given rows) must bite
+    # too — a par looser than the permutation champion is drift. The red
+    # side re-injects one word of slack into l4's par.
+    (tmp_path / "web").mkdir()
+    shutil.copytree(H.REPO / "web" / "levels", tmp_path / "web" / "levels")
+    p = tmp_path / "web" / "levels" / "l4.js"
+    assert '"words": 5' in p.read_text()  # the par line is the only hit
+    p.write_text(p.read_text().replace('"words": 5', '"words": 6'))
+    checks = dict(H.level_front_checks(tmp_path))
+    assert checks["front-l4-par"] is False
+    assert checks["front-l4-reference"] is True  # 5 words still fit the lying 6

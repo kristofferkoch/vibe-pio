@@ -124,6 +124,17 @@ PERTURBATIONS: dict[str, list[tuple[str, list[str]]]] = {
         ("one-row-short", ["set pins, 1 [15]", "set pins, 0 [31]"]),
         ("both-maxed", ["set pins, 1 [31]", "set pins, 0 [31]"]),
     ],
+    # C37 L4: the scrambler's planted wrong orders — same rows, red
+    # waves. high-before-jmp: the jmp's own clk holds the level of the
+    # row before it, so closing the loop on the high row stretches the
+    # duty to 38 (the row before the back edge is a real choice);
+    # dead-rows: a jmp parked mid-listing strands everything after it —
+    # those rows never execute, and the monitor says so by never seeing
+    # another blink
+    "l4": [
+        ("high-before-jmp", ["set pins, 1 [7]", "set pins, 0 [1]", "set pins, 0 [2]", "set pins, 1 [1]", "jmp 1"]),
+        ("dead-rows", ["set pins, 1 [7]", "set pins, 1 [1]", "jmp 1", "set pins, 0 [1]", "set pins, 0 [2]"]),
+    ],
 }
 
 LEVEL_RE = re.compile(

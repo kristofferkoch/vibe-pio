@@ -561,9 +561,116 @@ test('l5 words are pio_model-equal and canonically spelled', () => {
   assert.deepEqual(words, G5.words, 'the reference assembles to the golden words');
 });
 
-test('par dominates the l3/l5 reference solutions on both axes', () => {
+// ---- C37: L4 Out of order — the scrambler (Parsons) -----------------------
+// Comprehension by reordering: the rows arrive shuffled and the task is
+// to trade them until the wave matches — zero generation load, the whole
+// vocabulary is the given rows. The boot IS the canonical misconception:
+// the once-flash ([7]) trapped inside the loop, so the flash comes round
+// every period (period 14, legibly outside). The way out reads the jmp's
+// semantics off the face: `jmp 1` names address 1, so the row at address
+// 0 runs once — the flash belongs there. The second lesson ships as the
+// high-before-jmp golden: the jmp's own clk holds the level of the row
+// before it, so which row precedes the back edge is a real choice
+// (duty 38, outside); and the dead-rows golden: rows after the jmp
+// never execute at all.
+require('../levels/l4.js');
+const L4 = PioLevels.get('l4');
+const G4 = GOLDEN.levels.l4;
+
+test('l4 registers complete: the scramble flag, the permutation boot, no gate', () => {
+  assert.equal(L4.id, 'l4');
+  assert.equal(L4.name, 'Out of order');
+  assert.equal(L4.chapter, 1);
+  assert.ok(L4.goal.length > 8);
+  // the scrambler posture: the listing gesture is the row trade — the
+  // row editor never opens, the delay cell neither (the given rows are
+  // fixed; only their addresses move)
+  assert.equal(L4.scramble, true);
+  // the boot is a true permutation of the reference: same rows, wrong
+  // order (the player's whole move is reordering)
+  assert.deepEqual([...L4.program.listing].sort(), [...L4.reference.listing].sort());
+  assert.notDeepEqual(L4.program.listing, L4.reference.listing);
+  // the jmp's target is part of the given vocabulary: address 1, the
+  // loop entry the player must place a row at
+  assert.ok(L4.program.listing.some((r) => /^jmp 1$/.test(r)));
+  assert.ok(L4.panels.includes('delayCol'), 'reading [n] is the comprehension — the column stays');
+  assert.ok(!L4.panels.includes('sideCol'), 'no side column until chapter 4');
+  assert.ok(!L4.panels.includes('wrapSteppers'), 'the wrap steppers stay locked');
+  // knowledge stays monotone (the chapter-1 vocabulary) even though the
+  // scrambler never opens the editor the leash would scope
+  assert.deepEqual(L4.opcodes, ['set', 'jmp']);
+  // the same 8-clk 1:3 blink as the chapter's other levels, judged exact
+  assert.equal(L4.profile.v, 1);
+  assert.equal(L4.profile.tier, 'exact');
+  assert.equal(L4.profile.tiers.exact.periodLo, 8);
+  assert.equal(L4.profile.tiers.exact.periodHi, 8);
+  // Parsons, not predict: the gate never locks
+  assert.equal(PioLevels.gateOpen(L4, {}), true);
+  // the shipped answer: the flash once, then the blink — the back edge
+  // closes on a LOW row (the jmp's clk holds it)
+  assert.deepEqual(L4.reference.listing, [
+    'set pins, 1 [7]',
+    'set pins, 1 [1]',
+    'set pins, 0 [1]',
+    'set pins, 0 [2]',
+    'jmp 1',
+  ]);
+  assert.deepEqual(L4.reference.par, { words: 5, period: 8 });
+});
+
+test('the l4 wave contract: reference order green, the boot and planted wrong orders red', () => {
+  // the boot: the flash trapped in the loop — it comes round every
+  // period, legibly outside the 8-clk window
+  const boot = PioLevels.judge(bits(G4.boot.series), L4.profile);
+  assert.equal(boot.pass, false);
+  assert.match(boot.verdict, /period 14 .*outside/);
+  // the reference: flash once, then the 8-clk 1:3 blink — full series
+  // and the wave window alike
+  const ref = caseOf(G4, 'reference');
+  const full = PioLevels.judge(bits(ref.series), L4.profile);
+  assert.equal(full.pass, true, full.verdict);
+  assert.equal(full.period, 8);
+  assert.equal(full.dutyPct, 25);
+  assert.equal(PioLevels.judge(bits(ref.series).slice(-128), L4.profile).pass, true);
+  // the high row last: the jmp holds it — duty 38, the row before the
+  // back edge is a real choice
+  const hb = PioLevels.judge(bits(caseOf(G4, 'high-before-jmp').series), L4.profile);
+  assert.equal(hb.pass, false);
+  assert.match(hb.verdict, /duty 38% — outside/);
+  // the jmp mid-listing: the rows after it never run — one flash, then
+  // the wave goes flat (dead code is invisible to the monitor)
+  const dead = PioLevels.judge(bits(caseOf(G4, 'dead-rows').series), L4.profile);
+  assert.equal(dead.pass, false);
+  assert.match(dead.verdict, /keep watching/);
+});
+
+test('l4 words are pio_model-equal, canonically spelled, and swap-equal', () => {
+  const prog = PioAsm.createProgram('c37-l4');
+  prog.sidesetBits = 0;
+  for (const row of [...L4.program.listing, ...L4.reference.listing]) {
+    const w = PioAsm.assembleInstruction(row, prog, {}, `l4 row ${row}`);
+    assert.equal(PioAsm.disassemble(w, false, 0), row, `${row} is not the canonical spelling`);
+  }
+  // the page boots the golden's shuffled boot words
+  const st = PioLevels.programState(L4, PioAsm, VibeDriver);
+  assert.deepEqual(st.words, G4.boot.words);
+  // a trade never adds or loses a word: boot and reference are the same
+  // multiset of words, in different slots
+  assert.deepEqual(
+    [...st.words].sort((a, b) => a - b),
+    [...G4.words].sort((a, b) => a - b),
+  );
+  const words = new Array(32).fill(0);
+  L4.reference.listing.forEach((row, i) => {
+    words[i] = PioAsm.assembleInstruction(row, prog, {}, `l4 ref row ${i}`);
+  });
+  assert.deepEqual(words, G4.words, 'the reference assembles to the golden words');
+});
+
+test('par dominates the l3/l4/l5 reference solutions on both axes', () => {
   for (const [L, G] of [
     [L3, G3],
+    [L4, G4],
     [L5, G5],
   ]) {
     const used = G.words.filter((w) => w !== 0).length;

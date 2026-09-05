@@ -44,7 +44,9 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import itertools
 import random
+import re
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
@@ -890,12 +892,16 @@ def tamper_delay(ctx: SeedCtx, cand: Candidate) -> list[Candidate]:
 # (the chapter-0/1 vocabulary; the level's pinned WRAP_TOP caps the words);
 # "prefix" = the boot listing's first row kept verbatim (the task IS that
 # row — L3's preamble must run once) with a jmp back edge closing a loop
-# over the rows above it. Every level under web/levels/ needs an entry.
+# over the rows above it; "scramble" = the boot's rows in every order (L4:
+# the Parsons rung — the vocabulary is fixed, the order is the whole task,
+# so the honest space is the permutations). Every level under web/levels/
+# needs an entry.
 FRONT_CLASS: dict[str, str] = {
     "l0": "wrap",
     "l1": "wrap",
     "l2": "wrap",
     "l3": "prefix",
+    "l4": "scramble",
     "l5": "wrap",
 }
 
@@ -1030,6 +1036,115 @@ def _prefix_listings(tp: dict[str, int], max_words: int, prefix: list[str]) -> I
                     yield len(rows), period, rows
 
 
+_SET_ROW = re.compile(r"^set pins, ([01])(?: \[(\d+)\])?$")
+_JMP_ROW = re.compile(r"^jmp (\d+)$")
+
+
+def _perm_points(listing: list[str], wrap_top: int) -> Iterator[tuple[int, int | None, list[str]]]:
+    """L4's class: the given rows in every order (the vocabulary is
+    fixed, the order is the whole task) with the analytic steady-loop
+    (period, duty) each order draws, under the chapter-1 timing rules:
+    a row with delay d costs 1+d clks; the jmp row at position j with
+    target t costs 1 clk holding the level of the row before it, leaves
+    rows 0..t-1 as once-preamble, loops rows t..j, and strands rows
+    j+1.. as dead; a jmp on its own target parks (the wave never cycles
+    again); a jmp at position 0 forward-jumps and the pinned wrap
+    (WRAP_BOTTOM 0) closes the loop over rows t..wrap_top and 0..j.
+    -> (period, dutyPct, listing); duty None = never-cycles (never a
+    pass; not worth a model run).
+
+    >>> rows = ["set pins, 1 [7]", "set pins, 1 [1]", "set pins, 0 [1]",
+    ...         "set pins, 0 [2]", "jmp 1"]
+    >>> pts = {(p, d) for p, d, _ in _perm_points(rows, 4)}
+    >>> (8, 25) in pts   # the reference: flash once, then the 1:3 blink
+    True
+    >>> (14, 57) in pts  # the boot: the flash trapped inside the loop
+    True
+    >>> (9, 33) in pts   # a 9-clk order exists? no — 1+1+1+2 delays and
+    ...                  # the jmp make every full-loop order sum to 8 or 14
+    False
+    """
+    parts: list[tuple[str, int | None, int]] = []  # (kind, pin level, delay)
+    tgt = -1
+    for row in listing:
+        m = _SET_ROW.match(row)
+        if m:
+            parts.append(("set", int(m.group(1)), int(m.group(2) or 0)))
+            continue
+        m = _JMP_ROW.match(row)
+        if m:
+            parts.append(("jmp", None, 0))
+            tgt = int(m.group(1))
+            continue
+        raise SystemExit(f"scramble front: unparseable row {row!r}")
+    if not any(k == "jmp" for k, _v, _d in parts):
+        raise SystemExit("scramble front: no jmp row in the vocabulary")
+    if sum(1 for k, _v, _d in parts if k == "jmp") != 1:
+        raise SystemExit("scramble front: the vocabulary needs exactly one jmp row")
+    for perm in itertools.permutations(range(len(parts))):
+        rows = [parts[i] for i in perm]
+        j = next(i for i, r in enumerate(rows) if r[0] == "jmp")
+        if j > wrap_top:
+            raise SystemExit("scramble front: the jmp row parked beyond WRAP_TOP never runs")
+        # the loop's row indexes and the row that precedes the jmp in
+        # execution (whose level the jmp's clk holds)
+        if tgt == j:
+            continue  # a jmp on its own target: park, the wave is over
+        if tgt < j:
+            loop = list(range(tgt, j))
+            prev = j - 1
+        else:  # forward jump: the wrap (WRAP_BOTTOM 0) closes the loop
+            loop = list(range(tgt, wrap_top + 1)) + list(range(j))
+            prev = j - 1 if j > 0 else wrap_top
+        period = sum(1 + rows[i][2] for i in loop) + 1
+        hi = sum(1 + rows[i][2] for i in loop if rows[i][1] == 1) + (1 if rows[prev][1] == 1 else 0)
+        yield period, _js_round_div(100 * hi, period), [listing[i] for i in perm]
+
+
+def _scramble_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, list[str]]]:
+    """derive_level_front's scramble leg: every order of the GIVEN rows,
+    deduped by analytic (period, duty) — the judge's verdict depends on
+    exactly those two numbers over the steady loop — then each distinct
+    point model-verified through the goldens' own load timeline, the
+    same discipline as the analytic classes (prediction mismatch raises).
+    """
+    prof = defn["profile"]
+    tp = prof["tiers"][prof["tier"]]
+    sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
+    ex = (sms[0] or {}).get("execctrl", {})
+    wrap_top = ex.get("wrapTop", 31)
+    if ex.get("wrapBot", 0) != 0:
+        raise SystemExit(f"front {lid}: scramble class needs WRAP_BOTTOM 0")
+    words = len(defn["program"]["listing"])
+    seen: dict[tuple[int, int], list[str]] = {}
+    for period, duty, lst in _perm_points(defn["program"]["listing"], wrap_top):
+        if duty is None:
+            continue  # a park or a flat loop — the wave never cycles
+        seen.setdefault((period, duty), lst)
+    evs: list[Evaluated] = []
+    listings: dict[tuple[int, int], list[str]] = {}
+    for (period, _duty), lst in sorted(seen.items()):
+        w32 = gg_assemble(lst, sms[0], f"front:{lid}") + [0] * (32 - len(lst))
+        series = gg_pin_series(w32, sms, prof["pin"])
+        win = defn.get("waveWin", 128)
+        v_full = _square_judge(series, tp)
+        v_win = _square_judge(series[-win:], tp)
+        if not (v_full["pass"] and v_win["pass"]):
+            continue
+        if v_full["period"] != period:
+            raise SystemExit(f"front {lid}: {lst} predicted period {period}, the model says {v_full['period']}")
+        evs.append(
+            Evaluated(
+                cand=_cand(tuple(w32[:words]), 0, tuple(range(words)), ()),
+                screen=Screening(ok=True, div=None),
+                period=period,
+            )
+        )
+        listings[(words, period)] = lst
+    front = sorted(pareto_front(evs), key=lambda e: (len(e.cand.words), e.period or 0))
+    return [(len(e.cand.words), e.period or 0, listings[(len(e.cand.words), e.period or 0)]) for e in front]
+
+
 def derive_level_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, list[str]]]:
     """One level's verified Pareto front: enumerate the class's
     minimal-words candidates per (period, duty), run each DISTINCT
@@ -1042,6 +1157,8 @@ def derive_level_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, l
     drift apart silently. -> sorted [(words, period, champion listing)].
     """
     kind = FRONT_CLASS[lid]
+    if kind == "scramble":
+        return _scramble_front(lid, defn)
     prof = defn["profile"]
     tp = prof["tiers"][prof["tier"]]
     sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]

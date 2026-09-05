@@ -899,3 +899,115 @@ test('the L5 walk: the [31] ceiling refuses loudly, the split passes', async () 
     'row 2 carries its delay',
   );
 });
+
+// C37 — the L4 walk: the scrambler. Rows shuffled; the task is reordering,
+// and the listing gesture is the row TRADE: Enter marks a row, the arrows
+// walk, Enter on another row trades their contents — the row editor never
+// opens and letters author nothing (the given rows are the whole
+// vocabulary). The walk also drives the level's own solve: the trapped
+// flash (row 2) trades out of the loop with row 0's blink row, the one
+// deliberate move the wave asks for.
+test('the L4 walk: the scrambler — mark and trade rows, the editor never opens', async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/sm-view.html?level=l4`);
+  await until('V.ready === true', 'the level page engine to boot');
+
+  // ---- no orphan stops; the surface is chapter 1's, nothing added -------
+  const stops = [];
+  for (let i = 0; i < 10; i++) {
+    await press('Tab');
+    stops.push(await value(activeId));
+  }
+  const allowed = new Set(['brun', 'bstep', 'breset', 'progrows', 'BODY']);
+  for (const s of stops)
+    assert.ok(
+      allowed.has(s),
+      `orphan stop ${JSON.stringify(s)} — a locked panel left a focusable behind (${stops.join(', ')})`,
+    );
+
+  // ---- the shuffled boot is on the faces: the flash trapped mid-loop ----
+  assert.ok(
+    (await value("document.querySelector('#pr0 .ins').textContent")).includes('set pins, 1'),
+    'a blink row sits at address 0',
+  );
+  assert.ok(
+    (await value("document.querySelector('#pr2 .cdly').textContent")).includes('[7]'),
+    'the once-flash is trapped INSIDE the loop (row 2)',
+  );
+  assert.ok(
+    (await value("$('progrows').dataset.status")).includes('trade'),
+    'the listing narrates the trade grammar, not the editor',
+  );
+
+  // ---- Enter marks; the editor never opens; letters author nothing ------
+  await tabUntil(`${activeId} === 'progrows'`, 'the listing');
+  await press('Enter');
+  await until('swRow === 0', 'Enter to mark row 0');
+  assert.ok(
+    await value("document.querySelector('#pr0').classList.contains('swm')"),
+    'the marked row carries the mark',
+  );
+  assert.strictEqual(
+    await value('RE.hidden'),
+    true,
+    'the row editor must not open in the scrambler',
+  );
+  await type('set x, 3');
+  assert.strictEqual(
+    await value('RE.hidden'),
+    true,
+    'type-ahead never opens the editor — the vocabulary is the given rows',
+  );
+  await press('Enter'); // Enter on the marked row unmarks
+  await until('swRow === -1', 'Enter on the marked row to unmark');
+  await press('Escape'); // Esc on no mark: nothing stands down (the editor stays shut)
+  assert.strictEqual(await value('RE.hidden'), true, 'Esc with no mark changes nothing');
+
+  // ---- the solve: mark row 0, walk to the trapped flash, trade ----------
+  await press('Enter');
+  await until('swRow === 0', 'row 0 marked for the trade');
+  await press('ArrowDown');
+  await press('ArrowDown');
+  await until('kc === 2', 'the cursor on the trapped flash');
+  await press('Enter'); // the trade
+  await until('swRow === -1', 'the trade spends the mark');
+  assert.strictEqual(
+    await value('ROWS[0]'),
+    'set pins, 1 [7]',
+    'the flash now runs once, at address 0',
+  );
+  assert.strictEqual(
+    await value('ROWS[2]'),
+    'set pins, 1 [1]',
+    'the blink row traded into the loop',
+  );
+  assert.ok(
+    await value('BUILT.slice(0, 5).every((w) => w)'),
+    'the trade reordered five rows, never dropped one',
+  );
+  assert.ok(
+    !(await value("/ERROR/.test(document.querySelector('footer').textContent)")),
+    'the traded program assembled and loaded without an engine error',
+  );
+
+  // ---- an empty row is not vocabulary: Enter marks nothing there --------
+  for (let i = 0; i < 7; i++) await press('ArrowDown');
+  await until('kc === 9', 'the cursor on an empty row');
+  await press('Enter');
+  assert.strictEqual(await value('swRow'), -1, 'a `·` row cannot be marked — it is not vocabulary');
+
+  // ---- a mark meeting a `·` row stands down (never a dead gesture) ------
+  for (let i = 0; i < 5; i++) await press('ArrowUp');
+  await until('kc === 4', 'the cursor on the jmp row');
+  await press('Enter');
+  await until('swRow === 4', 'the jmp row marked');
+  await press('ArrowDown');
+  await press('ArrowDown');
+  await until('kc === 6', 'the cursor on an empty row, mark standing');
+  await press('Enter'); // a trade with a `·` row cannot happen
+  await until('swRow === -1', 'the mark stands down instead of hanging');
+  assert.ok(
+    (await value("document.querySelector('#pr4').classList.contains('swm')")) === false,
+    'the row the mark stood on loses it',
+  );
+});

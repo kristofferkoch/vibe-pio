@@ -365,11 +365,33 @@ rides the client gate). make py was already red on HEAD before C36
 files this card does not own — left as found; C36's own files are
 clean, pytest 186 green).
 
-C37 — the scrambler — comprehension by reordering (Parsons). L4: rows
-shuffled, the task is to reorder them until the wave matches; the
-mechanic is click-pair row swap — a listing gesture like the gutter
-pick, not an editor mode: the row editor never opens, the vocabulary
-is the given rows (keyboard: one Tab stop on the listing, arrows +
-Enter to mark and swap, per the C25 grammar). levels.test.js: the
-reference order green, a planted wrong order red; the walk covers
-the swap keys.
+C37 landed 2026-09-05: the scrambler — comprehension by reordering.
+L4 Out of order (chapter 1): the boot IS the canonical misconception —
+the once-flash (`set pins, 1 [7]`) trapped inside the loop, red at
+period 14 every time the flash comes round — and the way out reads the
+jmp off the face: `jmp 1` names address 1, so the row at address 0 runs
+once and the flash belongs there. The mechanic is the click-pair row
+TRADE (a listing gesture like the gutter pick, never an editor mode:
+the row editor and the delay cell both stay shut — the level format's
+`scramble: true` flag gates them, and openRow refuses; the keyboard
+rides the C25 grammar — Enter marks, arrows walk, Enter on another row
+trades, Esc unmarks, letters author nothing; empty `·` rows are not
+vocabulary). The second lesson ships as goldens: high-before-jmp reds
+at duty 38 (the jmp's clk holds the row before it — closing the loop on
+a low row is a real choice) and dead-rows never blinks again (rows
+after the jmp never execute). Par machinery: FRONT_CLASS grows
+"scramble" — the honest solution space is the permutations of the given
+rows (analytic (period, duty) per order under the chapter-1 timing
+rules, deduped, each point model-verified through the goldens' own load
+timeline; the champion must equal the committed par 5 words · 8 clk).
+Gates: levels.test.js (30 checks — the l4 legs ran red first:
+MODULE_NOT_FOUND, the level file did not exist), the par drift gate
+(ran red first: "l4: no FRONT_CLASS entry"; pytest now also red-flags a
+tampered l4 par), the keyboard walk's L4 leg (ran red against the
+pre-C37 page: the listing narrated the editor grammar and Enter would
+have opened it; green with the trade — the walk drives the one-swap
+solve under keys alone), the browser session (click-pair by mouse, the
+marked row, PASS verdict, par reveal). Separation note: a concurrent
+C38 WIP (the visual monitor face) landed uncommitted in the shared tree
+mid-card and was interleaved in the same files; this commit carries
+C37 only — the WIP was preserved untouched in the working tree.

@@ -54,6 +54,10 @@
       if (!(k in SURFACE) && !STRUCTURAL.has(k))
         throw new Error(`level: unknown panel key ${JSON.stringify(k)}`);
     if (!Array.isArray(def?.opcodes)) throw new Error('level: opcodes must be a list');
+    // C37: the scrambler posture — the listing's edit is the row trade
+    // (click-pair / Enter-mark + Enter-trade), the row editor never opens
+    if (def?.scramble !== undefined && typeof def.scramble !== 'boolean')
+      throw new Error('level: scramble must be a boolean');
     if (!def?.program || !Array.isArray(def.program.listing))
       throw new Error('level: program.listing missing');
     for (const row of def.program.listing) str(row, 'program.listing row');

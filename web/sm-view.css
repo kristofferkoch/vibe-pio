@@ -2312,6 +2312,19 @@ button.shiftviz:hover .sv-end {
   border-left-color: var(--amber);
 }
 
+/* C37: the scrambler's marked row — the trade's first half. Amber
+   family (the pick-walk grammar), a dashed edge reading as a hold, not
+   a cursor; the pair's post-trade flash is the same family, brighter.
+   Background/outline only — the never-reflow discipline */
+.prow.swm {
+  background: rgba(143, 80, 0, 0.14);
+  outline: 1px dashed var(--amber);
+  outline-offset: -1px;
+}
+.prow.swflash {
+  background: rgba(143, 80, 0, 0.25);
+}
+
 /* the wrap-stepper pairs: one spinbox stop around both buttons — the
    same 12px+2px+12px footprint the absolute buttons drew (the layout
    gate pins their rects and overlap) */

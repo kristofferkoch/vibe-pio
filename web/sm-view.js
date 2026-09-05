@@ -96,14 +96,17 @@ let curState = LEVEL ? PioLevels.programState(LEVEL) : savedState() || VD.newSta
 if (LEVEL) {
   LVSURF = PioLevels.applySurface(document, LEVEL);
   $('savestate').textContent = 'off';
-  // the listing's status narrates the level's own gestures: C35's L1
+  // the listing's status narrates the level's own gestures: C37's L4
+  // trades rows (the scrambler — the editor never opens), C35's L1
   // edits the delay cell (Enter or a digit), L2+ edits rows (the row
   // editor is authoring's debut), L0 only walks
-  $('progrows').dataset.status = LEVEL.opcodes.length
-    ? 'listing: ↑/↓ rows · Enter or a letter edits the row'
-    : lvUnlock('delayCol')
-      ? 'listing: ↑/↓ rows · Enter or a digit edits the [delay] cell — the instruction stays as given'
-      : 'listing: ↑/↓ rows — authoring arrives in a later level';
+  $('progrows').dataset.status = LEVEL.scramble
+    ? swNarration(false)
+    : LEVEL.opcodes.length
+      ? 'listing: ↑/↓ rows · Enter or a letter edits the row'
+      : lvUnlock('delayCol')
+        ? 'listing: ↑/↓ rows · Enter or a digit edits the [delay] cell — the instruction stays as given'
+        : 'listing: ↑/↓ rows — authoring arrives in a later level';
   // the chrome names the level, not the sandbox (nothing on the page
   // may claim features the level has not taught)
   document.title = `vibe-pio // levels — ${LEVEL.id.toUpperCase()} ${LEVEL.name}`;
@@ -198,7 +201,7 @@ function syncAsmContext() {
 
 // C36: the wave's sample count is level geometry — L5's 64 clk/cycle
 // renders a 512-sample window (the sandbox and the early levels keep 128)
-let WIN = (LEVEL && LEVEL.waveWin) || 128;
+const WIN = (LEVEL && LEVEL.waveWin) || 128;
 
 let PROG = BUILT.map((w, i) => ({ w, ...parseRow(wordsToRows(BUILT)[i]) }));
 
@@ -503,6 +506,7 @@ $('brun').onclick = run;
 $('breset').onclick = () => {
   pause();
   asmErr = null;
+  swMark(-1); // C37: a reset stands the trade's mark down with the machine
   rebuildListing(); // back to the stored program's listing
   // a level resets to itself — its program is the stored program
   post({ cmd: 'reset', state: curState });
@@ -1050,6 +1054,7 @@ function buildProgram() {
   $('freect').textContent = 32 - usedN;
   updateUnbuilt();
   applyRowCursor();
+  applySwapMark(); // C37: the scrambler's mark survives the rebuild
   renderAlloc();
   renderInspector();
 }
@@ -2193,6 +2198,9 @@ function openRow(i, focus, seed) {
   // C34: levels scope the editor to their opcode whitelist — an empty
   // whitelist (L0: chapter 0 has no authoring) never opens the editor
   if (LEVEL && !LEVEL.opcodes.length) return;
+  // C37: the scrambler owns its listing — the row editor never opens
+  // (the vocabulary is the given rows; the TRADE is the whole edit)
+  if (scrambleLive()) return;
   if (curRow >= 0 && !commitRow()) return; // the delay refusal keeps the editor put
   curRow = Math.max(0, Math.min(31, i));
   kc = curRow; // the listing cursor follows its editor anchor
@@ -2296,6 +2304,15 @@ HOST.addEventListener('click', (e) => {
   if (e.target.closest('#rowedit')) return;
   if (e.target.closest('#dlyedit')) return;
   const r = e.target.closest('.prow');
+  // C37: the scrambler's click-pair — the first click marks a row, the
+  // second trades the two rows' contents (a click on the marked row
+  // unmarks; a click on no row stands the mark down, the gutter pick's
+  // own rule). The gesture is the listing's, never the editor's.
+  if (scrambleLive()) {
+    if (r) swapGesture(+r.id.slice(2));
+    else if (swRow >= 0) swMark(-1);
+    return;
+  }
   // C35: in a delayCol-without-opcodes level the click edits the delay
   // cell (the row's one editable cell); openRow would no-op its empty
   // whitelist and leave the click dead
@@ -2309,7 +2326,10 @@ HOST.addEventListener('click', (e) => {
 // inserted. The editor's own cells have their own model (below). C35:
 // in a delayCol-without-opcodes level the same gestures address the
 // delay cell — Enter opens it, digits type ahead into it, letters are
-// not authoring and do nothing.
+// not authoring and do nothing. C37: in the scrambler the same keys
+// drive the TRADE — Enter marks, the arrows walk, Enter on another row
+// trades, Esc unmarks; letters author nothing (the given rows are the
+// whole vocabulary).
 HOST.addEventListener('keydown', (e) => {
   if (e.target !== HOST) return;
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -2319,10 +2339,16 @@ HOST.addEventListener('keydown', (e) => {
     $(`pr${kc}`)?.scrollIntoView({ block: 'nearest' });
   } else if (e.key === 'Enter') {
     e.preventDefault();
-    if (dlyLive()) openDly(kc);
+    if (scrambleLive()) swapGesture(kc);
+    else if (dlyLive()) openDly(kc);
     else openRow(kc, 'ins');
+  } else if (e.key === 'Escape' && scrambleLive() && swRow >= 0) {
+    e.preventDefault();
+    swMark(-1); // the mark stands down — nothing was traded
   } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    if (dlyLive() && /\d/.test(e.key)) {
+    if (scrambleLive()) {
+      e.preventDefault(); // the vocabulary is the given rows — no authoring
+    } else if (dlyLive() && /\d/.test(e.key)) {
       e.preventDefault();
       openDly(kc, e.key); // the digit the delay cell opened under
     } else if (!dlyLive()) {
@@ -2751,6 +2777,62 @@ DED.addEventListener('focusout', (e) => {
     commitDly(); // a click-away commits, exactly like the row editor
   }, 0);
 });
+
+// ---- C37: the scrambler — L4's row trade (comprehension by reordering) ---
+// The scramble level's whole edit: mark a row, mark another, their
+// CONTENTS trade places (the addresses never move — the jmp's target is
+// part of the given vocabulary, so WHERE a row sits is the puzzle). A
+// listing gesture like the gutter pick, not an editor mode: the row
+// editor never opens (openRow's guard), the delay cell neither, and the
+// mouse path and the keyboard path drive the same mark/trade state —
+// click-pair, or Enter + arrows + Enter per the C25 grammar.
+let swRow = -1; // the marked row (-1: no mark standing)
+const scrambleLive = () => !!LEVEL && !!LEVEL.scramble;
+// the mark's own key map — the status line narrates the standing mark
+function swNarration(marked) {
+  return marked
+    ? 'listing: row marked — Enter on another row trades them · Esc unmarks'
+    : 'listing: ↑/↓ rows · Enter marks a row — Enter on another trades them · Esc unmarks';
+}
+function applySwapMark() {
+  for (let i = 0; i < 32; i++) $(`pr${i}`)?.classList.toggle('swm', i === swRow);
+}
+function swMark(i) {
+  swRow = i;
+  applySwapMark();
+  HOST.dataset.status = swNarration(i >= 0);
+  updateStatus(); // the status line narrates the mark's next key
+}
+function swapRows(a, b) {
+  const t = ROWS[a];
+  ROWS[a] = ROWS[b];
+  ROWS[b] = t;
+  swMark(-1); // the mark is spent
+  buildAndPush(); // re-assemble the reordered rows, patch the engine image
+  buildProgram();
+  render(V.state);
+  // the traded pair flashes — the era-feedback idiom (flashWrap & co)
+  for (const i of [a, b]) {
+    const r = $(`pr${i}`);
+    if (!r) continue;
+    r.classList.add('swflash');
+    setTimeout(() => r.classList.remove('swflash'), 240);
+  }
+}
+// one mark/trade gesture from either input path: a row with no content
+// is not vocabulary (the given rows are), the marked row unmarks, and
+// two marked rows trade. A mark meeting a `·` row stands down — the
+// gesture can never complete there, and a dead click/Enter that leaves
+// the mark hanging reads as broken (the browser session caught it)
+function swapGesture(i) {
+  if (!ROWS[i]) {
+    if (swRow >= 0) swMark(-1);
+    return;
+  }
+  if (swRow < 0) swMark(i);
+  else if (swRow === i) swMark(-1);
+  else swapRows(swRow, i);
+}
 
 // ---- ds allocator: REAL PINCTRL/EXECCTRL writes through the overlay ----
 function allocChanged() {
