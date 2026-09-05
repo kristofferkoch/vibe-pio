@@ -46,15 +46,18 @@ import argparse
 import dataclasses
 import random
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 TOOLS = str(Path(__file__).resolve().parent)
 if TOOLS not in sys.path:
     sys.path.insert(0, TOOLS)
 
 import hyperequiv as HE  # noqa: E402
+from gen_level_goldens import assemble as gg_assemble  # noqa: E402
+from gen_level_goldens import parse_level_file as gg_parse_level_file  # noqa: E402
+from gen_level_goldens import pin_series as gg_pin_series  # noqa: E402
 from pio_model import asm, difftest, stim, tracefmt  # noqa: E402
 from pio_model import encoding as E  # noqa: E402
 from pio_model import model as M  # noqa: E402
@@ -874,6 +877,258 @@ def tamper_delay(ctx: SeedCtx, cand: Candidate) -> list[Candidate]:
 
 
 # ---------------------------------------------------------------------------
+# C36: level par — the Pareto front per level, derived and drift-checked.
+# KANBAN C36: "fronts from tools/hyperopt.py, numbers committed per level;
+# the hyperopt suite re-derives the front (drift-checked like the golden
+# vectors)". The front is over (imem words, clk/cycle) of programs that
+# pass the level's own monitor profile — the champion of that front is the
+# committed reference.par, so par is a derived number, never a guess.
+# ---------------------------------------------------------------------------
+
+# The honest solution space per level (design data, like gen_level_goldens'
+# PERTURBATIONS table): "wrap" = a whole-listing wrap loop over set rows
+# (the chapter-0/1 vocabulary; the level's pinned WRAP_TOP caps the words);
+# "prefix" = the boot listing's first row kept verbatim (the task IS that
+# row — L3's preamble must run once) with a jmp back edge closing a loop
+# over the rows above it. Every level under web/levels/ needs an entry.
+FRONT_CLASS: dict[str, str] = {
+    "l0": "wrap",
+    "l1": "wrap",
+    "l2": "wrap",
+    "l3": "prefix",
+    "l5": "wrap",
+}
+
+_ROW_MAX = 32  # one row's clks: the instruction plus at most 31 delay (SPEC-4-3)
+
+
+def _js_round_div(num: int, den: int) -> int:
+    """Math.round(num/den) for non-negative ints — round-half-up, exactly
+    the JS judge's duty arithmetic (Python's round() is banker's rounding
+    and disagrees at the .5 boundaries; a mirror that diverges from the
+    authority at a boundary tier is a wrong front).
+
+    >>> _js_round_div(100, 8)  # 12.5: Math.round says 13, round() says 12
+    13
+    >>> _js_round_div(300, 8)  # 37.5 -> 38
+    38
+    >>> _js_round_div(37 * 100, 64)  # 57.8125 -> 58
+    58
+    """
+    return (2 * num + den) // (2 * den)
+
+
+def _split_rows(clks: int) -> list[int]:
+    """The minimal delays covering `clks` ticks of one pin level: full
+    [31]s then the remainder (each row is 1+delay clks, delay 0..31 —
+    SPEC-4-3's 5-bit budget).
+
+    >>> _split_rows(1), _split_rows(16), _split_rows(32), _split_rows(48)
+    ([0], [15], [31], [31, 15])
+    >>> len(_split_rows(64))
+    2
+    """
+    if clks < 1:
+        raise ValueError("a pin-level run is at least one clk")
+    full, rem = divmod(clks, _ROW_MAX)
+    return [31] * full + ([rem - 1] if rem else [])
+
+
+def _set_rows(val: int, delays: Sequence[int]) -> list[str]:
+    """Canonical set rows for one pin-level run."""
+    return [f"set pins, {val} [{d}]" if d else f"set pins, {val}" for d in delays]
+
+
+def _square_judge(bits: str, tp: dict[str, int]) -> dict[str, Any]:
+    """The Python mirror of web/levels.js squareJudge — the JS gate stays
+    the authority (it replays the committed goldens); this mirror exists
+    so the front search can judge candidates without a browser. Same
+    semantics: rising edges -> periods -> duty, the `stable` tail within
+    the tier's bounds, `minPeriods` completed periods first.
+
+    >>> t = {"periodLo": 2, "periodHi": 2, "dutyLoPct": 40, "dutyHiPct": 60, "minPeriods": 2, "stable": 2}
+    >>> _square_judge("0010101010", t)["pass"]
+    True
+    >>> _square_judge("0010000000", t)["verdict"]
+    '1 rising edge — keep watching'
+    >>> _square_judge("001010110110110", t)["verdict"]
+    'period 3 clk — outside (2..2 clk)'
+    """
+    rising = [k for k in range(1, len(bits)) if bits[k - 1] == "0" and bits[k] == "1"]
+    cycles = []
+    for i in range(1, len(rising)):
+        period = rising[i] - rising[i - 1]
+        hi = sum(1 for k in range(rising[i - 1], rising[i]) if bits[k] == "1")
+        cycles.append((period, _js_round_div(100 * hi, period)))
+    if not rising:
+        return {"pass": False, "verdict": "no blink yet — the pin never rose", "period": None}
+    if len(cycles) < tp["minPeriods"]:
+        return {
+            "pass": False,
+            "verdict": f"{len(rising)} rising edge{'s' if len(rising) != 1 else ''} — keep watching",
+            "period": None,
+        }
+    last = cycles[-tp["stable"] :]
+    for p, _duty in last:
+        if not tp["periodLo"] <= p <= tp["periodHi"]:
+            return {
+                "pass": False,
+                "verdict": f"period {p} clk — outside ({tp['periodLo']}..{tp['periodHi']} clk)",
+                "period": p,
+            }
+    for p, duty in last:
+        if not tp["dutyLoPct"] <= duty <= tp["dutyHiPct"]:
+            return {
+                "pass": False,
+                "verdict": f"duty {duty}% — outside ({tp['dutyLoPct']}..{tp['dutyHiPct']}%)",
+                "period": p,
+            }
+    return {"pass": True, "verdict": "", "period": last[-1][0]}
+
+
+def _wrap_listings(tp: dict[str, int], max_words: int) -> Iterator[tuple[int, int, list[str]]]:
+    """Every minimal-words whole-listing wrap loop per (period, duty) the
+    tier accepts: alternating hi/lo runs of set rows, each run packed to
+    [31]s (extra same-value runs or jmp rows only add words or hide time
+    — always dominated). -> (words, predicted period, listing)."""
+    for period in range(max(2, tp["periodLo"]), tp["periodHi"] + 1):
+        for hi in range(1, period):
+            duty = _js_round_div(100 * hi, period)
+            if not tp["dutyLoPct"] <= duty <= tp["dutyHiPct"]:
+                continue
+            rows = _set_rows(1, _split_rows(hi)) + _set_rows(0, _split_rows(period - hi))
+            if len(rows) > max_words:
+                continue
+            yield len(rows), period, rows
+
+
+def _prefix_listings(tp: dict[str, int], max_words: int, prefix: list[str]) -> Iterator[tuple[int, int, list[str]]]:
+    """L3's class: the boot's first row kept verbatim (the preamble runs
+    once), a loop of hi/lo set rows above it closed by a jmp back edge —
+    the jmp's own 1+delay clks hold the loop's last pin level. Both loop
+    orders enumerate (ends-low and ends-high: the jmp's clks count toward
+    whichever level it holds). -> (words, predicted period, listing)."""
+    entry = len(prefix)
+    for period in range(max(2, tp["periodLo"]), tp["periodHi"] + 1):
+        for hi in range(1, period):
+            hi_rows = _set_rows(1, _split_rows(hi))
+            for lo in range(1, period - hi):
+                d = period - hi - lo - 1  # the jmp row's delay
+                if not 0 <= d <= 31:
+                    continue
+                for ends_low in (True, False):
+                    eff_hi = hi if ends_low else hi + 1 + d
+                    duty = _js_round_div(100 * eff_hi, period)
+                    if not tp["dutyLoPct"] <= duty <= tp["dutyHiPct"]:
+                        continue
+                    lo_rows = _set_rows(0, _split_rows(lo))
+                    jmp = f"jmp {entry} [{d}]" if d else f"jmp {entry}"
+                    loop = (hi_rows + lo_rows + [jmp]) if ends_low else (lo_rows + hi_rows + [jmp])
+                    rows = list(prefix) + loop
+                    if len(rows) > max_words:
+                        continue
+                    yield len(rows), period, rows
+
+
+def derive_level_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, list[str]]]:
+    """One level's verified Pareto front: enumerate the class's
+    minimal-words candidates per (period, duty), run each DISTINCT
+    (words, period) point through the goldens' own load timeline
+    (pio_model, gen_level_goldens.pin_series), judge with the level's
+    active tier over the full series AND the waveWin window (the browser
+    judges the window — both must pass), then pareto_front on
+    (words, period). A candidate whose model period disagrees with the
+    prediction raises: the analytic enumeration and the model must never
+    drift apart silently. -> sorted [(words, period, champion listing)].
+    """
+    kind = FRONT_CLASS[lid]
+    prof = defn["profile"]
+    tp = prof["tiers"][prof["tier"]]
+    sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
+    wrap_top = (sms[0] or {}).get("execctrl", {}).get("wrapTop", 31)
+    max_words = wrap_top + 1  # the pinned wrap caps the live rows
+    prefix = defn["program"]["listing"][:1] if kind == "prefix" else []
+    enum = _prefix_listings(tp, max_words, prefix) if kind == "prefix" else _wrap_listings(tp, max_words)
+
+    seen: dict[tuple[int, int], list[str]] = {}
+    for words, period, listing in enum:
+        seen.setdefault((words, period), listing)
+    evs: list[Evaluated] = []
+    listings: dict[tuple[int, int], list[str]] = {}
+    for (words, period), listing in sorted(seen.items()):
+        w32 = gg_assemble(listing, sms[0], f"front:{lid}") + [0] * (32 - len(listing))
+        series = gg_pin_series(w32, sms, prof["pin"])
+        win = defn.get("waveWin", 128)
+        v_full = _square_judge(series, tp)
+        v_win = _square_judge(series[-win:], tp)
+        if not (v_full["pass"] and v_win["pass"]):
+            continue  # the analytic point is not a real solution — drop it
+        if v_full["period"] != period:
+            raise SystemExit(f"front {lid}: {listing} predicted period {period}, the model says {v_full['period']}")
+        # the candidate carries the UNPADDED image so pareto_front's word
+        # axis counts rows, not the 32-slot mirror
+        evs.append(
+            Evaluated(
+                cand=_cand(tuple(w32[:words]), 0, tuple(range(words)), ()),
+                screen=Screening(ok=True, div=None),
+                period=period,
+            )
+        )
+        listings[(words, period)] = listing
+    front = sorted(pareto_front(evs), key=lambda e: (len(e.cand.words), e.period or 0))
+    return [(len(e.cand.words), e.period or 0, listings[(len(e.cand.words), e.period or 0)]) for e in front]
+
+
+def level_front_report(repo: Path = REPO) -> dict[str, list[tuple[int, int, list[str]]]]:
+    """Every level's derived front (id -> sorted (words, period, listing))."""
+    out: dict[str, list[tuple[int, int, list[str]]]] = {}
+    for path in sorted((repo / "web" / "levels").glob("*.js")):
+        lid, defn = gg_parse_level_file(path)
+        if lid not in FRONT_CLASS:
+            raise SystemExit(f"{lid}: no FRONT_CLASS entry — every level's par needs its honest solution space")
+        out[lid] = derive_level_front(lid, defn)
+    return out
+
+
+def level_front_checks(repo: Path = REPO) -> list[tuple[str, bool]]:
+    """The C36 par drift gate: every level's committed reference.par must
+    equal the derived front's champion (fewest words, then fewest clks),
+    and the committed reference solution must pass its own profile within
+    par on both axes. The red side runs in-process: a tampered par (one
+    word too generous) must be flagged — a check that only ever passed
+    may be vacuous.
+    """
+    checks: list[tuple[str, bool]] = []
+    fronts = level_front_report(repo)
+    for lid, front in sorted(fronts.items()):
+        _, defn = gg_parse_level_file(repo / "web" / "levels" / f"{lid}.js")
+        par = defn["reference"]["par"]
+        champion = (front[0][0], front[0][1]) if front else None
+        checks.append((f"front-{lid}-par", champion == (par["words"], par["period"])))
+        prof = defn["profile"]
+        tp = prof["tiers"][prof["tier"]]
+        sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
+        ref = defn.get("reference", {}).get("listing") or defn["program"]["listing"]
+        w32 = gg_assemble(ref, sms[0], f"ref:{lid}") + [0] * (32 - len(ref))
+        v = _square_judge(gg_pin_series(w32, sms, prof["pin"]), tp)
+        used = len([w for w in w32 if w])
+        checks.append(
+            (
+                f"front-{lid}-reference",
+                bool(v["pass"]) and used <= par["words"] and (v["period"] or 0) <= par["period"],
+            )
+        )
+    # the red side: one word of slack must be flagged as drift
+    if fronts:
+        lid = min(fronts)
+        front = fronts[lid]
+        champion = (front[0][0], front[0][1]) if front else None
+        tampered = (champion[0] + 1, champion[1]) if champion else (0, 0)
+        checks.append((f"front-{lid}-red-tampered", champion != tampered))
+    return checks
+
+
+# ---------------------------------------------------------------------------
 # Self-test (make hyperopt): hermetic + end-to-end.
 # ---------------------------------------------------------------------------
 
@@ -1016,6 +1271,9 @@ def _self_test_hermetic() -> list[tuple[str, bool]]:
 
 def self_test() -> int:
     checks = _self_test_hermetic()
+    # C36: the level par fronts re-derive and match the committed numbers
+    # (needs only pio_model + the repo's level files — no sby)
+    checks += level_front_checks()
     if HE.toolchain() is None:
         print("no sby on PATH and no vibe-pio container image — end-to-end cases cannot run")
         for name, _ in checks:
@@ -1059,10 +1317,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--timeout", type=int, default=600, help="per-case sby wall-clock seconds")
     ap.add_argument("--rng", type=int, default=1, help="search RNG seed")
     ap.add_argument("--self-test", action="store_true", help="run the committed self-test suite")
+    ap.add_argument(
+        "--level-fronts",
+        action="store_true",
+        help="C36: derive every level's par front and check the committed numbers (no sby needed)",
+    )
     args = ap.parse_args(argv)
 
     if args.self_test:
         return self_test()
+    if args.level_fronts:
+        ok = True
+        for lid, front in sorted(level_front_report().items()):
+            par = gg_parse_level_file(REPO / "web" / "levels" / f"{lid}.js")[1]["reference"]["par"]
+            match = bool(front) and (front[0][0], front[0][1]) == (par["words"], par["period"])
+            ok = ok and match
+            points = " ".join(f"{w}w/{p}clk" for w, p, _ in front)
+            print(f"  {'ok  ' if match else 'DRIFT'} {lid}: front [{points}] vs par {par['words']}w/{par['period']}clk")
+            for _w, _p, listing in front[:1]:
+                print(f"        champion: {' | '.join(listing)}")
+        return 0 if ok else 1
     if args.seed is None or args.seed == "list":
         print("conformance seeds:", " ".join(sorted(SEED_TABLE)))
         return 0

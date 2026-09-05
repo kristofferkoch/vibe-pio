@@ -37,6 +37,9 @@
 //   {cmd:'drive', pin, level}   → a hold-latch pin drive (null releases)
 //   {cmd:'pattern', cfg}        → the pattern generator (off/square/bits)
 //   {cmd:'lens', mode, pin}     → the monitor lens (off/square/uart)
+//   {cmd:'wavewin', n}          → the wave window's sample count (C36:
+//                                 level geometry — L5's slow wave judges
+//                                 a 512-sample window; clamped in-driver)
 //   {cmd:'drain', n, sm}        → queue n RXFx reads of SM sm (the RX
 //                                 drain)
 //   {cmd:'regread', addr}       → a queued read, flushed; reply carries
@@ -137,6 +140,10 @@ onmessage = (e) => {
         break;
       case 'lens':
         drv.setLens({ mode: m.mode || 'off', pin: m.pin | 0 });
+        postState();
+        break;
+      case 'wavewin':
+        drv.setWaveWin(m.n | 0);
         postState();
         break;
       case 'drain': {

@@ -5,6 +5,8 @@ the search / Pareto / period / schedule-rebuild machinery. Hermetic —
 synthetic programs only; the sbacked end-to-end certifications are the
 `make hyperopt` gate (tools/hyperopt.py --self-test)."""
 
+import shutil
+
 import hyperopt as H
 import pytest
 from pio_model import encoding as E
@@ -340,3 +342,54 @@ def test_delete_word_relocates_jumps_and_wrap() -> None:
 def test_tick_burner_classification(word: int, expect: int | None) -> None:
     ctx = _ctx([word, SET0], 0x1000)
     assert H._tick_burner(ctx, ctx.words, 0) == expect
+
+
+# -- C36: level par — the front derivation and the drift gate ---------------
+
+
+def test_split_rows_packs_the_5bit_budget() -> None:
+    assert H._split_rows(1) == [0]
+    assert H._split_rows(32) == [31]
+    assert H._split_rows(33) == [31, 0]
+    assert H._split_rows(48) == [31, 15]
+    assert H._split_rows(64) == [31, 31]
+
+
+def test_square_judge_mirror_reds_and_greens() -> None:
+    t = {"periodLo": 4, "periodHi": 4, "dutyLoPct": 15, "dutyHiPct": 40, "minPeriods": 2, "stable": 2}
+    ok = _square_bits(4, 1) * 6
+    assert H._square_judge(ok, t)["pass"] is True
+    assert H._square_judge(ok, t)["period"] == 4
+    # period wrong: the cost lesson's verdict, legible
+    assert "period 5" in H._square_judge(_square_bits(5, 1) * 6, t)["verdict"]
+    # duty wrong (50%): the duty verdict names the window
+    assert "duty 50%" in H._square_judge(_square_bits(4, 2) * 6, t)["verdict"]
+    # not enough periods yet: keep watching (one completed rising edge,
+    # preceded by a low sample so the edge is in view)
+    assert "keep watching" in H._square_judge("0" + _square_bits(4, 1, n=1), t)["verdict"]
+    # never rose
+    assert "never rose" in H._square_judge("0" * 40, t)["verdict"]
+
+
+def _square_bits(period: int, hi: int, n: int = 8) -> str:
+    return ("1" * hi + "0" * (period - hi)) * n
+
+
+def test_level_fronts_match_the_committed_pars() -> None:
+    checks = H.level_front_checks()
+    assert checks, "the drift gate must cover every level under web/levels/"
+    bad = [name for name, ok in checks if not ok]
+    assert not bad, f"par drift: {bad}"
+
+
+def test_level_front_checks_flag_a_tampered_par(tmp_path) -> None:
+    # the red side: one word of slack in a committed par must be flagged —
+    # a drift check that only ever passed may be vacuous
+    (tmp_path / "web").mkdir()
+    shutil.copytree(H.REPO / "web" / "levels", tmp_path / "web" / "levels")
+    p = tmp_path / "web" / "levels" / "l0.js"
+    assert '"words": 2' in p.read_text()  # the par line is the only hit
+    p.write_text(p.read_text().replace('"words": 2', '"words": 3'))
+    checks = dict(H.level_front_checks(tmp_path))
+    assert checks["front-l0-par"] is False
+    assert checks["front-l0-reference"] is True  # the reference still fits within the lying par

@@ -382,3 +382,193 @@ test('par dominates the l1/l2 reference solutions on both axes', () => {
     assert.ok(v.period <= L.reference.par.period, `${L.id}: ${v.period} clk/cycle > par`);
   }
 });
+
+// ---- C36: L3 Two ways to loop — jmp debuts with a job ----------------------
+// Chapter 1 opens: a task wrap cannot do. The boot ships L2's answer
+// transplanted after a once-preamble (row 0), and the pinned wrap
+// (0..3) loops the WHOLE listing — the flash comes round every period,
+// the exact tier reds it, and the only way out is a jmp back edge that
+// skips row 0. The cost lesson is a golden: the naive jmp port of L2's
+// rows runs one clk slower (period 5) — jmp eats a slot AND a cycle,
+// wrap eats neither (the par line says 4 words · 4 clk; L2's par said
+// the same wave in 2 words · 4 clk with no back-edge clk at all).
+require('../levels/l3.js');
+const L3 = PioLevels.get('l3');
+const G3 = GOLDEN.levels.l3;
+
+test('l3 registers complete: chapter 1, jmp on the leash, no gate', () => {
+  assert.equal(L3.id, 'l3');
+  assert.equal(L3.name, 'Two ways to loop');
+  assert.equal(L3.chapter, 1);
+  assert.ok(L3.goal.length > 8);
+  // the boot: L2's answer after a once-preamble, wrap over the listing
+  assert.deepEqual(L3.program.listing, ['set pins, 1 [7]', 'set pins, 1', 'set pins, 0 [2]']);
+  assert.equal(L3.program.sms[0].execctrl.wrapTop, 3);
+  assert.equal(L3.program.sms[0].execctrl.wrapBot, 0);
+  assert.ok(L3.panels.includes('delayCol'), 'the delay cell stays in scope');
+  assert.ok(!L3.panels.includes('sideCol'), 'no side column until chapter 4');
+  assert.ok(!L3.panels.includes('wrapSteppers'), 'the wrap steppers stay locked');
+  // the leash grows its first structural opcode: set + jmp, exactly
+  assert.deepEqual(L3.opcodes, ['set', 'jmp']);
+  // the same steady wave as L2 (the 1:3), judged at the exact tier
+  assert.equal(L3.profile.v, 1);
+  assert.equal(L3.profile.tier, 'exact');
+  assert.equal(L3.profile.tiers.exact.periodLo, 4);
+  assert.equal(L3.profile.tiers.exact.periodHi, 4);
+  // modify-from-given: no predict card, the gate never locks
+  assert.equal(PioLevels.gateOpen(L3, {}), true);
+  // the shipped answer: preamble kept, jmp back edge, one delay shaved
+  assert.deepEqual(L3.reference.listing, [
+    'set pins, 1 [7]',
+    'set pins, 1',
+    'set pins, 0 [1]',
+    'jmp 1',
+  ]);
+  assert.deepEqual(L3.reference.par, { words: 4, period: 4 });
+});
+
+test('the l3 leash: the menu offers set and jmp — the chapter-1 vocabulary', () => {
+  const wl = { opcodes: L3.opcodes };
+  assert.deepEqual(
+    RowComplete.analyze('', wl).cands.map((c) => c.t),
+    ['jmp', 'set'],
+    'the mnemonic menu offers exactly the unlocked set (jmp first — the C32 order)',
+  );
+  // jmp's own slots stay live under the leash: digits are the target
+  assert.ok(RowComplete.analyze('jm', wl).cands.some((c) => c.t === 'jmp'));
+  assert.ok(RowComplete.analyze('jmp ', wl).cands.length >= 0, "jmp's target slot stays in play");
+  // the still-locked majority stays silent
+  assert.deepEqual(RowComplete.analyze('wa', wl).cands, []);
+  assert.deepEqual(RowComplete.analyze('pull', wl).cands, []);
+});
+
+test('the l3 wave contract: boot reds (the wrap cannot skip row 0), reference greens', () => {
+  // the boot: the whole-listing wrap re-runs the preamble — one long
+  // flash every 13 clk, legibly outside the 4-clk window
+  const boot = PioLevels.judge(bits(G3.boot.series), L3.profile);
+  assert.equal(boot.pass, false);
+  assert.match(boot.verdict, /period 13 .*outside/);
+  // the reference: the steady 1:3 — full series and the wave window
+  const ref = caseOf(G3, 'reference');
+  const full = PioLevels.judge(bits(ref.series), L3.profile);
+  assert.equal(full.pass, true, full.verdict);
+  assert.equal(full.period, 4);
+  assert.equal(full.dutyPct, 25);
+  assert.equal(PioLevels.judge(bits(ref.series).slice(-128), L3.profile).pass, true);
+  // the cost lesson, as a golden: the naive jmp port of L2's rows runs
+  // one clk slower — jmp costs the cycle wrap does not
+  const naive = PioLevels.judge(bits(caseOf(G3, 'jmp-cost').series), L3.profile);
+  assert.equal(naive.pass, false);
+  assert.match(naive.verdict, /period 5 .*outside/);
+  // the wrong target: jmp 0 re-runs the preamble — structure, not syntax
+  const j0 = PioLevels.judge(bits(caseOf(G3, 'jmp-target-0').series), L3.profile);
+  assert.equal(j0.pass, false);
+  assert.match(j0.verdict, /period 12 .*outside/);
+});
+
+test('l3 words are pio_model-equal and canonically spelled', () => {
+  const prog = PioAsm.createProgram('c36-l3');
+  prog.sidesetBits = 0;
+  for (const row of [...L3.program.listing, ...L3.reference.listing]) {
+    const w = PioAsm.assembleInstruction(row, prog, {}, `l3 row ${row}`);
+    assert.equal(PioAsm.disassemble(w, false, 0), row, `${row} is not the canonical spelling`);
+  }
+  const st = PioLevels.programState(L3, PioAsm, VibeDriver);
+  assert.deepEqual(st.words, G3.boot.words, 'the page boots the golden boot words');
+  const words = new Array(32).fill(0);
+  L3.reference.listing.forEach((row, i) => {
+    words[i] = PioAsm.assembleInstruction(row, prog, {}, `l3 ref row ${i}`);
+  });
+  assert.deepEqual(words, G3.words, 'the reference assembles to the golden words');
+});
+
+// ---- C36: L5 The long blink — the [31] ceiling and the ds budget -----------
+// The stretch level of chapter 1: the same 1:3 wave, sixteen times
+// slower — high 16 of every 64 clk. No single row can wait 48 clk
+// (SPEC-4-3's 5-bit budget), so the low time must split across rows;
+// the wave window grows to see enough periods of the slow wave.
+require('../levels/l5.js');
+const L5 = PioLevels.get('l5');
+const G5 = GOLDEN.levels.l5;
+
+test('l5 registers complete: the long blink, the 512-sample window', () => {
+  assert.equal(L5.id, 'l5');
+  assert.equal(L5.name, 'The long blink');
+  assert.equal(L5.chapter, 1);
+  assert.ok(L5.goal.length > 8);
+  // from scratch: the listing boots EMPTY
+  assert.deepEqual(L5.program.listing, []);
+  assert.equal(L5.program.sms[0].execctrl.wrapTop, 2);
+  assert.equal(L5.program.sms[0].execctrl.wrapBot, 0);
+  // the wave window: 64 clk/cycle needs 512 samples to hold the judge's
+  // stability window (the level page is its own geometry — the sandbox
+  // keeps 128)
+  assert.equal(L5.waveWin, 512);
+  // the chapter-1 vocabulary stays unlocked (knowledge is monotone)
+  assert.deepEqual(L5.opcodes, ['set', 'jmp']);
+  assert.equal(L5.profile.tier, 'exact');
+  assert.equal(L5.profile.tiers.exact.periodLo, 64);
+  assert.equal(L5.profile.tiers.exact.periodHi, 64);
+  assert.equal(PioLevels.gateOpen(L5, {}), true);
+  // the shipped answer: the 1:3 split — [15] / [31]+[15]
+  assert.deepEqual(L5.reference.listing, [
+    'set pins, 1 [15]',
+    'set pins, 0 [31]',
+    'set pins, 0 [15]',
+  ]);
+  assert.deepEqual(L5.reference.par, { words: 3, period: 64 });
+});
+
+test('the l5 wave contract: reference greens in both windows, near-misses red legibly', () => {
+  const ref = caseOf(G5, 'reference');
+  const full = PioLevels.judge(bits(ref.series), L5.profile);
+  assert.equal(full.pass, true, full.verdict);
+  assert.equal(full.period, 64);
+  assert.equal(full.dutyPct, 25);
+  // the browser judges the wave window — at 64 clk/cycle that window is
+  // the level's own 512 samples, and the verdict must not depend on it
+  assert.equal(PioLevels.judge(bits(ref.series).slice(-512), L5.profile).pass, true);
+  // the empty boot never rises
+  const boot = PioLevels.judge(bits(G5.boot.series), L5.profile);
+  assert.equal(boot.pass, false);
+  assert.match(boot.verdict, /never rose/);
+  // the near-miss: one delay short of the split (period 63)
+  const off1 = PioLevels.judge(bits(caseOf(G5, 'off-by-one').series), L5.profile);
+  assert.equal(off1.pass, false);
+  assert.match(off1.verdict, /period 63 .*outside/);
+  // the forgotten third row: period 48
+  assert.equal(PioLevels.judge(bits(caseOf(G5, 'one-row-short').series), L5.profile).pass, false);
+  // both halves maxed at [31]: under the pinned wrap the two-row program
+  // runs through the `·` row (a jmp 0 — it costs a clk), so period 65:
+  // the empty row is not free, and the verdict says so
+  const mx = PioLevels.judge(bits(caseOf(G5, 'both-maxed').series), L5.profile);
+  assert.equal(mx.pass, false);
+  assert.match(mx.verdict, /period 65 .*outside/);
+});
+
+test('l5 words are pio_model-equal and canonically spelled', () => {
+  const prog = PioAsm.createProgram('c36-l5');
+  prog.sidesetBits = 0;
+  for (const row of L5.reference.listing) {
+    const w = PioAsm.assembleInstruction(row, prog, {}, `l5 row ${row}`);
+    assert.equal(PioAsm.disassemble(w, false, 0), row, `${row} is not the canonical spelling`);
+  }
+  assert.ok(PioLevels.programState(L5, PioAsm, VibeDriver).words.every((w) => w === 0));
+  const words = new Array(32).fill(0);
+  L5.reference.listing.forEach((row, i) => {
+    words[i] = PioAsm.assembleInstruction(row, prog, {}, `l5 ref row ${i}`);
+  });
+  assert.deepEqual(words, G5.words, 'the reference assembles to the golden words');
+});
+
+test('par dominates the l3/l5 reference solutions on both axes', () => {
+  for (const [L, G] of [
+    [L3, G3],
+    [L5, G5],
+  ]) {
+    const used = G.words.filter((w) => w !== 0).length;
+    assert.ok(used <= L.reference.par.words, `${L.id}: ${used} words > par`);
+    const v = PioLevels.judge(bits(G.cases[0].series), L.profile);
+    assert.ok(v.period <= L.reference.par.period, `${L.id}: ${v.period} clk/cycle > par`);
+  }
+});

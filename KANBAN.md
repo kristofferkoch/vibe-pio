@@ -313,18 +313,57 @@ cells by mouse, PASS + par reveal, 99-refusal, solved reload; L2:
 author the 1:3 wave through the leashed editor, PASS at 25% duty),
 make web re-verified.
 
-C36 — jmp debuts with a job, and par reveals the cost — L3 Two ways
-to loop: a task wrap cannot do (run a preamble once, then loop a
-different region), so `jmp` arrives as structure, not syntax; then
-the committed par line reveals what the player is meant to discover —
-wrap is free, jmp costs a slot and a cycle (the same wave, one cycle
-faster with wrap alone). L5 The long blink: the [31] delay ceiling
-and the first feel of the 5-bit ds budget (all five bits are delay
-until sideset exists — the allocator itself stays hidden until
-ch.4). Par machinery: fronts from tools/hyperopt.py, numbers
-committed per level; levels.test.js asserts reference ≤ par on both
-axes, the hyperopt suite re-derives the front (drift-checked like
-the golden vectors).
+C36 landed 2026-09-05: jmp debuts with a job, and par reveals the
+cost. L3 Two ways to loop (chapter 1): the boot ships L2's answer
+transplanted after a once-preamble (`set pins, 1 [7]`) with the wrap
+pinned over the whole listing (steppers still locked), so the wrap loop
+drags the flash round — the boot reds legibly at period 13 and only a
+jmp back edge that skips row 0 escapes it; the leash grows to set+jmp
+(the gutter-pick candidate unlocked with it), and the cost lesson ships
+as goldens — the naive port (keep [2], add `jmp 1`) reds at period 5
+(jmp eats a cycle wrap does not) and `jmp 0` reds at 12 (the target is
+the structure). Reference `jmp 1` + row 2 shaved to [1]; par 4 words ·
+4 clk — the derived front champion, and against L2's par (2 words ·
+4 clk, no back-edge clk) the player reads that wrap is free. L5 The
+long blink: the same 1:3 wave ×16 — high 16 of 64, the 48-clk low
+split [31]+[15] (one row cannot hold it); the row editor's delay cell
+now refuses > [31] like L1's #dlyedit does (the assembler — pioasm-
+faithful — would silently mask [48] to [16]; the refusal keeps the
+edit open with the 5-bit reason on the status line), and the
+both-halves-maxed perturbation teaches that the `·` row is a jmp 0
+that costs a clk (period 65). The wave window became level geometry:
+`waveWin` in the level format (validator bounds it against the tier),
+driver `setWaveWin` (128..1024 clamped, default 128 — the sandbox
+untouched) + the worker cmd + the view's WIN follow it; L5 runs a
+512-sample window so the judge's stability window sees whole 64-clk
+periods. Par machinery: fronts derived in tools/hyperopt.py —
+FRONT_CLASS names each level's honest solution space (wrap loops over
+set rows under the pinned WRAP_TOP; L3's prefix class keeps the
+preamble row and closes the loop with the jmp), every distinct
+(words, period) point is model-verified through the goldens' own load
+timeline (full series and window both) against _square_judge — the
+Python mirror of squareJudge with Math.round's half-up semantics —
+and the committed par must equal the front champion (l0–l2's hand-set
+pars were already front-exact). The drift gate: tests/test_hyperopt.py
+(a tampered tree must red), `hyperopt.py --level-fronts`, and the
+self-test's hermetic section (make hyperopt). The browser session
+(L3: boot red, naive red, solve, PASS + par reveal, solved reload;
+L5: [48] refused loudly, split, PASS + par) also caught a shell bug:
+a level RESET re-posted the stale boot program — level pages never
+take the autosave round-trip, so curState.words never followed edits —
+buildAndPush now keeps the stored-program copy current (red: reset+run
+showed the boot's period 13 under the solution listing; green: reset
+restarts the edited program). Gates: levels.test.js (27 checks — the
+l3/l5 legs ran red first: the level files did not exist), the walk's
+L3/L5 legs (ran red without the level files — the page boots the
+sandbox and Tab finds bempty/bdemo/…; the eddly refusal ran red with
+the guard re-injected-out: the walk timed out on "the refused commit
+keeps the cell open"), engine-driver's setWaveWin check (red: not a
+function), make js 170 green, make web re-verified (the driver change
+rides the client gate). make py was already red on HEAD before C36
+(five pre-existing ruff findings plus one unformatted file, all in
+files this card does not own — left as found; C36's own files are
+clean, pytest 186 green).
 
 C37 — the scrambler — comprehension by reordering (Parsons). L4: rows
 shuffled, the task is to reorder them until the wave matches; the

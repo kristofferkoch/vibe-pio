@@ -196,7 +196,9 @@ function syncAsmContext() {
   ASM_PROG.sidesetOpt = a.opt;
 }
 
-const WIN = 128;
+// C36: the wave's sample count is level geometry — L5's 64 clk/cycle
+// renders a 512-sample window (the sandbox and the early levels keep 128)
+let WIN = (LEVEL && LEVEL.waveWin) || 128;
 
 let PROG = BUILT.map((w, i) => ({ w, ...parseRow(wordsToRows(BUILT)[i]) }));
 
@@ -282,6 +284,9 @@ worker.onmessage = (e) => {
     const b = $('boot');
     if (b) b.remove();
     enableCtrls(true);
+    // C36: a slow-wave level widens the window BEFORE the first sample —
+    // the wave and the judge see the level's own geometry from clk one
+    if (LEVEL?.waveWin) post({ cmd: 'wavewin', n: LEVEL.waveWin });
     post({ cmd: 'load', state: curState });
     applyUrlParams();
     return;
@@ -1928,6 +1933,12 @@ function buildAndPush() {
   asmErr = r.err || null;
   if (!asmErr) {
     BUILT = r.words;
+    // C36: the stored-program copy follows the build. A level page never
+    // takes the autosave round-trip (levels ignore the sandbox's shared
+    // state), so without this a level RESET would re-post the stale boot
+    // words while the listing kept the edits — the machine and the page
+    // would disagree. Reset restarts the EDITED program, never un-edits it.
+    curState.words = BUILT.slice();
     const rows = wordsToRows(BUILT);
     PROG = BUILT.map((w, i) => ({ w, ...parseRow(rows[i]) }));
     post({ cmd: 'program', words: BUILT });
@@ -2182,7 +2193,7 @@ function openRow(i, focus, seed) {
   // C34: levels scope the editor to their opcode whitelist — an empty
   // whitelist (L0: chapter 0 has no authoring) never opens the editor
   if (LEVEL && !LEVEL.opcodes.length) return;
-  if (curRow >= 0) commitRow();
+  if (curRow >= 0 && !commitRow()) return; // the delay refusal keeps the editor put
   curRow = Math.max(0, Math.min(31, i));
   kc = curRow; // the listing cursor follows its editor anchor
   applyRowCursor();
@@ -2202,8 +2213,37 @@ function openRow(i, focus, seed) {
   edSel = 0;
   popupShow(true); // a new row reopens the list (C31)
 }
+// C36: the delay cell refuses what the 5-bit field cannot hold — L5's
+// ceiling must be legible on the authoring path too (#dlyedit already
+// refuses for the delay-only levels). Without this the assembler would
+// silently mask [48] to [16]: truthful on the re-decoded face, but a
+// surprise with no reason. The edit stays open until it fits or cancels,
+// the same contract #dlyedit keeps.
+let edDlyTimer = 0;
+function edDlyRefused() {
+  const t = DLY.value.trim();
+  return /^\d+$/.test(t) && +t > maxDelay() ? +t : null;
+}
+function edDlyDeny(n) {
+  RE.dataset.status = `delay ${n} won't fit — the field is 0..${maxDelay()}`;
+  updateStatus();
+  DLY.classList.remove('deny');
+  void DLY.offsetWidth;
+  DLY.classList.add('deny');
+  clearTimeout(edDlyTimer);
+  edDlyTimer = setTimeout(() => {
+    DLY.classList.remove('deny');
+    RE.dataset.status = POP.hidden ? ROWED_KEYS_CLOSED : ROWED_KEYS_OPEN;
+    updateStatus();
+  }, 1600);
+}
 function commitRow() {
-  if (curRow < 0) return;
+  if (curRow < 0) return true;
+  const bad = edDlyRefused();
+  if (bad !== null) {
+    edDlyDeny(bad);
+    return false; // the caller keeps the editor where it is
+  }
   ROWS[curRow] = edRowText(); // the preview showed exactly this assembly
   kc = curRow;
   curRow = -1;
@@ -2215,6 +2255,7 @@ function commitRow() {
   buildAndPush(); // C19: re-assemble; on success patch the engine image
   buildProgram();
   render(V.state);
+  return true;
 }
 function cancelRow() {
   curRow = -1;
@@ -2226,7 +2267,7 @@ function cancelRow() {
 }
 function hopRow(delta, focus) {
   const n = Math.max(0, Math.min(31, curRow + delta));
-  commitRow();
+  if (!commitRow()) return; // the delay refusal keeps the editor open
   openRow(n, focus);
 }
 function insertAtCaret(txt) {

@@ -64,7 +64,7 @@ from webbuild import _SandboxMirror  # noqa: E402  (the client gate's own load-t
 
 FIXTURE = REPO / "web" / "tests" / "levels-golden.json"
 LEVELS_DIR = REPO / "web" / "levels"
-RUN_CLKS = 256  # ~128 periods of the L0 wave: plenty for every tier's stability window
+RUN_CLKS = 512  # the L5 wave needs ~8 of its 64-clk periods for the exact tier's stability window
 
 # hardware-reset overlay values (engine-driver.js newSm / model.py *_RESET)
 # — the level's overlay merges over these before composing.
@@ -105,6 +105,24 @@ PERTURBATIONS: dict[str, list[tuple[str, list[str]]]] = {
     "l2": [
         ("l1-answer", ["set pins, 1 [3]", "set pins, 0 [3]"]),  # duty 50: last level's answer, this level's red
         ("nop-wait", ["set pins, 1", "nop [4]"]),  # the opcode-locked belief: nop doesn't bring the pin low
+    ],
+    # C36 L3: jmp debuts — the cost lesson and the target lesson, as
+    # goldens. The naive port keeps L2's delays and adds the back edge:
+    # period 5, one clk slower than the wave it came from (jmp costs a
+    # cycle wrap does not); jmp 0 re-runs the preamble (period 12) —
+    # the back edge's target is the structure, not decoration
+    "l3": [
+        ("jmp-cost", ["set pins, 1 [7]", "set pins, 1", "set pins, 0 [2]", "jmp 1"]),
+        ("jmp-target-0", ["set pins, 1 [7]", "set pins, 1", "set pins, 0 [1]", "jmp 0"]),
+    ],
+    # C36 L5: the near-misses of the 64-clk split — one delay short
+    # (63), the forgotten third row (48), and both halves maxed at [31]:
+    # two rows under the pinned wrap run through the `·` row (a jmp 0 —
+    # it costs a clk), so period 65, not 64: the empty row is not free
+    "l5": [
+        ("off-by-one", ["set pins, 1 [15]", "set pins, 0 [31]", "set pins, 0 [14]"]),
+        ("one-row-short", ["set pins, 1 [15]", "set pins, 0 [31]"]),
+        ("both-maxed", ["set pins, 1 [31]", "set pins, 0 [31]"]),
     ],
 }
 

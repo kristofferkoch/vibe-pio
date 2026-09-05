@@ -1207,7 +1207,15 @@
       };
     }
 
-    const WAVE_WIN = 128;
+    // C36: the wave window is level geometry — 128 samples cover every
+    // early level and the sandbox; a slow wave (L5's 64 clk/cycle) needs
+    // more for the monitor judge's stability window, so level pages widen
+    // it through setWaveWin (clamped: the floor keeps the shipped
+    // geometry, the cap keeps the snapshot bounded)
+    let WAVE_WIN = 128;
+    function setWaveWin(n) {
+      WAVE_WIN = Math.max(128, Math.min(1024, n | 0));
+    }
     function getState() {
       const sel = smView(selSm);
       return {
@@ -1278,6 +1286,7 @@
       setDrive,
       setPattern,
       setLens,
+      setWaveWin, // C36: the wave window (level geometry — L5 judges slowly)
       drainRx,
       readRegNow,
       writeRegNow,

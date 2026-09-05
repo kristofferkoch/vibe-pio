@@ -190,6 +190,35 @@ test('monitor decodes a scripted 8N1 frame and tags the wave', () => {
   assert.equal(w.startCycle, drv.allPins().length - 128);
 });
 
+// ---- C36: the wave window is level geometry (a slow wave judges slowly) --
+test('setWaveWin widens the window the state carries (L5 judges 64-clk periods)', () => {
+  const { M, drv } = freshDriver();
+  drv.load(DEMO_UART_TX);
+  drv.setLens({ mode: 'uart', pin: 0 });
+  M.script(frameEffects(0x41)); // 80 clks of true pin samples
+  drv.run(200);
+  // the sandbox default stays 128 (C34/C35 shipped that geometry)
+  assert.equal(drv.getState().wave.pins.length, 128);
+  // a level page widens the window BEFORE the wave fills: the judge's
+  // stability window must see whole periods of the slow wave
+  drv.setWaveWin(512);
+  M.script(frameEffects(0x41).concat(frameEffects(0x41)));
+  drv.run(420); // 642 samples of history now — the window is full
+  const w2 = drv.getState().wave;
+  assert.equal(w2.pins.length, 512);
+  assert.equal(w2.startCycle, drv.allPins().length - 512);
+  // the full history stays reachable (allPins is the client gate's truth)
+  assert.ok(drv.allPins().length >= 512);
+  drv.run(400); // 1042 samples — enough to see the cap bite
+  // out-of-range asks clamp, never tear: the 128 floor stands, the cap holds
+  drv.setWaveWin(8);
+  assert.equal(drv.getState().wave.pins.length, 128);
+  drv.setWaveWin(99999);
+  assert.equal(drv.getState().wave.pins.length, 1024);
+  drv.setWaveWin(512); // back to the level's window
+  assert.equal(drv.getState().wave.pins.length, 512);
+});
+
 // ---- back-to-back frames: the off-80 re-arm corner -------------------
 test('monitor re-arms on a back-to-back frame', () => {
   const { M, drv } = freshDriver();

@@ -745,3 +745,157 @@ test('the L2 walk: the editor debuts leashed — set only, Tab crosses into the 
   );
   await press('Escape');
 });
+
+// C36 — the L3 walk: jmp debuts on the leash. The boot ships L2's answer
+// after the once-preamble; the player's move is the back edge. The menu
+// grows to the chapter-1 vocabulary (jmp before set — the C32 order), the
+// gutter-pick candidate appears at the empty target slot (typing digits
+// dismisses it), and the committed jmp rides the row's face. The delay
+// shave — the cost lesson's other half — edits through the row editor's
+// own delay cell (Backspace, not a mouse).
+test('the L3 walk: jmp debuts — the back edge authored under keys alone', async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/sm-view.html?level=l3`);
+  await until('V.ready === true', 'the level page engine to boot');
+
+  // ---- no orphan stops; the surface is chapter 0's plus nothing --------
+  const stops = [];
+  for (let i = 0; i < 10; i++) {
+    await press('Tab');
+    stops.push(await value(activeId));
+  }
+  const allowed = new Set(['brun', 'bstep', 'breset', 'progrows', 'BODY']);
+  for (const s of stops)
+    assert.ok(
+      allowed.has(s),
+      `orphan stop ${JSON.stringify(s)} — a locked panel left a focusable behind (${stops.join(', ')})`,
+    );
+
+  // ---- the boot's three rows are on their faces ------------------------
+  assert.ok(
+    (await value("document.querySelector('#pr0 .ins').textContent")).includes('set pins, 1'),
+    'the preamble row is given',
+  );
+  assert.ok(
+    (await value("document.querySelector('#pr0 .cdly').textContent")).includes('[7]'),
+    'the preamble carries its once-flash delay',
+  );
+
+  // ---- row 3: the back edge. The menu offers the chapter-1 set --------
+  await tabUntil(`${activeId} === 'progrows'`, 'the listing');
+  await press('ArrowDown');
+  await press('ArrowDown');
+  await press('ArrowDown');
+  await until('kc === 3', 'the cursor on row 3');
+  await press('Enter');
+  await until(`${activeId} === 'edittxt'`, 'Enter to open the row editor');
+  const offered = await value(
+    "[...document.querySelectorAll('#edcands .ecand')].map((e) => e.firstChild.textContent)",
+  );
+  assert.deepStrictEqual(offered, ['jmp', 'set'], 'the leash grows: jmp joins set');
+
+  // ---- the empty target slot offers the gutter pick --------------------
+  await type('jmp ');
+  const pick = await value(
+    "[...document.querySelectorAll('#edcands .ecand')].map((e) => e.firstChild.textContent)",
+  );
+  assert.ok(pick.includes('↦ pick row'), 'the gutter-pick candidate at the empty target slot');
+  await type('1'); // a digit dismisses the pick and is the target
+  await press('Enter'); // commits row 3, hops to row 4
+  await until(`${activeId} === 'edittxt'`, 'Enter to commit and hop rows');
+  await press('Escape'); // the fresh row's list closes…
+  await until("$('edpop').hidden === true", 'the list to close');
+  await press('Escape'); // …the second stands the editor down
+  await until(`${activeId} === 'progrows'`, 'Esc to stand down');
+  assert.ok(
+    (await value("document.querySelector('#pr3 .ins').textContent")).includes('jmp 1'),
+    'row 3 says jmp 1',
+  );
+
+  // ---- row 2: shave the delay — the jmp's cycle comes out of the wave --
+  await press('ArrowUp'); // the cursor stood on row 4 (the hop's landing)
+  await press('ArrowUp');
+  await until('kc === 2', 'the cursor on row 2');
+  await press('Enter');
+  await until(`${activeId} === 'edittxt'`, 'row 2 opens for the delay edit');
+  await press('Tab');
+  await until(`${activeId} === 'eddly'`, 'Tab to cross into the delay cell');
+  await press('Backspace');
+  await type('1');
+  await press('Enter'); // commits row 2, hops to row 3
+  await until(`${activeId} === 'edittxt'`, 'Enter to commit and hop rows');
+  await press('Escape');
+  await until("$('edpop').hidden === true", 'the list to close');
+  await press('Escape');
+  await until(`${activeId} === 'progrows'`, 'Esc to stand down');
+  assert.ok(
+    (await value("document.querySelector('#pr2 .cdly').textContent")).includes('[1]'),
+    "row 2's delay is now [1] — the jmp's clk paid for",
+  );
+});
+
+// C36 — the L5 walk: the long blink authored under keys alone. The 1:3
+// wave at 1/16 speed: high 16 of 64, and the 48-clk low split across two
+// rows — no single delay cell can hold it. The ceiling is legible: a
+// [48] commit does not assemble, the unbuilt bar says why, and the fix
+// lands back on the row's face.
+test('the L5 walk: the [31] ceiling refuses loudly, the split passes', async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/sm-view.html?level=l5`);
+  await until('V.ready === true', 'the level page engine to boot');
+
+  // ---- the listing boots empty and honest ------------------------------
+  assert.strictEqual(
+    await value("document.querySelectorAll('#progrows .prow.empty').length"),
+    32,
+    'from scratch: 32 honest · rows',
+  );
+
+  // ---- author rows 0 and 1 --------------------------------------------
+  await tabUntil(`${activeId} === 'progrows'`, 'the listing');
+  await press('Enter');
+  await until(`${activeId} === 'edittxt'`, 'the editor opens on row 0');
+  const offered = await value(
+    "[...document.querySelectorAll('#edcands .ecand')].map((e) => e.firstChild.textContent)",
+  );
+  assert.deepStrictEqual(offered, ['jmp', 'set'], 'the chapter-1 vocabulary stays unlocked');
+  await type('set pins, 1');
+  await press('Tab');
+  await until(`${activeId} === 'eddly'`, 'the delay cell of row 0');
+  await type('15');
+  await press('Enter'); // commit row 0, hop to row 1
+  await until(`${activeId} === 'edittxt'`, 'Enter to commit and hop rows');
+  await type('set pins, 0');
+  await press('Tab');
+  await until(`${activeId} === 'eddly'`, 'the delay cell of row 1');
+  await type('31');
+  await press('Enter'); // commit row 1, hop to row 2
+  await until(`${activeId} === 'edittxt'`, 'row 2 opens');
+  await type('set pins, 0');
+  await press('Tab');
+  await until(`${activeId} === 'eddly'`, 'the delay cell of row 2');
+
+  // ---- the ceiling: 48 does not fit the 5-bit field ---------------------
+  await type('48');
+  await press('Enter'); // the refusal: the edit stays open, never lands
+  await until(`${activeId} === 'eddly'`, 'the refused commit keeps the cell open');
+  const why = String(await value('RE.dataset.status'));
+  assert.match(why, /48 won't fit/, 'the refusal names the value');
+  assert.match(why, /0\.\.31/, 'the refusal names the 5-bit budget');
+
+  // ---- the fix: 16 clk of low in this row, not 49 ----------------------
+  await press('Backspace');
+  await press('Backspace');
+  await type('15');
+  await press('Enter'); // commit, hop to row 3
+  await until(`${activeId} === 'edittxt'`, 'Enter to commit the fix');
+  await press('Escape');
+  await until("$('edpop').hidden === true", 'the list to close');
+  await press('Escape');
+  await until(`${activeId} === 'progrows'`, 'Esc to stand down');
+  assert.strictEqual(await value("$('unbuilt').hidden"), true, 'the split assembles clean');
+  assert.ok(
+    (await value("document.querySelector('#pr2 .cdly').textContent")).includes('[15]'),
+    'row 2 carries its delay',
+  );
+});

@@ -2477,6 +2477,9 @@ main.level #program:not(.col-side) #edside {
 #dlyedit.deny #dlycell {
   background: rgba(178, 34, 34, 0.18);
 }
+#eddly.deny {
+  background: rgba(178, 34, 34, 0.18);
+}
 
 /* ---- the level band: one era group frame under the toolbar ---- */
 #lvband {

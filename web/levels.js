@@ -68,6 +68,19 @@
     const pr = def.profile;
     if (pr?.kind !== 'square' || !Number.isInteger(pr?.v))
       throw new Error('level: profile must be a versioned square receiver');
+    // C36: the wave window is level geometry — a slow wave needs more
+    // samples for the judge's stability window (L5's 64 clk/cycle runs a
+    // 512-sample window; the default 128 covers every earlier level and
+    // the sandbox). Must hold the active tier's periods comfortably.
+    if (def?.waveWin !== undefined) {
+      if (!Number.isInteger(def.waveWin) || def.waveWin < 128 || def.waveWin > 1024)
+        throw new Error('level: waveWin must be a sample count in 128..1024');
+      const t = pr.tiers?.[pr.tier];
+      // enough completed periods in view for minPeriods to hold at any
+      // window phase: risings >= minPeriods+1 needs (minPeriods+2) periods
+      if (t && def.waveWin < (t.minPeriods + 2) * t.periodHi)
+        throw new Error('level: waveWin too short for the tier to judge steadily');
+    }
     if (!Number.isInteger(pr.pin) || pr.pin < 0 || pr.pin > 31)
       throw new Error('level: profile.pin');
     if (!pr.tiers?.[pr.tier]) throw new Error(`level: tier ${pr.tier} not defined`);
