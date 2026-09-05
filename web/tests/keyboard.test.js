@@ -516,3 +516,90 @@ test('the keyboard walk: tab in, walk, type, commit, pick, spin, latch', async (
     'the page walked through the whole loop without an engine error',
   );
 });
+
+// C34 — the level shell's walk: the L0 page (sm-view.html?level=l0) is
+// the sandbox minus what the level hasn't taught, and ABSENCE covers the
+// Tab order too: locked panels leave layout and focusability both, so
+// the walk must find no orphan stops — every Tab lands on the level's
+// own surface (reset, the locked transport, the predict group, the
+// listing). The predict gate is operated by keys alone (the C25 radio
+// grammar: ←/→ pick, Enter commits), Run stays dead until the
+// prediction is in, and the row editor never opens (the opcode
+// whitelist is empty in L0).
+test('the L0 walk: absence covers Tab order, predict unlocks Run by keys', async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/sm-view.html?level=l0`);
+  await until('V.ready === true', 'the level page engine to boot');
+
+  // ---- no orphan stops: the whole Tab cycle stays on the level surface --
+  // locked transport buttons are not focusable either (disabled) — the
+  // pre-prediction cycle is exactly reset → predict → listing
+  const stops = [];
+  for (let i = 0; i < 12; i++) {
+    await press('Tab');
+    stops.push(await value(activeId));
+  }
+  const seen = new Set(stops);
+  const allowed = new Set(['breset', 'lvcands', 'progrows', 'BODY']);
+  for (const s of stops)
+    assert.ok(
+      allowed.has(s),
+      `orphan stop ${JSON.stringify(s)} — a locked panel left a focusable behind (${stops.join(', ')})`,
+    );
+  for (const need of ['breset', 'lvcands', 'progrows'])
+    assert.ok(seen.has(need), `${need} must be a Tab stop on the level page`);
+
+  // ---- the gate: the transport is dead until a prediction is committed --
+  await page.evaluate('document.activeElement && document.activeElement.blur()');
+  await press('r'); // the R accelerator — body focus, run()
+  assert.strictEqual(
+    await value("$('brun').classList.contains('on')"),
+    false,
+    'R must not run the machine behind the predict gate',
+  );
+  assert.strictEqual(await value("$('brun').disabled"), true, 'RUN is locked at boot');
+  assert.strictEqual(await value("$('bstep').disabled"), true, 'CYCLE is locked with it');
+
+  // ---- predict by keys: ←/→ + Enter (the C25 radio grammar) ------------
+  await tabUntil(`${activeId} === 'lvcands'`, 'the predict group');
+  assert.ok(
+    (await value("$('statusline').textContent")).includes('predict'),
+    'the status line narrates the predict group when it takes focus',
+  );
+  await press('ArrowRight'); // onto the second candidate
+  assert.ok(
+    await value(`document.querySelectorAll('#lvcands .lcand')[1].classList.contains('kc')`),
+    '←/→ moves the predict cursor',
+  );
+  await press('Enter');
+  await until('PioLevels.gateOpen(LEVEL, lvSession) === true', 'Enter to commit the prediction');
+  assert.ok(
+    await value(`document.querySelectorAll('#lvcands .lcand')[1].classList.contains('picked')`),
+    'the committed candidate is marked picked',
+  );
+  await until("$('brun').disabled === false", 'the committed prediction to unlock RUN');
+
+  // ---- the unlocked machine runs under the keys -------------------------
+  await page.evaluate('document.activeElement && document.activeElement.blur()');
+  await press('r');
+  await until("$('brun').classList.contains('on') === true", 'R to start the machine');
+  await press('r'); // toggle back to pause — the walk leaves a paused page
+  await until("$('brun').classList.contains('on') === false", 'R to pause again');
+
+  // ---- the listing is walkable, the editor never opens ------------------
+  await tabUntil(`${activeId} === 'progrows'`, 'the listing');
+  await press('ArrowDown');
+  await press('ArrowDown');
+  assert.strictEqual(
+    await value("document.getElementById('progrows').getAttribute('aria-activedescendant')"),
+    'pr2',
+    '↑/↓ walks the row cursor on the level listing too',
+  );
+  await press('Enter');
+  await type('set x, 3');
+  assert.strictEqual(
+    await value('RE.hidden'),
+    true,
+    'the row editor must not open in L0 — the opcode whitelist is empty',
+  );
+});

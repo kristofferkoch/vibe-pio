@@ -1156,6 +1156,7 @@
       const s = last ? last.sms[i] : null;
       return {
         pc: s ? s.pc : 0,
+        en: serializedEn[i], // the CTRL enable (a disabled SM parks; the C34 chip filter)
         displayPc: displayedPcOf(i),
         phase: phaseOf(s),
         delay: s ? s.delay : 0,

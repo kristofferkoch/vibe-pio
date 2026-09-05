@@ -1157,3 +1157,120 @@ test('the program column is content-anchored: editor fits, no dead width', async
     `program column is not content-anchored at 1280: ${m.prog}px — the widest in-flow residents need ~364px; anything beyond is dead width the wave never sees`,
   );
 });
+
+// C34 — the reduced-geometry leg: the level page (sm-view.html?level=l0)
+// is the sandbox MINUS what the level hasn't taught, and panel gating is
+// ABSENCE, never ghosted placeholders: every locked panel leaves layout
+// entirely (no box, no hit surface), the listing keeps all 32 rows in
+// the narrow column (row-count honesty), and the level band under the
+// toolbar fits its two rows without wrapping. The pinned boxes are the
+// L0 page's own geometry — C35's delay-column unlock must never move
+// what is already on screen here.
+const L0_ABSENT = [
+  '#clkdivtag',
+  '#bempty',
+  '#bdemo',
+  '#bexport',
+  '#bimport',
+  '#bcopy',
+  '#speed',
+  '#binsn',
+  '#smsbar',
+  '#pinstrip',
+  '#regs',
+  '#dsalloc',
+  '#progfoot',
+  '#exectitle',
+  '#execslim',
+  '#isr',
+  '#fiforow',
+  '#pullconn',
+  '#osr',
+  '#framemap',
+  '.maptag',
+  '#wavewinaux',
+  '#spin-lenspin',
+  '#mon',
+  '#feed',
+  '#pattern',
+];
+const L0_SCAN = `(() => {
+  const bad = [];
+  const box = (sel) => document.querySelector(sel)?.getBoundingClientRect();
+  const gone = (sel) => {
+    const el = document.querySelector(sel);
+    return !el || el.offsetParent === null;
+  };
+  for (const sel of ${JSON.stringify(L0_ABSENT)}) {
+    if (document.querySelectorAll(sel).length && !gone(sel))
+      bad.push(sel + ' is still laid out — a locked panel is absence, not a ghost');
+  }
+  // present with real geometry: the band, the pinned transport, the listing
+  const band = box('#lvband');
+  if (!band || band.height < 20) bad.push('the level band has no box');
+  const head = document.getElementById('lvhead');
+  if (head && head.scrollHeight > head.clientHeight + 1)
+    bad.push('the band head wraps (scrollHeight ' + head.scrollHeight + ' in ' + head.clientHeight + ')');
+  const pred = document.getElementById('lvpred');
+  if (pred && pred.scrollHeight > pred.clientHeight + 1)
+    bad.push('the predict row wraps (scrollHeight ' + pred.scrollHeight + ' in ' + pred.clientHeight + ')');
+  if (document.querySelectorAll('#progrows .prow').length !== 32)
+    bad.push('the listing lost rows — 32 rows in every level (row-count honesty)');
+  if (document.querySelectorAll('#progrows .prow .cdly:not([style*="display: none"])').length &&
+      !gone('#progrows .prow .cdly'))
+    bad.push('the delay column is visible — L0 has not taught delay');
+  if (document.querySelectorAll('.wstep').length)
+    bad.push('the wrap steppers are built — L0 asks the wrap question, it does not edit EXECCTRL');
+  const wave = box('#wavesvg');
+  if (!wave || wave.height < 64) bad.push('the wave lost its 64px floor');
+  if (!wave || wave.width < 420) bad.push('the wave is squeezed under 420px');
+  const pin = (sel) => {
+    const b = box(sel);
+    return b && [b.left, b.top, b.width, b.height].map((v) => Math.round(v));
+  };
+  return {
+    bad,
+    boxes: {
+      lvband: pin('#lvband'), program: pin('#program'), wavesvg: pin('#wavesvg'),
+      progrows: pin('#progrows'), brun: pin('#brun'), breset: pin('#breset'),
+      lvcands: pin('#lvcands'), titlebar: pin('#titlebar'), header: pin('header'),
+    },
+  };
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`the L0 page is its own geometry: absence, the band, the honest listing ${width}×${height}`, async () => {
+    await page.setViewport(width, height);
+    await page.goto(`${pageUrl()}?level=l0`);
+    await page.evaluate('document.fonts.ready.then(() => {})');
+    await page.evaluate("document.getElementById('boot')?.remove()");
+    const { bad, boxes } = await page.evaluate(L0_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `L0 geometry broken at ${width}×${height} — panel gating is absence (layout AND Tab order)`,
+    );
+    // L0's page pinned: the band/transport/listing/wave boxes at the two
+    // 13" reference viewports are the baseline a later unlock (C35's delay
+    // column) must hold — "never moves what's already on screen"
+    assert.ok(
+      boxes.lvband && boxes.lvband[3] >= 40 && boxes.lvband[3] <= 90,
+      `the band left its two-row box at ${width}×${height}: ${JSON.stringify(boxes.lvband)}`,
+    );
+    assert.ok(
+      boxes.wavesvg && boxes.wavesvg[2] > 600,
+      `the wave is not the level page's center of gravity at ${width}×${height}`,
+    );
+    // the honest listing: all 32 rows exist (the DOM check above) and the
+    // listing runs to the program panel's floor — the rest scrolls inside
+    const prog = await page.evaluate(`(() => {
+      const p = document.querySelector('#program').getBoundingClientRect();
+      const r = document.querySelector('#progrows').getBoundingClientRect();
+      return { floorGap: +(p.bottom - r.bottom).toFixed(1), h: Math.round(r.height) };
+    })()`);
+    assert.ok(
+      prog.floorGap <= 1.5 && prog.h > 450,
+      `the listing must fill the program column at ${width}×${height} (${prog.h}px, ${prog.floorGap}px above the floor)`,
+    );
+  });
+}

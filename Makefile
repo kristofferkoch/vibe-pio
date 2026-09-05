@@ -76,7 +76,10 @@
 #            over web/ js+css+html; mockups/ stays free-form), the C19
 #            golden-fixture drift check (tools/gen_pio_asm_golden.py
 #            --check: pio_model asm/disasm output vs the committed
-#            web/tests/pio-asm-golden.json — needs python3, stdlib only)
+#            web/tests/pio-asm-golden.json — needs python3, stdlib only),
+#            the C34 level-golden drift check (tools/gen_level_goldens.py
+#            --check: pio_model pin series vs the committed
+#            web/tests/levels-golden.json, same stdlib-only rule)
 #            plus the bare node --test unit suite under web/tests/
 #            (hermetic — the fake engine replaces the wasm build; it
 #            also runs under the container's bare node), including the
@@ -216,6 +219,7 @@ js:
 	npm ci
 	npx biome ci web
 	python3 tools/gen_pio_asm_golden.py --check
+	python3 tools/gen_level_goldens.py --check
 	node --test web/tests/*.test.js
 
 clean:

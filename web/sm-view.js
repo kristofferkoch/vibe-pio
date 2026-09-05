@@ -40,6 +40,40 @@ const $ = (id) => document.getElementById(id); // declared first: the transport
 const SAVE_KEY = 'vibe-pio-sandbox';
 const VD = VibeDriver;
 
+// ---- the level shell (C34) ----------------------------------------------
+// ?level=<id> turns the sandbox into a level: the definition registered
+// from web/levels/<id>.js (the HTML's loader script runs it before this
+// file), the surface gates by ABSENCE (locked panels leave layout AND
+// Tab order — the walk finds no orphan stops), the program boots from
+// the level (never the autosave), the lens pins to the profile's pin,
+// and the monitor becomes the judge. LEVEL is null in the sandbox and
+// every hook below no-ops there. Module logic (the judge, the gate, the
+// surface table) lives in levels.js; this file is the glue.
+const LEVEL = PioLevels.active();
+let LVSURF = null; // the level's unlocked key set (null = sandbox: all)
+const lvUnlock = (key) => !LEVEL || (LVSURF ? LVSURF.has(key) : true);
+
+// per-level session: the predict commit and the solve persist (a
+// reload never re-punishes; re-runs never re-lock)
+const lvKey = (id) => `vibe-pio-level-${id}`;
+let lvSession = {};
+function lvLoad(id) {
+  if (!LEVEL) return {};
+  try {
+    return JSON.parse(localStorage.getItem(lvKey(id))) || {};
+  } catch {
+    return {};
+  }
+}
+function lvSave() {
+  if (!LEVEL) return;
+  try {
+    localStorage.setItem(lvKey(LEVEL.id), JSON.stringify(lvSession));
+  } catch {
+    /* private mode: the session lives for this page only */
+  }
+}
+
 function savedState() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
@@ -51,7 +85,30 @@ function savedState() {
   }
 }
 
-let curState = savedState() || VD.newState(); // the view's stored-program copy
+// A level boots from its own definition — words assembled from the
+// canonical listing under the level's own side-set context, overlay
+// merged over the hardware reset (parseState does the validating).
+let curState = LEVEL ? PioLevels.programState(LEVEL) : savedState() || VD.newState(); // the view's stored-program copy
+
+// Absence first: the gated panels leave the page (and the Tab order)
+// before the first build/render, so the boot-measured geometry is the
+// level's own.
+if (LEVEL) {
+  LVSURF = PioLevels.applySurface(document, LEVEL);
+  $('savestate').textContent = 'off';
+  $('progrows').dataset.status = 'listing: ↑/↓ rows — authoring arrives in a later level';
+  // the chrome names the level, not the sandbox (nothing on the page
+  // may claim features the level has not taught)
+  document.title = `vibe-pio // levels — ${LEVEL.id.toUpperCase()} ${LEVEL.name}`;
+  document.querySelector('#titlebar .caption').innerHTML =
+    `vibe-pio — level <b>${LEVEL.id.toUpperCase()} · ${esc(LEVEL.name)}</b>` +
+    `<span class="tail"> · chapter ${LEVEL.chapter}</span>`;
+  document.querySelector('#program .ptitle .aux').innerHTML =
+    'canonical C12 · <b id="usedct">0/32</b> used';
+  // the lens is pinned by the profile: the pin NUMBER stays on the wave
+  // row's face (C29 legibility), the steppers leave with the Tab stop
+  $('wavelabel').childNodes[0].nodeValue = `gpio ${LEVEL.profile.pin} `;
+}
 
 // The selected machine: the detail panes' SM. curSm/1..3 switch it; the
 // wrap arc, ds allocator, pin-mapping tags and listing decode context
@@ -237,7 +294,7 @@ worker.onmessage = (e) => {
     if (splitKey(prev) !== splitKey(OV)) rebuildListing();
     else if (wrapKey(prev) !== wrapKey(OV)) buildProgram();
     if (m.refused > 0) refuseFlash();
-    if (m.json) autosave(m.json);
+    if (m.json && !LEVEL) autosave(m.json);
     if (m.raddr !== undefined) noteRead(m.raddr, m.rdata);
     render(m.state);
   }
@@ -254,12 +311,161 @@ function post(cmd) {
 
 // ---- transport ----
 let timer = null;
+
+// ---- the level band + the predict gate (C34; glue over levels.js) -----
+// The band's faces: name/goal/verdict/pass/par in row 1, the predict
+// card in row 2 (three candidate waves drawn from the level's bits —
+// the same mini-wave grammar the row renderer draws). The predict group
+// rides the C25 radio grammar: one Tab stop, ←/→ pick, Enter commits.
+function thumbPath(bits) {
+  // one square-wave sketch: 4px/clk, high y=2, low y=14
+  const yOf = (b) => (b ? 2 : 14);
+  let d = '';
+  let i = 0;
+  while (i < bits.length) {
+    let j = i + 1;
+    while (j < bits.length && bits[j] === bits[i]) j++;
+    if (i) d += `M${i * 4} ${yOf(bits[i - 1])} L${i * 4} ${yOf(bits[i])} `;
+    d += `M${i * 4} ${yOf(bits[i])} L${j * 4} ${yOf(bits[i])} `;
+    i = j;
+  }
+  return d;
+}
+let lvPick = 0;
+let lvRanOnce = false; // 'awaiting run' until the machine has actually run
+function lvApplyPick() {
+  document.querySelectorAll('#lvcands .lcand').forEach((c, i) => {
+    c.classList.toggle('kc', i === lvPick);
+    c.setAttribute('aria-selected', String(i === lvPick));
+  });
+  $('lvcands').setAttribute('aria-activedescendant', `lcv${lvPick}`);
+}
+function buildLevelBand() {
+  lvSession = lvLoad(LEVEL.id);
+  $('lvname').textContent = `${LEVEL.id.replace(/^l/, 'L').toUpperCase()} · ${LEVEL.name}`;
+  $('lvgoal').textContent = LEVEL.goal;
+  $('lvband').hidden = false;
+  if (LEVEL.predict) {
+    $('lvask').textContent = LEVEL.predict.ask;
+    const host = $('lvcands');
+    host.innerHTML = LEVEL.predict.candidates
+      .map(
+        (c, i) =>
+          `<div class="lcand" id="lcv${i}" role="option" aria-selected="false" data-i="${i}" data-tip="${c.label}">` +
+          `<svg viewBox="0 0 ${c.bits.length * 4} 16" width="${c.bits.length * 2}" height="16" preserveAspectRatio="none" aria-hidden="true">` +
+          `<path d="${thumbPath([...c.bits].map(Number))}" stroke="var(--txt)" stroke-width="2" fill="none"/></svg>` +
+          `<span>${c.label}</span></div>`,
+      )
+      .join('');
+    lvPick = Math.max(
+      0,
+      LEVEL.predict.candidates.findIndex((c) => c.id === lvSession.pick),
+    );
+    lvApplyPick();
+    if (lvSession.predicted) {
+      $('lvcands').classList.add('done');
+      document.querySelectorAll('#lvcands .lcand').forEach((c, i) => {
+        c.classList.toggle('picked', i === lvPick);
+      });
+    }
+    wireGroup(host, (e) => {
+      const move = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (move) {
+        e.preventDefault();
+        lvPick =
+          (lvPick + move + LEVEL.predict.candidates.length) % LEVEL.predict.candidates.length;
+        lvApplyPick();
+      } else if ((e.key === ' ' || e.key === 'Enter') && !lvSession.predicted) {
+        e.preventDefault();
+        lvCommit();
+      } else if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault(); // committed: the group stays a stop, the keys go quiet
+      }
+    });
+    // the mouse path: a click picks AND commits (a click on a prediction
+    // card is a commitment gesture; after the commit the card is done)
+    host.addEventListener('click', (e) => {
+      const c = e.target.closest('.lcand');
+      if (!c || lvSession.predicted) return;
+      lvPick = +c.dataset.i;
+      lvApplyPick();
+      lvCommit();
+    });
+  } else {
+    $('lvpred').hidden = true;
+  }
+  // a solved level opens solved: par on the face, the predict card gone
+  if (lvSession.solved) lvRevealSolved();
+  lvGateApply();
+}
+function lvCommit() {
+  lvSession.predicted = true;
+  lvSession.pick = LEVEL.predict.candidates[lvPick].id;
+  lvSave();
+  $('lvcands').classList.add('done');
+  document.querySelectorAll('#lvcands .lcand').forEach((c, i) => {
+    c.classList.toggle('picked', i === lvPick);
+  });
+  $('lvcands').dataset.status = 'prediction committed — R runs · the truth is on the wave';
+  lvGateApply();
+}
+function lvGateApply() {
+  if (!LEVEL) return;
+  const open = PioLevels.gateOpen(LEVEL, lvSession);
+  // disabled until the engine is ready AND the gate is open — either
+  // alone is not enough (the boot veil must not leave a live button)
+  for (const id of ['brun', 'bstep', 'binsn']) $(id).disabled = !V.ready || !open;
+  $('lvpred').classList.toggle('locked', !open);
+}
+function lvDeny() {
+  // the era beep: the locked predict row flashes — the machine is
+  // behind the gate, and the gate says where to look
+  const p = $('lvpred');
+  p.classList.remove('deny');
+  void p.offsetWidth;
+  p.classList.add('deny');
+}
+function lvGateCheck() {
+  if (!LEVEL || PioLevels.gateOpen(LEVEL, lvSession)) return true;
+  lvDeny();
+  return false;
+}
+// the judge: same verdict the engine-side gate replays over the pio_model
+// goldens — the band shows it live over the wave window
+function levelJudge(st) {
+  if (!st.wave.pins.length || (!lvRanOnce && st.wave.pins.every((b) => b === 0))) {
+    $('lvverdict').textContent = 'awaiting run';
+    $('lvverdict').classList.remove('ok');
+    return;
+  }
+  const v = PioLevels.judge(st.wave.pins, LEVEL.profile);
+  $('lvverdict').textContent = v.pass ? `${v.verdict} — PASS (${LEVEL.profile.tier})` : v.verdict;
+  $('lvverdict').classList.toggle('ok', v.pass);
+  if (v.pass) levelPass();
+}
+function lvRevealSolved() {
+  $('lvpass').hidden = false;
+  $('lvpar').textContent =
+    `par ${LEVEL.reference.par.words} words · ${LEVEL.reference.par.period} clk/cycle`;
+  $('lvpar').hidden = false;
+  $('lvpred').hidden = true; // the gate's job is done — never punish re-runs
+}
+function levelPass() {
+  if (lvSession.solved) return;
+  lvSession.solved = true;
+  lvSave();
+  lvRevealSolved();
+  pause(); // freeze on the payoff frame
+}
+
 function run() {
   if (!V.ready) return;
+  if (!lvGateCheck()) return;
   if (timer) {
     pause();
     return;
   }
+  lvRanOnce = true;
   timer = setInterval(runTick, +$('speed').value);
   // C33: the PAUSE face rides .on — both faces are authored twin labels,
   // so the box (and the bar behind it) never moves on the swap
@@ -279,20 +485,26 @@ function pause() {
 }
 function enableCtrls(on) {
   for (const id of ['breset', 'brun', 'bstep', 'binsn']) $(id).disabled = !on;
+  if (LEVEL) lvGateApply();
 }
 $('brun').onclick = run;
 $('breset').onclick = () => {
   pause();
   asmErr = null;
   rebuildListing(); // back to the stored program's listing
-  post({ cmd: 'reset', state: curState }); // reload the stored program
+  // a level resets to itself — its program is the stored program
+  post({ cmd: 'reset', state: curState });
 };
 $('bstep').onclick = () => {
   pause();
+  if (!lvGateCheck()) return;
+  lvRanOnce = true;
   post({ cmd: 'step' });
 };
 $('binsn').onclick = () => {
   pause();
+  if (!lvGateCheck()) return;
+  lvRanOnce = true;
   post({ cmd: 'stepInsn' });
 };
 $('speed').onchange = () => {
@@ -388,12 +600,14 @@ document.addEventListener('keydown', (e) => {
   if (!V.ready) return;
   if (e.code === 'Space') {
     e.preventDefault();
+    if (!lvGateCheck()) return;
+    lvRanOnce = true;
     pause();
     post({ cmd: 'step' });
   } else if (e.key === 'r' || e.key === 'R') run();
   else if (e.key === 'i' || e.key === 'I') $('binsn').onclick();
   else if (e.key === '0') $('breset').onclick();
-  else if (['1', '2', '3', '4'].includes(e.key)) selectSm(+e.key - 1);
+  else if (!LEVEL && ['1', '2', '3', '4'].includes(e.key)) selectSm(+e.key - 1);
 });
 
 // a click that lands on no interactive owner releases the keyboard back
@@ -765,20 +979,24 @@ function buildProgram() {
           ? wrapBot * 20 - 13 // bracket the wrapped row: handle above
           : (wrapBot + 1) * 20 + 3 // row 0 has no row above — handle below
         : wrapBot * 20 + 3; // inside the return row, beside the arrow
-  wrapSpin(
-    'wrap-top',
-    tY,
-    (g) =>
-      `${g === 'inc' ? 'raise' : 'lower'} the top end — after-insn ${wrapTop} → ${(wrapTop + (g === 'inc' ? 1 : 31)) & 31}`,
-    'spin-wraptop',
-  );
-  wrapSpin(
-    'wrap-bot',
-    bY,
-    (g) =>
-      `${g === 'inc' ? 'raise' : 'lower'} the return row — target ${wrapBot} → ${(wrapBot + (g === 'inc' ? 1 : 31)) & 31}`,
-    'spin-wrapbot',
-  );
+  // C34: the steppers are config edits — a level shows the wrap ARC (it
+  // is the lesson) but edits nothing until the surface unlocks them
+  if (lvUnlock('wrapSteppers')) {
+    wrapSpin(
+      'wrap-top',
+      tY,
+      (g) =>
+        `${g === 'inc' ? 'raise' : 'lower'} the top end — after-insn ${wrapTop} → ${(wrapTop + (g === 'inc' ? 1 : 31)) & 31}`,
+      'spin-wraptop',
+    );
+    wrapSpin(
+      'wrap-bot',
+      bY,
+      (g) =>
+        `${g === 'inc' ? 'raise' : 'lower'} the return row — target ${wrapBot} → ${(wrapBot + (g === 'inc' ? 1 : 31)) & 31}`,
+      'spin-wrapbot',
+    );
+  }
   const arcs = [];
   for (let i = 0; i < 32; i++) {
     if (!ROWS[i]) continue;
@@ -915,9 +1133,12 @@ function renderProgram(st) {
   // four PC cursors on the shared listing: the SMs at a row render as one
   // boxed chip in the row's left margin (C30 — out of the address cell,
   // which stays digits-only); the selected SM keeps the full .cur row
-  // treatment (chips, the editor's anchor)
+  // treatment (chips, the editor's anchor). Only ENABLED machines carry
+  // cursors — a disabled SM parks at its reset pc forever and its chip
+  // would be a ghost (the single-SM levels and the demo scope read
+  // exactly the machines that exist)
   const here = st.sms
-    ? st.sms.map((s, k) => ({ k, pc: s.displayPc }))
+    ? st.sms.map((s, k) => ({ k, pc: s.displayPc, en: s.en !== false })).filter((s) => s.en)
     : [{ k: 0, pc: st.displayPc }];
   for (let i = 0; i < 32; i++) {
     const r = $(`pr${i}`);
@@ -1579,6 +1800,7 @@ function render(st) {
     if (fl.wrap) flashWrap();
     V.lastFlashClk = st.cycle;
   }
+  if (LEVEL) levelJudge(st); // the profile is the judge until the level passes
 }
 
 // ================= modeless row editor (C19 discipline; the
@@ -1945,6 +2167,9 @@ function placeStrip() {
   STRIP.style.top = `${Math.max(8, y) + scrollY}px`;
 }
 function openRow(i, focus, seed) {
+  // C34: levels scope the editor to their opcode whitelist — an empty
+  // whitelist (L0: chapter 0 has no authoring) never opens the editor
+  if (LEVEL && !LEVEL.opcodes.length) return;
   if (curRow >= 0) commitRow();
   curRow = Math.max(0, Math.min(31, i));
   kc = curRow; // the listing cursor follows its editor anchor
@@ -2406,10 +2631,14 @@ buildProgram();
 buildBits($('osrbits'));
 buildBits($('isrbits'));
 patternUi();
+if (LEVEL) buildLevelBand();
 render(V.state);
 updateStatus(); // the status line opens on the body key map
 
 function applyUrlParams() {
+  // a level page ignores the sandbox's shareable states — the level IS
+  // the state (the boot loaded its program already)
+  if (LEVEL) return;
   // shareable states: ?demo=1 loads the uart demo, ?t=N pre-runs N cycles
   // (one worker batch), ?run=1 autoplays, ?ss=N&opt=0 preset the ds-field
   // allocation (the overlay fields); editor demo states (?row/?complete/

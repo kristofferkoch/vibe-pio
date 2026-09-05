@@ -14,11 +14,14 @@ behavior change.
 | `web/engine-worker.js` | the Web Worker transport around the driver |
 | `web/pio-asm.js` | the in-browser assembler/disassembler — a JS port of pio_model's asm/disasm/encoding trio, anchored to that oracle by golden bit-vectors + the 65536-word canonical round-trip (never to itself) |
 | `web/row-complete.js` | the C32 row-editor completion slot model (extracted from sm-view.js's computeCands) — per-instruction slots over the canonical signatures the disassembler spells, vocabularies derived from PioAsm's own operand tables, canonical accept separators, complete-slot suppression; the pre-C32 token-index model ships as its `{defect:'token-index'}` hook |
+| `web/levels.js` | the C34 level-campaign runtime — the registry level files register into (`PIO_LEVEL`), the versioned square-wave monitor judge (the profile ladder's tier parameters; `{defect:'judge'}` re-injects the single-glitch pass), the predict gate (`{defect:'gate'}` re-injects never-locks), the level→stored-program builder (canonical listing + overlay through `PioAsm`/`VibeDriver.parseState`), and the SURFACE table (panel gating = absence) |
 | `web/sm-view.js` | the view's DOM glue (**extract-on-touch**: lint/format always; logic migrates into require-able tested modules only as it is touched) — the listing itself is assembler-derived: rows disassemble from the loaded words and committed edits re-assemble through `pio-asm.js` into a live imem patch |
-| `web/sm-view.html` / `web/sm-view.css` | the shipped page and its stylesheet (the `<style>` extracted so css joins the gate) |
+| `web/sm-view.html` / `web/sm-view.css` | the shipped page and its stylesheet (the `<style>` extracted so css joins the gate) — `?level=<id>` boots the page as a level (the band + the absence-gated surface, C34) |
+| `web/levels/` | one classic-script level definition per level (`l0.js`): pure data registering through `PIO_LEVEL` — the payload is strict JSON so `tools/gen_level_goldens.py` can parse it back out (which is why the directory is outside biome's `files.includes`: the payload's format owner is the generator's JSON parse, not the JS formatter's quote style) |
 | `web/node_gate.js` / `web/node_client_gate.js` | the headless `make web` runners (wasm engine / client-vs-oracle; the client gate also round-trips the level listing through `pio-asm.js`) |
-| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `row-complete.test.js` (the C32 slot model), `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface), `pin-map.test.js` (the C27 mapping marks: `pinExtents` ranges + the was-driven mask), `browser.js` + `layout.test.js` (the headless-Chromium layout gate — see below), `fake-engine-module.js` + `keyboard.test.js` (the headless-Chromium keyboard walk — see below) |
+| `web/tests/` | the `node --test` suite: `fake-engine.js` (the scripted wasm-ABI stand-in), `engine-driver.test.js`, `pio-asm.test.js` + the committed `pio-asm-golden.json` fixture, `row-complete.test.js` (the C32 slot model), `levels.test.js` (the C34 level gate) + the committed `levels-golden.json` fixture, `sandbox.test.js` (the C21 surface), `drawn-config.test.js` (the C22 field↔reg-write mapping), `multi-sm.test.js` (the C24 four-machine surface), `pin-map.test.js` (the C27 mapping marks: `pinExtents` ranges + the was-driven mask), `browser.js` + `layout.test.js` (the headless-Chromium layout gate — see below), `fake-engine-module.js` + `keyboard.test.js` (the headless-Chromium keyboard walk — see below) |
 | `tools/gen_pio_asm_golden.py` | generates `web/tests/pio-asm-golden.json` from pio_model (stdlib-only; `--check` is the drift gate in `make js`) |
+| `tools/gen_level_goldens.py` | generates `web/tests/levels-golden.json` from pio_model — the level definitions' programs run through the oracle (the `_SandboxMirror` load timeline `make web`'s client gate runs in lockstep with the driver), committing the pin series the levels gate replays through the monitor judge (stdlib-only; `--check` is the drift gate in `make js`) |
 | `biome.json` | the format+lint configuration (waivers documented below) |
 | `package.json` + `package-lock.json` | dev-only dependency: `@biomejs/biome` |
 
@@ -50,6 +53,7 @@ make js         # the full gate: biome ci + node --test
 | install | `npm ci` | dev-only, from the committed lockfile |
 | format + lint | `biome ci web` | js + css + html + json under `web/` (incl. `web/tests/`); `mockups/` is outside `files.includes` and stays free-form |
 | golden drift | `python3 tools/gen_pio_asm_golden.py --check` | the committed `pio-asm-golden.json` must deep-equal fresh pio_model asm/disasm output (content-wise — biome owns the file's layout, so regenerate then `npx biome format --write` it) |
+| level-golden drift | `python3 tools/gen_level_goldens.py --check` | the committed `levels-golden.json` must deep-equal fresh pio_model output for every level under `web/levels/` (same content-wise rule) |
 | tests | `node --test web/tests/*.test.js` | hermetic unit suite — no wasm build, no model, no network; the one exception is `layout.test.js` (below), which needs a headless Chromium on the machine but still no wasm/model |
 
 JS changes are not done until `make js` is green. The heavier gates
@@ -163,6 +167,23 @@ against the oracle gate. Prefer that route over blanket `--unsafe`.
   the module's standing `{defect:'token-index'}` hook and every C32
   behavior asserts divergence from it, so reverting the fix turns the
   suite red on its own checks.
+  `levels.test.js` (C34) is the level campaign's engine-side gate —
+  it drives the level DEFINITIONS against engine truth the way the
+  golden vectors anchor the assembler: `tools/gen_level_goldens.py`
+  runs each level's program (and its perturbed variants) through
+  pio_model over the driver's exact load timeline and commits the pin
+  series as `levels-golden.json`; the suite then asserts the canonical
+  rows assemble to the oracle words bit-for-bit, the overlay survives
+  the C22 compose/decompose round-trip (and composes to the oracle's
+  stim-built words per SM), the reference series passes its own
+  monitor profile (full series and last-128 window alike — the verdict
+  must not depend on where the wave window sits), every perturbed
+  series goes red with a legible reason, par dominates the reference
+  on both axes, and the predict gate locks/unlocks per the owner
+  decision (first run of a non-authored program only, never
+  re-locking). The judge's `{defect:'judge'}` (single-glitch pass) and
+  the gate's `{defect:'gate'}` (never locks) run their red/green
+  divergence in-process.
 - **The defect hooks are the cheap red cases** (the
   `TestMutationsDiverge` idiom): `create(M, {pin:true})` /
 `{mirror:true}` re-inject the mutation-demo defects; the suite
@@ -275,6 +296,16 @@ project has hit by hand:
   scale the drawn geometry snaps to). Since C26 the geometry is also
   font-dependent (the two bitmap webfonts), so `load()` awaits
   `document.fonts.ready` before measuring.
+- **The reduced geometry (C34)** — the L0 page
+  (`sm-view.html?level=l0`) is the sandbox minus what the level hasn't
+  taught, and panel gating is ABSENCE: every locked panel must be out
+  of layout entirely (no box, no hit surface), the level band under
+  the toolbar holds its two single-line rows, the listing keeps all 32
+  rows in the narrow column and fills it to the panel floor, the wave
+  is the page's center of gravity, and the wrap steppers are never
+  built (L0 asks the wrap question; it does not edit EXECCTRL). These
+  boxes are the baseline C35's delay-column unlock must hold — a later
+  unlock never moves what is already on screen.
 
 Practicalities:
 
@@ -337,7 +368,13 @@ still lists its four counts), and the walks for `wait` (polarity
 first, then the sources), `push` (the block flag slot follows
 iffull — the menu no longer empties mid-instruction) and `irq`
 (set/wait/clear at the mode slot, rel/prev/next after the index)
-compose and commit their canonical spellings.
+compose and commit their canonical spellings. C34 adds the L0 level
+walk: on `?level=l0` the whole Tab cycle stays on the level's own
+surface (no orphan stops — absence covers focusability too), the
+predict group operates under the keys alone (←/→ + Enter, the C25
+radio grammar), RUN stays dead until the prediction commits and then
+runs under R, and the row editor never opens (the opcode whitelist
+is empty in L0).
 
 The focus model the walk pins: keys are owned by focus — text surfaces
 type, every interactive group ([data-rovi]) is ONE Tab stop with an

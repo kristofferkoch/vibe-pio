@@ -218,8 +218,8 @@ learning-curve entries; that file stays the design spec). Owner
 decisions on the record: the first card is a **vertical slice through
 L0**, not a shell-first or referee-first build; **locked panels are
 absent** (display:none) — the level page is its own geometry, never
-ghosted placeholders, and absence covers the Tab order too; **the
-listing keeps all 32 rows in every level** (row-count honesty resolved:
+ghosted placeholders, and absence covers the Tab order too; the
+**listing keeps all 32 rows in every level** (row-count honesty resolved:
 the machine is honest from cycle one, `·` rows dim); every level ships
 a **reference solution + par** (words/cycles from tools/hyperopt.py,
 committed per level), gated by a levels test in `make js` — each
@@ -242,23 +242,38 @@ the way golden vectors anchor pio-asm. Dependency order: C34 → C35 →
 C36 ∥ C37 (C36 first by value; level unlock order at runtime stays
 L3 → L4 → L5 regardless).
 
-C34 — the L0 slice — the level shell is the sandbox page minus what
-the level hasn't taught. Level definition format (classic-script
-loadable, dependency-free, one file per level under web/levels/):
-id/name/chapter, goal text (subgoal phrasing), SM overlay + prefilled
-words (the C22 overlay compose/decompose round-trips it), stimulus
-feeds, unlocked panels, unlocked opcodes (row-editor whitelist; empty
-for L0), monitor profile, predict prompt with candidate waves,
-reference solution + par. Panel gating is absence: hidden panels leave
-layout and Tab order both (the walk must find no orphan stops); the
-layout gate gains the reduced-geometry leg (L0's page pinned; a later
-unlock — L1's delay column — never moves what's already on screen).
-The level band lands here. L0 First light is the proof: prefilled
-`set pins,1` / `set pins,0`; UI = CYCLE, transport, listing (32
-rows), one wave row (the C28 lens pinned to gpio0); the predict gate
-asks the wrap question (pick the wave that happens after the PC
-passes the last row) before Run unlocks; acceptance = the square-wave
-monitor profile, relaxed tier.
+C34 landed 2026-09-05: the L0 slice. The level definition format is a
+classic-script JSON payload registering through PIO_LEVEL (one file per
+level under web/levels/; the payload is strict JSON so
+tools/gen_level_goldens.py runs each program through pio_model over the
+driver's exact load timeline and commits the pin series — drift-checked
+in `make js` like the assembler goldens); the runtime is web/levels.js
+(the registry, the versioned square-wave monitor judge with its tier
+ladder, the predict gate, the programState builder, the SURFACE
+absence table; {defect:'judge'} and {defect:'gate'} are the standing
+red hooks). The shell is the sandbox page under ?level=<id>: locked
+panels absent from layout and Tab order both, the listing's columns
+are curriculum (L0 = addr+instruction), the wrap arc draws but its
+steppers never build, and the level band carries name/goal/verdict/
+pass (+par after first solve). L0 First light proves it end to end —
+`set pins,1` / `set pins,0`, wrap 1→0, one wave row pinned to gpio0,
+the predict card asks the wrap question (three candidate waves; the
+two wrong ones are exactly the perturbed goldens), Run stays locked
+until a commit (first run only; re-runs and reloads never re-lock),
+and acceptance is the square monitor's relaxed tier (reference golden
+green, both-high/one-row/flat-low red, full series and last-128 window
+alike). Gates: levels.test.js (11 checks), the layout gate's
+reduced-geometry leg (L0 pinned at both 13" viewports — ran red against
+the pre-C34 page: every locked panel still laid out), the keyboard
+walk's L0 leg (no orphan stops — ran red: Tab reached bempty/bdemo/
+smscells/pincells/speed), the browser session (predict by click and by
+keys, PASS verdict, par reveal, solved reload) — which also caught and
+fixed three glue bugs before commit (the predict card had no mouse
+path; a solved reload lost the par reveal; the title bar narrated
+SANDBOX on a level page). smView gained the CTRL enable bit so
+disabled machines no longer render ghost PC chips (the demo's SM1–3
+parked cursors were a lie; make web re-verified the driver, 32 client
+checks + the three mutation demos).
 
 C35 — chapter 0 completes — the delay column and the editor's leash.
 L1 Metronome (modify): the delay column debuts (the side column stays

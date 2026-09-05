@@ -60,7 +60,14 @@
   drawn stepper pair riding the row's spin grammar (one Tab stop,
   −/+/←/→, wrapping 0..31), and the exec-title pin select is gone (the
   mode select stayed) — following a signal that moved never leaves the
-  wave.
+  wave. C34 adds the level shell: ?level=<id> boots the page as a level
+  (web/levels/<id>.js registers through levels.js) — locked panels are
+  ABSENT (layout and Tab order both), the program boots from the level,
+  the monitor's profile becomes the judge, and the level band under the
+  toolbar carries name/goal/verdict/pass (par after the first solve);
+  the predict gate holds RUN until a prediction is committed (first run
+  of a non-authored program only). Without the parameter this is the
+  full sandbox, everything unlocked.
   Serve from the repo root (web/serve.py)
   so the engine resolves at build/web/.
 -->
@@ -142,6 +149,46 @@
           </button>
         </div>
       </header>
+
+      <!-- ============ C34: the level band — levels only ====================
+           Absent in the sandbox (hidden): the era-skin group frame under
+           the toolbar carrying the level's name, goal, the monitor
+           verdict (the level's profile is the judge — the lens verdict it
+           renders is the same one web/tests/levels.test.js replays over
+           the pio_model goldens), the pass state, and — after the first
+           solve — the par line (expertise reversal: par pressure on a
+           novice is extraneous load). The predict card rides the second
+           row until the prediction is committed; once solved it leaves
+           (never punish re-runs). -->
+      <div id="lvband" hidden>
+        <div class="lvrow" id="lvhead">
+          <span class="lvname" id="lvname"></span>
+          <span class="lvgoal" id="lvgoal"></span>
+          <span
+            class="lvmon"
+            data-tip="pass = receiver conformance: the level's monitor judges the wave over its profile tier — any program drawing the same wave passes"
+            >monitor · <b id="lvverdict">awaiting run</b></span
+          >
+          <span class="lvpass" id="lvpass" hidden>✓ passed</span>
+          <span
+            class="lvpar"
+            id="lvpar"
+            hidden
+            data-tip="par — the committed reference cost (words · clk/cycle); visible after the first solve"
+          ></span>
+        </div>
+        <div class="lvrow" id="lvpred">
+          <span class="lvask" id="lvask"></span>
+          <div
+            id="lvcands"
+            tabindex="0"
+            role="listbox"
+            aria-label="prediction candidates"
+            data-rovi
+            data-status="predict: ←/→ pick the wave you expect · Enter commits it"
+          ></div>
+        </div>
+      </div>
 
       <!-- ============ the four machines: cursors, per-SM FIFO columns === -->
       <div
@@ -292,7 +339,7 @@
            (fifo/osr) → what the pins did (wave) → what feeds it
            (stimulus/pattern). -->
         <section class="panel" id="exec">
-          <div class="ptitle">
+          <div class="ptitle" id="exectitle">
             execute
             <b
               id="execsm"
@@ -831,6 +878,19 @@
     <script src="engine-driver.js"></script>
     <script src="pio-asm.js"></script>
     <script src="row-complete.js"></script>
+    <script src="levels.js"></script>
+    <script>
+    // C34: the level shell — ?level=<id> registers the level definition
+    // BEFORE sm-view.js evaluates. document.write from a parser-run
+    // script inserts into the stream, so the level file (a classic
+    // script calling PIO_LEVEL) executes first and the registry is
+    // populated by the time the view boots.
+    {
+      const id = new URLSearchParams(location.search).get('level');
+      if (id && /^[a-z0-9]+$/.test(id))
+        document.write('<script src="levels/' + id + '.js"><' + '/script>');
+    }
+    </script>
     <script src="sm-view.js"></script>
   </body>
 </html>

@@ -2404,3 +2404,163 @@ button.shiftviz:hover .sv-end {
     inset 2px 2px 0 var(--hi),
     inset -2px -2px 0 var(--line);
 }
+
+/* ================= C34: the level shell ================= */
+/* The level page is its own geometry — the sandbox minus what the level
+   hasn't taught, gated by ABSENCE ([hidden] on the locked panels, out of
+   layout and Tab order both). The window re-templates: titlebar, toolbar,
+   the level band, main, footer — the machines bar and the pin strip are
+   absent in chapter 0, and the register column does not exist, so main
+   runs two tracks. The cap keeps the drawn wave at its natural 896px
+   scale (program ~340 + 896 + gaps/bevels ≈ 1256). */
+#win.level {
+  grid-template-rows: auto auto auto minmax(0, 1fr) 26px;
+  max-width: 1272px;
+}
+main.level {
+  grid-template-columns: clamp(300px, 24vw, 340px) minmax(420px, 1fr);
+}
+/* the listing's columns are curriculum: L0 shows addr + instruction
+   only; delay re-adds its track with C35, side waits for chapter 4 */
+main.level .phead,
+main.level .prow {
+  grid-template-columns: 30px 1fr;
+}
+main.level .phead > span:nth-child(n + 3),
+main.level .cside,
+main.level .cdly,
+main.level .prow .chips {
+  display: none;
+}
+main.level #program.col-delay .phead,
+main.level #program.col-delay .prow {
+  grid-template-columns: 30px 1fr 38px;
+}
+main.level #program.col-delay .cdly,
+main.level #program.col-delay .phead > span:nth-child(4) {
+  display: block;
+}
+
+/* ---- the level band: one era group frame under the toolbar ---- */
+#lvband {
+  margin: 2px 4px 0;
+  border: 1px solid var(--line);
+  box-shadow: inset 1px 1px 0 var(--hi);
+  background: var(--panel);
+  padding: 1px 8px;
+  min-height: 0;
+}
+.lvrow {
+  display: flex;
+  align-items: center;
+  gap: 6px 14px;
+  flex-wrap: nowrap;
+  min-height: 21px;
+  padding: 2px 0;
+  min-width: 0;
+}
+.lvname {
+  font-weight: bold;
+  color: var(--navy);
+  white-space: nowrap;
+}
+.lvgoal {
+  flex: 1;
+  min-width: 0;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lvmon {
+  color: var(--dim);
+  white-space: nowrap;
+}
+.lvmon b {
+  font-family: var(--mono);
+  font-weight: normal;
+  color: var(--txt);
+}
+.lvmon b.ok {
+  color: var(--green);
+}
+.lvpass {
+  color: var(--green);
+  font-weight: bold;
+  white-space: nowrap;
+}
+.lvpar {
+  font-family: var(--mono);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.lvask {
+  color: var(--amber);
+  white-space: nowrap;
+}
+/* the predict candidates: drawn thumbs + labels, the C25 radio grammar
+   (one Tab stop, an internal cursor rendered as view state) */
+#lvcands {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+#lvcands:focus {
+  outline: 1px dotted var(--txt);
+  outline-offset: -1px;
+}
+.lcand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 6px;
+  min-width: 0;
+  background: var(--panel);
+  box-shadow:
+    inset 1px 1px 0 var(--hi),
+    inset -1px -1px 0 var(--line);
+  cursor: pointer;
+  user-select: none;
+}
+.lcand svg {
+  flex: none;
+  background: var(--well);
+  box-shadow: inset 1px 1px 0 var(--line);
+}
+.lcand span {
+  font-size: 11px;
+  color: var(--txt);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lcand.kc {
+  background: rgba(0, 106, 120, 0.09);
+  box-shadow:
+    inset 1px 1px 0 var(--hi),
+    inset -1px -1px 0 var(--line),
+    inset 0 0 0 1px var(--cfg);
+}
+.lcand.picked {
+  box-shadow:
+    inset 1px 1px 0 var(--hi),
+    inset -1px -1px 0 var(--line),
+    inset 0 0 0 1px var(--green);
+}
+.lcand.picked span {
+  color: var(--green);
+}
+/* once committed, the un-picked candidates yield — the group still
+   shows what you chose (the truth arrives on the wave) */
+#lvcands.done .lcand:not(.picked) {
+  opacity: 0.55;
+}
+/* the gate's deny flash: the locked predict row is where the eye should
+   go (the fifofull idiom — a two-beat blink, no reflow) */
+#lvpred.deny {
+  animation: blink 0.24s steps(2) 1;
+}
+#lvpred.deny .lvask {
+  color: var(--red);
+}
