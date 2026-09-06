@@ -785,6 +785,72 @@ for (const [width, height] of VIEWPORTS) {
   });
 }
 
+// the arc's steppers say ▲/▼, and the glyph must point the way that
+// stepper's write moves its end DOWN THE LISTING — row numbers grow
+// downward, so inc (a later row) slides an end down wherever the pair
+// sits, dec slides it up. The first cut tied ▲ to inc at both ends,
+// which inverts all four arrows on screen. The pin is behavioral, not
+// textual: each button's write is applied exactly the way sendCtl
+// applies it, the bracket edge the pair hugs is measured before and
+// after (pixels, not the inc/dec name — the mapping is what's under
+// test), and the glyph must match the measured motion. The 5/2 posture
+// keeps every one of the four gestures a plain single-bracket slide.
+// Also pinned: each pair reads [▲][▼] (up on the left) — the drawn
+// order the CSS comment documents.
+const WRAP_ARROW_SCAN = `(() => {
+  const set52 = () => {
+    Object.assign(curState.sms[0].execctrl, { wrapTop: 5, wrapBot: 2 });
+    OV = overlayOf(0);
+    buildProgram();
+  };
+  set52();
+  const bad = [];
+  const segs = () =>
+    [...document.querySelectorAll('#progrows .wraparc')].map((s) => s.getBoundingClientRect());
+  const steps = [...document.querySelectorAll('#progrows .wstep')];
+  if (steps.length !== 4) return ['expected 4 wrap steppers, found ' + steps.length];
+  for (const b of steps) {
+    set52();
+    const ctl = b.dataset.ctl,
+      g = b.dataset.g;
+    const before = segs();
+    if (before.length !== 1) return ['expected one wrap bracket at 5/2, found ' + before.length];
+    // the edge the pair hugs: WRAP_TOP the after-insn end (bracket
+    // bottom — rows grow downward), WRAP_BOTTOM the return row (top)
+    const edge0 = ctl === 'wrap-top' ? before[0].bottom : before[0].top;
+    for (const [grp, fld, v] of VD.controlEdit(OV, ctl, g)) curState.sms[0][grp][fld] = v;
+    OV = overlayOf(0);
+    buildProgram();
+    const after = segs();
+    if (after.length !== 1)
+      return [ctl + '/' + g + ' left the single-bracket posture — pick a 5/2-safe gesture'];
+    const dy = (ctl === 'wrap-top' ? after[0].bottom : after[0].top) - edge0;
+    const want = dy > 0 ? '▼' : dy < 0 ? '▲' : '';
+    if (b.textContent !== want)
+      bad.push(
+        ctl + '/' + g + ' is ' + b.textContent + ' but its write moves the end ' +
+          (dy > 0 ? 'down' : 'up') + ' the listing (' + dy.toFixed(0) + 'px) — the glyph must point the way the end moves',
+      );
+  }
+  set52();
+  for (const box of document.querySelectorAll('#progrows .wspin')) {
+    const glyphs = [...box.querySelectorAll('.wstep')].map((x) => x.textContent).join('');
+    if (glyphs !== '▲▼')
+      bad.push('a wrap pair reads [' + glyphs.split('').join('][') + '] — both pairs read [▲][▼] (up on the left)');
+  }
+  return bad;
+})()`;
+
+test('wrap arc steppers: every ▲/▼ points the way its write moves the end', async () => {
+  await load(null, 1280, 800);
+  const bad = await page.evaluate(WRAP_ARROW_SCAN);
+  assert.deepStrictEqual(
+    bad,
+    [],
+    'wrap stepper arrows point the wrong way (rows grow downward: inc slides an end down, dec up — at both ends)',
+  );
+});
+
 // C27: the pin strip draws the mapping. The three cyan-family lanes
 // under each pin number carry the selected SM's OUT / SIDESET / IN
 // extents (SPEC-7-26/21), so a base/count stepper click shows where the

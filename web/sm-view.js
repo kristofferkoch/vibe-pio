@@ -1150,16 +1150,18 @@ function buildProgram() {
   ah.dataset.tip = arcTitle;
   ah.style.top = `${wrapBot * 20 + 6}px`;
   nodes.push(ah);
-  // wrap steppers on the arc (C22): WRAP_TOP at the arc's top end,
-  // WRAP_BOTTOM beside the return arrow. The glyphs are the direction
-  // the end moves — ▲ the end rises (inc), ▼ it falls (dec) — so both
-  // pairs read [▲][▼] and mean it the same way. The pairs sit right of
-  // the margin's arrow lane (x ≥ 15) so the arrowhead stays visible,
-  // and each hugs its end vertically. When the ends coincide (a fresh
-  // SM stepped to 0/0) the window is the one-row tick and the pairs
-  // bracket that row — never the clipped-above-the-scroll-origin state
-  // the layout gate caught (wrap-top inc is the arc's stretch gesture at
-  // the top end; from the 1/31 reset posture it stretches [0..wrapTop]).
+  // wrap steppers on the arc (C22): WRAP_TOP hugging the after-insn end
+  // (row wrapTop — the bracket's lower end, rows grow downward),
+  // WRAP_BOTTOM beside the return arrow. The glyphs point the way the
+  // end moves on the listing — a later row is lower, so inc steps the
+  // end down (▼) and dec up (▲), the same meaning at both ends — and
+  // each pair reads [▲][▼]. The pairs sit right of the margin's arrow
+  // lane (x ≥ 15) so the arrowhead stays visible, and each hugs its end
+  // vertically. When the ends coincide (a fresh SM stepped to 0/0) the
+  // window is the one-row tick and the pairs bracket that row — never
+  // the clipped-above-the-scroll-origin state the layout gate caught
+  // (wrap-top inc is the arc's stretch gesture at the after-insn end;
+  // from the 1/31 reset posture it stretches [0..wrapTop]).
   // C25: each pair rides in one .wspin spinbox stop (one Tab stop, keys
   // −/← and +/→) at the same 12+2+12 footprint the buttons drew.
   const wrapSpin = (field, y, label, id) => {
@@ -1171,14 +1173,14 @@ function buildProgram() {
     box.dataset.rovi = '';
     box.dataset.status = '−/+ or ←/→ step · wraps';
     box.style.top = `${y}px`;
-    for (const g of ['inc', 'dec']) {
+    for (const g of ['dec', 'inc']) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = `wstep ${g}`;
       b.tabIndex = -1;
       b.dataset.ctl = field;
       b.dataset.g = g;
-      b.textContent = g === 'inc' ? '▲' : '▼';
+      b.textContent = g === 'inc' ? '▼' : '▲';
       b.dataset.tip = `config · ${field === 'wrap-top' ? 'WRAP_TOP' : 'WRAP_BOTTOM'}: ${label(g)} — cycles 0..31, a real EXECCTRL write`;
       box.appendChild(b);
     }
@@ -1198,14 +1200,14 @@ function buildProgram() {
       'wrap-top',
       tY,
       (g) =>
-        `${g === 'inc' ? 'raise' : 'lower'} the top end — after-insn ${wrapTop} → ${(wrapTop + (g === 'inc' ? 1 : 31)) & 31}`,
+        `${g === 'inc' ? 'move the top end down a row' : 'move the top end up a row'} — after-insn ${wrapTop} → ${(wrapTop + (g === 'inc' ? 1 : 31)) & 31}`,
       'spin-wraptop',
     );
     wrapSpin(
       'wrap-bot',
       bY,
       (g) =>
-        `${g === 'inc' ? 'raise' : 'lower'} the return row — target ${wrapBot} → ${(wrapBot + (g === 'inc' ? 1 : 31)) & 31}`,
+        `${g === 'inc' ? 'move the return row down a row' : 'move the return row up a row'} — target ${wrapBot} → ${(wrapBot + (g === 'inc' ? 1 : 31)) & 31}`,
       'spin-wrapbot',
     );
   }
