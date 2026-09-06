@@ -141,7 +141,8 @@ def test_client_legs_include_the_multi_sm_corpus() -> None:
     # highest writer) wins pin 0; the mid-run OUT_BASE edit moves SM3 to
     # pin 2, so pin 0 falls back to SM0's 0.
     reads = legs["multi_arb"]["reads"]
-    assert reads[0][0] == stim.A_PADOUT and reads[0][1] & 1 == 1
+    assert reads[0][0] == stim.A_PADOUT
+    assert reads[0][1] & 1 == 1
     assert reads[2][0] == stim.A_PADOUT
     assert reads[2][1] & 1 == 0
     assert reads[2][1] & 4 == 4

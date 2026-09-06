@@ -554,7 +554,7 @@ def _sm_cfg(
     }
 
 
-def _leg_trace(m: _SandboxMirror, **extra: object) -> dict[str, object]:
+def _leg_trace(m: _SandboxMirror, **extra: Any) -> dict[str, Any]:
     """pio_model's oracle for one leg: the per-clk gpio_out words
     (SPEC-16-7 G records — full 32-bit, stronger than the C18 bit0
     series) and the ordered reg-read records."""
@@ -576,10 +576,10 @@ def _frame_bits(byte: int, idle_cells: int = 2) -> list[int]:
     return [c for c in cells for _ in range(8)]
 
 
-def _client_legs() -> list[tuple[str, dict[str, object]]]:
+def _client_legs() -> list[tuple[str, dict[str, Any]]]:
     """(name, expected) per leg — the python twins of LEGS in
     web/node_client_gate.js, call for call."""
-    legs: list[tuple[str, dict[str, object]]] = []
+    legs: list[tuple[str, dict[str, Any]]] = []
     off = _sm_cfg(en=False)  # the single-SM legs' SM1..3: disabled, reset overlay
 
     # uart_demo — the demoted level-02 fixture (the C18 leg)

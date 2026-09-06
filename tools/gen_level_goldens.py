@@ -59,7 +59,6 @@ if TOOLS not in sys.path:
 
 from pio_model import asm, stim  # noqa: E402
 from pio_model.difftest import REPO, run_model_trace  # noqa: E402
-
 from webbuild import _SandboxMirror  # noqa: E402  (the client gate's own load-timeline twin)
 
 FIXTURE = REPO / "web" / "tests" / "levels-golden.json"
@@ -72,14 +71,29 @@ RESET: dict[str, dict[str, Any]] = {
     "clkdiv": {"intg": 1, "frac": 0},
     "pinctrl": {"ssCnt": 0, "setCnt": 5, "outCnt": 0, "inBase": 0, "ssBase": 0, "setBase": 0, "outBase": 0},
     "execctrl": {
-        "sideEn": False, "sidePindirs": False, "jmpPin": 0, "outEnSel": 0,
-        "inlineOutEn": False, "outSticky": False, "wrapTop": 1, "wrapBot": 31,
-        "statusSel": 3, "statusN": 31,
+        "sideEn": False,
+        "sidePindirs": False,
+        "jmpPin": 0,
+        "outEnSel": 0,
+        "inlineOutEn": False,
+        "outSticky": False,
+        "wrapTop": 1,
+        "wrapBot": 31,
+        "statusSel": 3,
+        "statusN": 31,
     },
     "shiftctrl": {
-        "fjoinRx": False, "fjoinTx": False, "pullThr": 32, "pushThr": 32,
-        "outRight": True, "inRight": True, "autopull": False, "autopush": False,
-        "fjoinRxPut": False, "fjoinRxGet": False, "inCount": 0,
+        "fjoinRx": False,
+        "fjoinTx": False,
+        "pullThr": 32,
+        "pushThr": 32,
+        "outRight": True,
+        "inRight": True,
+        "autopull": False,
+        "autopush": False,
+        "fjoinRxPut": False,
+        "fjoinRxGet": False,
+        "inCount": 0,
     },
 }
 
@@ -139,7 +153,7 @@ PERTURBATIONS: dict[str, list[tuple[str, list[str]]]] = {
 
 LEVEL_RE = re.compile(
     r"globalThis\.PIO_LEVEL\??\.\(\s*'(?P<id>[a-z0-9]+)'\s*,\s*(?P<body>\{.*\})\s*\)\s*;",
-    re.S,
+    re.DOTALL,
 )
 
 
@@ -155,10 +169,7 @@ def parse_level_file(path: Path) -> tuple[str, dict[str, Any]]:
 
 
 def merged(sm_def: dict[str, Any] | None, group: str) -> dict[str, Any]:
-    base = dict(RESET[group])
-    for k, v in (sm_def or {}).get(group, {}).items():
-        base[k] = v
-    return base
+    return {**RESET[group], **(sm_def or {}).get(group, {})}
 
 
 def compose_config(sm_def: dict[str, Any] | None) -> dict[str, int | None]:
@@ -177,20 +188,36 @@ def compose_config(sm_def: dict[str, Any] | None) -> dict[str, int | None]:
             raise SystemExit(f"level overlays {field}: the stim mirror cannot compose it")
     return {
         "pinctrl": stim.pctrl(
-            ss_cnt=pc["ssCnt"], set_cnt=pc["setCnt"], out_cnt=pc["outCnt"],
-            in_base=pc["inBase"], ss_base=pc["ssBase"], set_base=pc["setBase"],
+            ss_cnt=pc["ssCnt"],
+            set_cnt=pc["setCnt"],
+            out_cnt=pc["outCnt"],
+            in_base=pc["inBase"],
+            ss_base=pc["ssBase"],
+            set_base=pc["setBase"],
             out_base=pc["outBase"],
         ),
         "execctrl": stim.execctrl(
-            wrap_top=ex["wrapTop"], wrap_bot=ex["wrapBot"], jmp_pin=ex["jmpPin"],
-            side_en=ex["sideEn"], side_pindirs=ex["sidePindirs"],
-            status_sel=ex["statusSel"], status_n=ex["statusN"], out_sticky=ex["outSticky"],
+            wrap_top=ex["wrapTop"],
+            wrap_bot=ex["wrapBot"],
+            jmp_pin=ex["jmpPin"],
+            side_en=ex["sideEn"],
+            side_pindirs=ex["sidePindirs"],
+            status_sel=ex["statusSel"],
+            status_n=ex["statusN"],
+            out_sticky=ex["outSticky"],
         ),
         "shiftctrl": stim.shiftctrl(
-            fjoin_rx=sc["fjoinRx"], fjoin_tx=sc["fjoinTx"], pull_thr=sc["pullThr"],
-            push_thr=sc["pushThr"], out_right=sc["outRight"], in_right=sc["inRight"],
-            autopull=sc["autopull"], autopush=sc["autopush"],
-            fjoin_rx_put=sc["fjoinRxPut"], fjoin_rx_get=sc["fjoinRxGet"], in_count=sc["inCount"],
+            fjoin_rx=sc["fjoinRx"],
+            fjoin_tx=sc["fjoinTx"],
+            pull_thr=sc["pullThr"],
+            push_thr=sc["pushThr"],
+            out_right=sc["outRight"],
+            in_right=sc["inRight"],
+            autopull=sc["autopull"],
+            autopush=sc["autopush"],
+            fjoin_rx_put=sc["fjoinRxPut"],
+            fjoin_rx_get=sc["fjoinRxGet"],
+            in_count=sc["inCount"],
         ),
         "clkdiv": stim.clkdiv(cd["intg"], cd["frac"]),
     }
@@ -223,8 +250,8 @@ def pin_series(words: list[int], sms: list[dict[str, Any] | None], pin: int) -> 
                 "execctrl": w["execctrl"],  # type: ignore[index]
                 "shiftctrl": w["shiftctrl"],  # type: ignore[index]
                 "clkdiv": w["clkdiv"],  # type: ignore[index]
-                "feeds": tuple(sms[i].get("feeds", ())),  # type: ignore[union-attr]
-                "entry": sms[i].get("entry"),  # type: ignore[union-attr]
+                "feeds": tuple((sms[i] or {}).get("feeds", ())),
+                "entry": (sms[i] or {}).get("entry"),
                 "en": (sms[i] or {}).get("en", True),
             }
             for i, w in enumerate(compose_all(sms))
@@ -251,7 +278,7 @@ def generate() -> dict[str, Any]:
     }
     for path in sorted(LEVELS_DIR.glob("*.js")):
         lid, defn = parse_level_file(path)
-        sms = defn["program"].get("sms") or [None, None, None, None]
+        sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
         pin = defn["profile"]["pin"]
         # the reference solution is its own field since C35 (the fade):
         # levels that boot something else (L1's un-slowed program, L2's
