@@ -1416,3 +1416,124 @@ test('the L8 walk: jmp x-- debuts in the menu, the 4-word gather solves', async 
     'the page walked the whole loop without an engine error',
   );
 });
+
+// ---- the C42 landing leg ------------------------------------------------
+// The campaign map (web/index.html) is its own page: no engine boot, so
+// this walk needs no fake engine — it drives the map's C25
+// listing-as-listbox grammar verbatim (one Tab stop, ↑/↓ clamp-walk,
+// Enter opens) over a SEEDED campaign (chapters 0–1 solved, frontier
+// L6 — the mock-up round's own posture). The level keys are snapshotted
+// before and restored after: the earlier walks' own sessions must not
+// leak in, and this seed must not leak out into any later leg.
+test('the landing walk: one stop for the map, arrows walk, Enter opens, the sandbox reachable', async () => {
+  await page.setViewport(1280, 800);
+  // seed on the origin first (a page must be open for localStorage)
+  await page.goto(`${baseUrl}/web/index.html`);
+  const snapshot = await page.evaluate(`(() => {
+    const out = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k.startsWith('vibe-pio-level-')) out[k] = localStorage.getItem(k);
+    }
+    localStorage.clear();
+    return out;
+  })()`);
+  const seed = await page.evaluate(`(() => {
+    for (const id of ['l0', 'l1', 'l2', 'l3', 'l4', 'l5'])
+      localStorage.setItem('vibe-pio-level-' + id, JSON.stringify({ solved: true }));
+    return true;
+  })()`);
+  assert.ok(seed);
+  try {
+    await page.goto(`${baseUrl}/web/index.html`);
+    await until("document.getElementById('map')?.children.length > 0", 'the map to build');
+
+    // one Tab stop for the whole page: the listbox host, and nothing
+    // else focusable in the DOM
+    const stops = await page.evaluate(
+      `document.querySelectorAll('a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])').length`,
+    );
+    assert.strictEqual(stops, 1, "the map is the page's only Tab stop");
+    await press('Tab');
+    assert.strictEqual(await value(activeId), 'map', 'Tab lands on the map host');
+
+    // the cursor boots on the frontier row (Enter at first focus opens
+    // the next level) and the status line narrates it
+    assert.strictEqual(
+      await value("document.getElementById('map').getAttribute('aria-activedescendant')"),
+      'row-l6',
+      'the cursor boots on the frontier row',
+    );
+    assert.ok(
+      await value("document.getElementById('row-l6').classList.contains('kc')"),
+      'the amber cursor marks the frontier row',
+    );
+    assert.match(
+      await value("document.getElementById('statusline').textContent"),
+      /the next level/,
+      'the status line narrates the frontier',
+    );
+
+    // ↑ walks into the solved chapter: par on the face, Enter replays
+    await press('ArrowUp');
+    assert.strictEqual(
+      await value("document.getElementById('map').getAttribute('aria-activedescendant')"),
+      'row-l5',
+      '↑ moves the cursor off the frontier',
+    );
+    await press('Enter');
+    await until(
+      `location.pathname.endsWith('sm-view.html') && location.search === '?level=l5'`,
+      'Enter on a solved row to open the level',
+    );
+
+    // back to the map (the seed persists on the origin)
+    await page.goto(`${baseUrl}/web/index.html`);
+    await until("document.getElementById('map')?.children.length > 0", 'the map to rebuild');
+    await press('Tab');
+
+    // a dim row names the future but does not open: walk to L7 (one
+    // down from the booted frontier), Enter, and the page stays put
+    await press('ArrowDown');
+    assert.strictEqual(
+      await value("document.getElementById('map').getAttribute('aria-activedescendant')"),
+      'row-l7',
+      'the cursor walks a dim row',
+    );
+    assert.ok(
+      await value("document.getElementById('row-l7').classList.contains('ahead')"),
+      'L7 past the frontier is dim-but-named',
+    );
+    await press('Enter');
+    await new Promise((r) => setTimeout(r, 400));
+    assert.ok(
+      await value("location.pathname.endsWith('index.html')"),
+      'Enter on a dim row never navigates',
+    );
+
+    // the standing row: clamp-walk to the end, the sandbox answers
+    for (let i = 0; i < 12; i++) await press('ArrowDown');
+    assert.strictEqual(
+      await value("document.getElementById('map').getAttribute('aria-activedescendant')"),
+      'row-sandbox',
+      'the walk clamps on the sandbox standing row',
+    );
+    assert.match(
+      await value("document.getElementById('statusline').textContent"),
+      /the sandbox/,
+      'the sandbox row narrates itself',
+    );
+    await press('Enter');
+    await until(
+      `location.pathname.endsWith('sm-view.html') && location.search === ''`,
+      'Enter on the sandbox row to open the sandbox',
+    );
+  } finally {
+    // restore the walks' own sessions whatever happened above
+    await page.evaluate(`((snap) => {
+      const keep = Object.keys(localStorage).filter((k) => k.startsWith('vibe-pio-level-'));
+      for (const k of keep) localStorage.removeItem(k);
+      for (const [k, v] of Object.entries(snap)) localStorage.setItem(k, v);
+    })(${JSON.stringify(snapshot)})`);
+  }
+});

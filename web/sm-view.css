@@ -2673,3 +2673,138 @@ main.level #program:not(.col-side) #edside {
 #lvpred.deny .lvask {
   color: var(--red);
 }
+
+/* ========== C42: the campaign landing (web/index.html) ==========
+   The front door is its own page sharing this stylesheet: the era
+   master window as a CONTENT-HUGGING menu (mockups/landing.html is
+   the round that picked these — DESIGN-NOTES "The campaign's front
+   door"), no toolbar (nothing to command), no engine boot. The map is
+   ONE listbox (one Tab stop — the C25 listing grammar): chapters are
+   groups in it, the cursor walks every row including the dim ones,
+   and the C25 row-cursor idiom (teal tint + the 2px amber bar) marks
+   it. Focus is the pinned global dotted rect; no new glyph grammar. */
+
+#win.campaign {
+  grid-template-rows: auto minmax(0, 1fr) 26px;
+  max-width: 640px;
+  height: auto; /* the menu window hugs its map — no dead silver below */
+  max-height: calc(100% - 16px);
+}
+#map {
+  overflow-y: auto;
+  margin: 6px;
+  background: var(--well);
+  box-shadow:
+    inset 2px 2px 0 var(--line),
+    inset -2px -2px 0 var(--hi);
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel) var(--well);
+  padding: 4px;
+  min-height: 0;
+}
+/* the chapter group frame: era groupbox — 1px border + inset highlight;
+   the caption is .ptitle's grammar (bold, the bottom rule), the ✓ a
+   caption mark (green, C38's pass color), never a new glyph */
+.chgroup {
+  border: 1px solid var(--line);
+  box-shadow: inset 1px 1px 0 var(--hi);
+  background: var(--panel);
+  margin: 4px 2px;
+}
+.chcap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--line);
+  box-shadow: inset 0 -1px 0 var(--hi);
+  user-select: none;
+  white-space: nowrap;
+}
+.chcap .num {
+  color: var(--dim);
+  font-weight: normal;
+}
+.chcap .done {
+  margin-left: auto;
+  color: var(--green);
+  font-weight: normal;
+}
+/* one row per level (+ the sandbox standing row): 44px mono number ·
+   name · right status; rows never wrap (the pinned geometry the layout
+   gate checks at both 13" viewports) */
+.mrow {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  height: 21px;
+  padding: 0 12px 0 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  user-select: none;
+}
+.mrow .num {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--addr);
+  text-align: right;
+  padding-right: 8px;
+}
+.mrow .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mrow .st {
+  color: var(--dim);
+  padding-left: 14px;
+}
+/* the three states: ✓ solved (green, par on solved rows only — the
+   expertise-reversal rule projected onto the map), ▸ the frontier
+   (amber, bold — where to go next), dim ahead (--dimmer: visible,
+   never hidden — the name stays legible, only the row's power drops) */
+.mrow.solved .st {
+  color: var(--green);
+}
+.mrow.frontier .st {
+  color: var(--amber);
+  font-weight: bold;
+}
+.mrow.ahead {
+  color: var(--dimmer);
+}
+.mrow.ahead .num {
+  color: var(--dimmer);
+}
+/* linked rows (solved, frontier, the sandbox): the map's mouse path.
+   Hover restyles are color-only — the never-reflow discipline */
+.mrow.link {
+  cursor: pointer;
+}
+.mrow.link:hover .name {
+  text-decoration: underline;
+}
+/* the C25 row cursor, verbatim grammar: the cool tint + the 2px bar */
+.mrow.kc {
+  background: rgba(0, 106, 120, 0.09);
+}
+.mrow.kc::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--amber);
+}
+/* the sandbox standing row: after the last frame, a rule above, no
+   frame of its own — "everything always" is the row's name, not a
+   chapter's */
+.mrow.standing {
+  border-top: 1px solid var(--line);
+  margin: 6px 2px 2px;
+}

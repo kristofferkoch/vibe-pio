@@ -54,8 +54,11 @@ let LVSURF = null; // the level's unlocked key set (null = sandbox: all)
 const lvUnlock = (key) => !LEVEL || (LVSURF ? LVSURF.has(key) : true);
 
 // per-level session: the predict commit and the solve persist (a
-// reload never re-punishes; re-runs never re-lock)
-const lvKey = (id) => `vibe-pio-level-${id}`;
+// reload never re-punishes; re-runs never re-lock). The key spelling is
+// levels.js data (PioLevels.sessionKey) — the landing page derives
+// campaign state from these same keys (C42), so the two pages can never
+// disagree about where a level's session lives
+const lvKey = PioLevels.sessionKey;
 let lvSession = {};
 function lvLoad(id) {
   if (!LEVEL) return {};
@@ -637,14 +640,9 @@ function levelJudge(st) {
 }
 function lvRevealSolved() {
   $('lvpass').hidden = false;
-  // the period axis names its own clock: cycles for the square judge,
-  // bit-times for the decode judge AND the reading judges (par 4 words
-  // · 2 clk/bit reads as the gather's rate — the in+jmp loop's steady
-  // per-bit cost; L6's 2 clk/bit is the in+push lap, the same axis)
-  const unit =
-    LEVEL.profile.kind === 'uart' || LEVEL.profile.kind === 'rx' ? 'clk/bit' : 'clk/cycle';
-  $('lvpar').textContent =
-    `par ${LEVEL.reference.par.words} words · ${LEVEL.reference.par.period} ${unit}`;
+  // C42: the par label (words + its named clock) is PioLevels.parText —
+  // the same string the campaign map shows on solved rows
+  $('lvpar').textContent = PioLevels.parText(LEVEL);
   $('lvpar').hidden = false;
   $('lvpred').hidden = true; // the gate's job is done — never punish re-runs
 }

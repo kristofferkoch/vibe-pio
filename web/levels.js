@@ -28,6 +28,11 @@
 // Runtime JS is dependency-free: classic <script> before the level files
 // and sm-view.js (globalThis.PioLevels, and PIO_LEVEL as the classic
 // registration hook) or CommonJS (web/tests) — the engine-driver pattern.
+// C42 grows the registry into the campaign's source: the CHAPTERS table
+// (titles, ordered), the per-level session-key spelling, the campaign
+// state derivation (order/solved/frontier/chapters over the existing
+// localStorage keys), and the shared par label — the landing page
+// (web/index.html) is a second consumer of exactly this data.
 
 ((global) => {
   'use strict';
@@ -53,6 +58,11 @@
     str(def?.name, 'name');
     if (!Number.isInteger(def?.chapter) || def.chapter < 0)
       throw new Error('level: chapter must be a whole number');
+    // C42: a chapter ships its title with its first level — a level
+    // whose chapter is not in the CHAPTERS table is a level arriving
+    // ahead of its own grilling
+    if (!CHAPTERS.some((c) => c.n === def.chapter))
+      throw new Error(`level: chapter ${def.chapter} has no CHAPTERS title`);
     str(def?.goal, 'goal', 8);
     if (!Array.isArray(def?.panels) || !def.panels.length)
       throw new Error('level: panels (the unlocked surface) must be a non-empty list');
@@ -221,6 +231,63 @@
     const q = new URLSearchParams(search ?? (global.location ? global.location.search : ''));
     const id = q.get('level');
     return id ? (LEVELS.get(id) ?? null) : null;
+  }
+
+  // ================= the campaign (C42) =================
+  // The chapter registry: titles live HERE, not in the level files (one
+  // title per chapter, owned once) and not in LEVELS-NOTES prose (which
+  // does not ship ahead of its own grilling). A chapter enters this
+  // table exactly when its first level ships; validate() rejects a level
+  // whose chapter has no title, so the two can never drift apart.
+  const CHAPTERS = [
+    { n: 0, title: 'First light' },
+    { n: 1, title: 'Time and loops' },
+    { n: 2, title: 'Reading the world' },
+  ];
+
+  // The per-level session key (the lvSession store sm-view.js reads and
+  // writes). The landing page derives campaign state from the SAME keys
+  // — no new storage shape on the C42 card — so the spelling is module
+  // data, not a convention two files must keep in sync.
+  const sessionKey = (id) => `vibe-pio-level-${id}`;
+
+  // Campaign state over the registry + the existing per-level sessions.
+  // `read(id)` returns the parsed session (or null) — the browser passes
+  // a localStorage getter, the levels gate a plain object. Campaign
+  // order is the NUMERIC level order (l0, l1, … — the runtime unlock
+  // order, regardless of registration order); the frontier is the first
+  // unsolved level in that order (so furthest = max CONTIGUOUS solved);
+  // a chapter ships on the map only while it has a registered level,
+  // and is complete when every one of them is solved.
+  function campaign(read) {
+    const entries = [...LEVELS.keys()].map((id, i) => ({
+      id,
+      i,
+      n: /^l(\d+)$/.exec(id),
+    }));
+    entries.sort((a, b) => (a.n ? +a.n[1] : 1e9) - (b.n ? +b.n[1] : 1e9) || a.i - b.i);
+    const order = entries.map((e) => e.id);
+    const solved = new Set(order.filter((id) => !!read?.(id)?.solved));
+    const frontier = order.find((id) => !solved.has(id)) ?? null;
+    const chapters = CHAPTERS.map((c) => {
+      const levels = order.filter((id) => LEVELS.get(id).chapter === c.n);
+      return {
+        n: c.n,
+        title: c.title,
+        levels,
+        complete: levels.length > 0 && levels.every((id) => solved.has(id)),
+      };
+    }).filter((c) => c.levels.length > 0);
+    return { order, solved, frontier, chapters };
+  }
+
+  // The par label with its named clock — the SAME string the level band
+  // reveals on solve (lvRevealSolved) and the map shows on solved rows:
+  // cycles for the square judge, bit-times for the decode and reading
+  // judges (C41's named-clock rule: a clk/bit level compares clk/bit).
+  function parText(def) {
+    const unit = def.profile.kind === 'uart' || def.profile.kind === 'rx' ? 'clk/bit' : 'clk/cycle';
+    return `par ${def.reference.par.words} words · ${def.reference.par.period} ${unit}`;
   }
 
   // ================= the monitor judge =================
@@ -708,6 +775,10 @@
     programState,
     SURFACE,
     applySurface,
+    CHAPTERS,
+    sessionKey,
+    campaign,
+    parText,
   };
   global.PioLevels = api;
   global.PIO_LEVEL = register; // the classic-script registration hook

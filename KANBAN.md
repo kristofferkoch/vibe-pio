@@ -715,17 +715,54 @@ through the two sanctioned headless gates. No engine work rides these
 cards; the levels gate stays engine-side and untouched. Dependency
 order: C42 → C43.
 
-C42 — the landing. web/index.html (own page, era master window, CUA
-listbox, no engine boot) + the chapter registry table in levels.js
-(titles, ordered); campaign state derivation over the existing
-per-level keys; the map face per the decisions above (three states,
-dim-but-named, par on solved rows, era caption ✓, the sandbox standing
-row); the C25 listbox keyboard; serve.py's `/` front door + docstring
-repoint; README's try-it line. A mock-up round in mockups/landing.html
-precedes implementation (the DESIGN-NOTES section is the standing
-spec). Gates: the keyboard walk's landing leg + the layout gate's
-landing leg (both red first — the page does not exist), the browser
-session, `make js` / `make web`.
+C42 landed 2026-09-06: the front door. The mock-up round
+(mockups/landing.html over the shipped era stylesheet; its rendered
+decisions appended to the DESIGN-NOTES section) picked the face first:
+a content-hugging menu window (the first cut's fixed-height window drew
+a dead silver slab — height:auto capped at the viewport, max-width
+640, no toolbar), the map as ONE listbox with chapters as ARIA groups
+in it, rows `44px 1fr auto` (mono number · name · right status), the
+status faces riding the band's own grammar (green ✓+par, bold amber ▸,
+--dimmer ahead), the sandbox as a standing row under a rule (not a
+chapter), and the C25 cursor grammar verbatim with the cursor booting
+on the frontier row. web/index.html is its own page (sm-view.css
+shared via a dated C42 section; classic-script, dependency-free, NO
+engine boot — levels.js + the nine level files are its only data).
+levels.js grew the campaign as module logic: the CHAPTERS title table
+(validate() now rejects a level whose chapter has no title, and the
+gate pins that no title ships ahead of its first level), sessionKey
+(the per-level localStorage spelling, repointed out of sm-view.js so
+both pages share one constant), campaign(read) (numeric order — this
+test file's own l5-before-l4 registration proves the derivation —
+solved set, frontier = first unsolved so furthest = max contiguous,
+chapters-with-levels only with their complete flags), and parText (the
+named-clock par label, repointed out of lvRevealSolved — one string on
+the band and the map both). serve.py's `/` became the front door and
+README gained the try-it line (the Pages URL); the Pages artifact's
+meta-refresh now points at web/index.html. The live session caught one
+shell bug before commit: direct-serving the landing's bytes at `/`
+strands its relative scripts at /levels.js (404, an empty map) — `/`
+REDIRECTS to /web/index.html instead (the card's implementation pick;
+the Pages artifact's own redirect is the same pattern), and the session
+re-verified the whole payoff flow by real CDP mouse events over the
+real wasm engine: / → the map → the frontier row opens L0 → predict by
+click unlocks RUN → square — PASS (relaxed) → back on the map L0 wears
+`✓ par 2 words · 2 clk/cycle`, the frontier and boot cursor move to
+L1, the sandbox row advertises `1 of 9 cleared` (and the standing row
+opens the untouched four-machine sandbox). Gates: levels.test.js (5
+campaign legs — red first against the pre-C42 module:
+PioLevels.sessionKey not a function, CHAPTERS undefined), the keyboard
+walk's landing leg (red first: timed out waiting for the map — the
+page did not exist; green: one Tab stop for the whole page, the
+frontier boot cursor, Enter on solved/frontier/sandbox rows navigates,
+Enter on a dim row stays put, session snapshot/restore around the
+seed), the layout gate's landing legs at both 13" viewports in both
+postures (red first: the page did not exist; green: menu-window
+proportions, single-line captions/rows/status words, no internal map
+scroll, and the fresh campaign's geometry identical to the seeded
+one's), make js 218 green, make web re-verified (32 client checks +
+the three mutation demos), the era tooltip verified live (hover
+narrates the dim row's soft unlock).
 
 C43 — the transitions. The NEXT pushbutton joins the level band on
 pass (beside the chip and par; the letter per the unique-letters rule;

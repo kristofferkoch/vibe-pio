@@ -1912,3 +1912,144 @@ for (const [width, height] of VIEWPORTS) {
     );
   });
 }
+
+// C42 — the landing leg: the campaign map (web/index.html) is its own
+// page — a content-hugging menu window (mockups/landing.html picked
+// these: no toolbar, no engine boot, max-width 640) sharing the era
+// chrome. Pinned at both 13" viewports, in BOTH postures (a fresh
+// campaign and the seeded mid-campaign one, snapshot/restore around
+// it): the window inside the viewport, the title bar one line, every
+// chapter caption and every row single-line, the status word clear of
+// the name, the map not scrolling internally (10 rows fit a menu), and
+// the three row states drawn as content (solved par text present, the
+// ▸ on the frontier, dim ahead). Ran red first: the page did not exist.
+const LANDING_SCAN = `(() => {
+  const bad = [];
+  const box = (sel) => document.querySelector(sel)?.getBoundingClientRect();
+  const win = box('#win');
+  if (!win || win.width < 300 || win.width > 660) bad.push('the menu window left its 640 cap');
+  if (!win || win.bottom > innerHeight - 4) bad.push('the window overflows the viewport');
+  if (!win || Math.abs((win.left + win.right) / 2 - innerWidth / 2) > 2)
+    bad.push('the window is not centered on the desktop');
+  const title = document.getElementById('titlebar');
+  if (title && title.scrollHeight > title.clientHeight + 1) bad.push('the title bar wraps');
+  const map = document.getElementById('map');
+  if (!map || map.scrollHeight > map.clientHeight + 1)
+    bad.push('the map scrolls internally — 10 rows fit a menu at 13"');
+  if (document.querySelectorAll('#map .mrow').length !== 10)
+    bad.push('the map lost rows (9 levels + the sandbox standing row)');
+  if (document.querySelectorAll('#map .chgroup').length !== 3)
+    bad.push('a chapter frame is missing (three shipped chapters)');
+  for (const cap of document.querySelectorAll('.chcap'))
+    if (cap.scrollHeight > cap.clientHeight + 1) bad.push('a chapter caption wraps');
+  for (const row of document.querySelectorAll('#map .mrow')) {
+    if (row.scrollHeight > row.clientHeight + 1) bad.push('a row wraps: ' + row.id);
+    const name = row.querySelector('.name').getBoundingClientRect();
+    const st = row.querySelector('.st').getBoundingClientRect();
+    if (name.right > st.left + 0.5 && st.width > 0)
+      bad.push('the status word overlaps the name: ' + row.id);
+  }
+  const pin = (sel) => {
+    const b = box(sel);
+    return b && [b.left, b.top, b.width, b.height].map((v) => Math.round(v));
+  };
+  return {
+    bad,
+    boxes: { win: pin('#win'), map: pin('#map'), titlebar: pin('#titlebar') },
+    states: [...document.querySelectorAll('#map .mrow')].map((r) => r.id + ':' + r.className),
+    tips: [...document.querySelectorAll('#map .mrow')].map((r) => r.dataset.tip),
+  };
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`the landing page: a menu window with a single-line map ${width}×${height}`, async () => {
+    await page.setViewport(width, height);
+    // seed the mid-campaign posture on the origin (chapters 0–1 solved,
+    // frontier L6 — the mock-up round's own state), snapshot/restore
+    await page.goto(`${baseUrl}/web/index.html`);
+    const snapshot = await page.evaluate(`(() => {
+      const out = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k.startsWith('vibe-pio-level-')) out[k] = localStorage.getItem(k);
+      }
+      return out;
+    })()`);
+    try {
+      await page.evaluate(`(() => {
+        localStorage.clear();
+        for (const id of ['l0', 'l1', 'l2', 'l3', 'l4', 'l5'])
+          localStorage.setItem('vibe-pio-level-' + id, JSON.stringify({ solved: true }));
+        return true;
+      })()`);
+      await page.goto(`${baseUrl}/web/index.html`);
+      await page.evaluate('document.fonts.ready.then(() => {})');
+      const { bad, boxes, states, tips } = await page.evaluate(LANDING_SCAN);
+      assert.deepStrictEqual(
+        bad,
+        [],
+        `landing geometry broken at ${width}×${height} (seeded posture)`,
+      );
+      // the seeded posture's content: solved rows carry par, the
+      // frontier its ▸, ahead rows are dim-but-named with no mark
+      const by = Object.fromEntries(states.map((s) => s.split(':', 2)));
+      assert.match(by['row-l5'], /solved/, 'a solved row wears its state');
+      assert.match(by['row-l6'], /frontier/, 'the frontier row wears its state');
+      assert.match(by['row-l7'], /ahead(?!.*link)/, 'an ahead row is dim and not linked');
+      assert.match(by['row-sandbox'], /standing link/, 'the sandbox standing row is linked');
+      assert.match(
+        tips.find((t) => t?.startsWith('L5')),
+        /par 3 words · 64 clk\/cycle/,
+        "a solved row's narration carries its named-clock par",
+      );
+      assert.match(
+        tips.find((t) => t?.startsWith('L7')),
+        /deep-links/,
+        'an ahead row narrates the soft unlock',
+      );
+      // the window keeps menu proportions, not app proportions
+      assert.ok(
+        boxes.win && boxes.win[2] >= 500 && boxes.win[2] <= 660,
+        `the window is not a centered menu at ${width}×${height}: ${JSON.stringify(boxes.win)}`,
+      );
+
+      // the fresh posture: nothing solved — no par anywhere, no ✓, the
+      // frontier is L0, and the geometry does not move
+      await page.evaluate(`(() => {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k.startsWith('vibe-pio-level-')) localStorage.removeItem(k);
+        }
+        return true;
+      })()`);
+      await page.goto(`${baseUrl}/web/index.html`);
+      await page.evaluate('document.fonts.ready.then(() => {})');
+      const fresh = await page.evaluate(LANDING_SCAN);
+      assert.deepStrictEqual(
+        fresh.bad,
+        [],
+        `landing geometry broken at ${width}×${height} (fresh)`,
+      );
+      assert.deepStrictEqual(
+        fresh.boxes,
+        boxes,
+        `the fresh campaign must not move the window at ${width}×${height}`,
+      );
+      assert.ok(
+        fresh.tips.every((t) => !t?.includes('par ')),
+        'par shows on solved rows only — a fresh campaign has none',
+      );
+      assert.ok(
+        fresh.states.some((s) => s.startsWith('row-l0:')),
+        'the rows derive from the registry',
+      );
+    } finally {
+      await page.goto(`${baseUrl}/web/index.html`);
+      await page.evaluate(`((snap) => {
+        const keep = Object.keys(localStorage).filter((k) => k.startsWith('vibe-pio-level-'));
+        for (const k of keep) localStorage.removeItem(k);
+        for (const [k, v] of Object.entries(snap)) localStorage.setItem(k, v);
+      })(${JSON.stringify(snapshot)})`);
+    }
+  });
+}

@@ -1427,3 +1427,101 @@ test('the l8 leash: jmp offers the x-- slot — and only it', () => {
     ['!x', 'x--', '!y', 'y--', 'x != y', 'pin', '!osre'],
   );
 });
+
+// ============ C42: the campaign — the registry as the map's source ============
+// The landing page (web/index.html) is DOM glue over levels.js module
+// logic: the CHAPTERS table, sessionKey (the per-level key spelling
+// both pages share), campaign (order/solved/frontier/chapters over the
+// EXISTING per-level keys — no new storage shape on the landing card),
+// and parText (the named-clock par label the band reveals on solve and
+// the map shows on solved rows). These legs ran red first against the
+// pre-C42 module: PioLevels.campaign was not a function.
+
+test('the chapter table ships with its levels, not ahead of them', () => {
+  // every registered level's chapter carries a title...
+  for (const id of PioLevels.all())
+    assert.ok(
+      PioLevels.CHAPTERS.some((c) => c.n === PioLevels.get(id).chapter),
+      `${id}'s chapter has no CHAPTERS title`,
+    );
+  // ...and no title arrives before its first level (LEVELS-NOTES prose
+  // does not ship ahead of its own grilling — the registry is the source)
+  const shipped = new Set(PioLevels.all().map((id) => PioLevels.get(id).chapter));
+  for (const c of PioLevels.CHAPTERS)
+    assert.ok(shipped.has(c.n), `chapter ${c.n} (${c.title}) has no shipped level`);
+  // the titles are the LEVELS-NOTES chapter sketch, in order
+  assert.deepEqual(
+    PioLevels.CHAPTERS.map((c) => c.title),
+    ['First light', 'Time and loops', 'Reading the world'],
+  );
+});
+
+test('a level cannot register a chapter the table does not name', () => {
+  const ahead = { ...PioLevels.get('l0'), id: 'lx', chapter: 7 };
+  assert.throws(() => PioLevels.register('lx', ahead), /chapter 7 has no CHAPTERS title/);
+});
+
+test('campaign: numeric order, the first unsolved is the frontier, chapters derive', () => {
+  // this file registers l5 BEFORE l4 (card order) — the campaign must
+  // order numerically anyway (the runtime unlock order regardless)
+  assert.deepEqual(PioLevels.all(), ['l0', 'l1', 'l2', 'l3', 'l5', 'l4', 'l6', 'l7', 'l8']);
+  assert.deepEqual(PioLevels.campaign(() => null).order, [
+    'l0',
+    'l1',
+    'l2',
+    'l3',
+    'l4',
+    'l5',
+    'l6',
+    'l7',
+    'l8',
+  ]);
+  // fresh storage: nothing solved, the frontier is L0, no chapter complete
+  const fresh = PioLevels.campaign(() => null);
+  assert.equal(fresh.frontier, 'l0');
+  assert.equal(fresh.solved.size, 0);
+  assert.deepEqual(
+    fresh.chapters.map((c) => c.complete),
+    [false, false, false],
+  );
+  // a hermetic call (no read fn) is a fresh campaign
+  assert.equal(PioLevels.campaign().frontier, 'l0');
+  // mid-campaign: chapters 0–1 solved — frontier L6, both chapters ✓
+  const mid = new Set(['l0', 'l1', 'l2', 'l3', 'l4', 'l5']);
+  const midC = PioLevels.campaign((id) => (mid.has(id) ? { solved: true } : null));
+  assert.equal(midC.frontier, 'l6');
+  assert.deepEqual(
+    midC.chapters.map((c) => c.complete),
+    [true, true, false],
+  );
+  assert.deepEqual(
+    midC.chapters.map((c) => c.levels),
+    [
+      ['l0', 'l1', 'l2'],
+      ['l3', 'l4', 'l5'],
+      ['l6', 'l7', 'l8'],
+    ],
+  );
+  // non-contiguous solving does not skip: l0+l2 solved leaves the
+  // frontier at l1 (furthest = max CONTIGUOUS solved)
+  const gap = new Set(['l0', 'l2']);
+  assert.equal(PioLevels.campaign((id) => (gap.has(id) ? { solved: true } : null)).frontier, 'l1');
+  // all solved: no frontier, every chapter complete
+  const done = PioLevels.campaign(() => ({ solved: true }));
+  assert.equal(done.frontier, null);
+  assert.deepEqual(
+    done.chapters.map((c) => c.complete),
+    [true, true, true],
+  );
+});
+
+test('sessionKey is the spelling the level pages actually write', () => {
+  assert.equal(PioLevels.sessionKey('l0'), 'vibe-pio-level-l0');
+});
+
+test('parText names its clock per judge kind — the band and the map agree', () => {
+  assert.equal(PioLevels.parText(PioLevels.get('l1')), 'par 2 words · 8 clk/cycle');
+  assert.equal(PioLevels.parText(PioLevels.get('l6')), 'par 2 words · 2 clk/bit');
+  assert.equal(PioLevels.parText(PioLevels.get('l7')), 'par 3 words · 8 clk/bit');
+  assert.equal(PioLevels.parText(PioLevels.get('l8')), 'par 4 words · 2 clk/bit');
+});

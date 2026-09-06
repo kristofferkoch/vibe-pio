@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vibe-pio // the campaign (mock-up)</title>
+<!--
+  MOCK-UP ONLY — the C42 landing-page round (KANBAN C42–C43; the
+  standing spec is mockups/DESIGN-NOTES.md "The campaign's front
+  door"). Renders the era master window as a CUA menu so the rendered
+  decisions could be picked before web/index.html shipped: the window
+  proportion (a narrow menu window, not the 1726px app), the chapter
+  group frame with its caption ✓, the three row states, and the
+  sandbox standing row.
+
+  The state shown is hand-picked, not derived: mid-campaign (chapters
+  0–1 solved, L6 the frontier), the cursor parked on the frontier row,
+  the status line narrating it. The shipped page derives all of this
+  from the registry + the per-level localStorage keys.
+
+  Loads the era skin from the shipped stylesheet (../web/sm-view.css,
+  which resolves its own fonts under ../web/fonts/) plus a small
+  free-form supplement below; the supplement's decisions move into
+  sm-view.css when the page ships.
+-->
+<link rel="stylesheet" href="../web/sm-view.css">
+<style>
+  /* the mock-up supplement — the shipped page carries these in
+     sm-view.css (dated C42 section) */
+  #win.campaign {
+    grid-template-rows: auto minmax(0, 1fr) 26px;
+    max-width: 640px;
+    height: auto; /* the menu window hugs its map — no dead silver below */
+    max-height: calc(100% - 16px);
+  }
+  /* the map: ONE listbox (one Tab stop), chapters are groups in it */
+  #map {
+    overflow-y: auto;
+    margin: 6px;
+    background: var(--well);
+    box-shadow: inset 2px 2px 0 var(--line), inset -2px -2px 0 var(--hi);
+    scrollbar-width: thin;
+    scrollbar-color: var(--panel) var(--well);
+    padding: 4px;
+    outline: none;
+  }
+  #map:focus {
+    box-shadow: inset 2px 2px 0 var(--line), inset -2px -2px 0 var(--hi),
+      inset 0 0 0 1px var(--navy); /* the dotted-rect spirit, listbox-sized */
+  }
+  .chgroup {
+    border: 1px solid var(--line);
+    box-shadow: inset 1px 1px 0 var(--hi);
+    background: var(--panel);
+    margin: 4px 2px;
+  }
+  .chcap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid var(--line);
+    box-shadow: inset 0 -1px 0 var(--hi);
+    user-select: none;
+    white-space: nowrap;
+  }
+  .chcap .num { color: var(--dim); font-weight: normal; }
+  .chcap .done {
+    margin-left: auto;
+    color: var(--green);
+    font-weight: normal;
+  }
+  .mrow {
+    position: relative;
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    align-items: center;
+    height: 21px;
+    padding: 0 10px 0 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .mrow .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--addr);
+    text-align: right;
+    padding-right: 8px;
+  }
+  .mrow .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .mrow .st { color: var(--dim); padding-left: 14px; }
+  .mrow.solved .st { color: var(--green); }
+  .mrow.frontier .st { color: var(--amber); font-weight: bold; }
+  .mrow.ahead { color: var(--dimmer); }
+  .mrow.ahead .num { color: var(--dimmer); }
+  .mrow.link { cursor: pointer; }
+  .mrow.link:hover .name { text-decoration: underline; }
+  /* the C25 amber cursor, verbatim grammar: tint + the 2px bar */
+  .mrow.kc { background: rgba(0, 106, 120, 0.09); }
+  .mrow.kc::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0;
+    width: 2px; height: 100%;
+    background: var(--amber);
+  }
+  /* the standing row: no frame, a rule above, the last option */
+  .mrow.standing { border-top: 1px solid var(--line); margin: 6px 2px 2px; }
+  .mrow.standing .name b { font-weight: bold; }
+</style>
+</head>
+<body>
+  <div id="win" class="campaign">
+    <div id="titlebar">
+      <span class="caption">vibe-pio · <b>THE CAMPAIGN</b><span class="tail"> · 3 chapters · 9 levels</span></span>
+    </div>
+
+    <div id="map" role="listbox" tabindex="0" aria-label="the campaign map" aria-activedescendant="row-l6">
+      <div class="chgroup" role="group" aria-label="chapter 0">
+        <div class="chcap"><span class="num">0</span> FIRST LIGHT <span class="done">✓</span></div>
+        <div class="mrow solved link" id="row-l0" role="option" aria-selected="false">
+          <span class="num">L0</span><span class="name">First light</span>
+          <span class="st">✓ par 2 words · 2 clk/cycle</span>
+        </div>
+        <div class="mrow solved link" id="row-l1" role="option" aria-selected="false">
+          <span class="num">L1</span><span class="name">Metronome</span>
+          <span class="st">✓ par 2 words · 8 clk/cycle</span>
+        </div>
+        <div class="mrow solved link" id="row-l2" role="option" aria-selected="false">
+          <span class="num">L2</span><span class="name">Author's hand</span>
+          <span class="st">✓ par 2 words · 4 clk/cycle</span>
+        </div>
+      </div>
+
+      <div class="chgroup" role="group" aria-label="chapter 1">
+        <div class="chcap"><span class="num">1</span> TIME AND LOOPS <span class="done">✓</span></div>
+        <div class="mrow solved link" id="row-l3" role="option" aria-selected="false">
+          <span class="num">L3</span><span class="name">Two ways to loop</span>
+          <span class="st">✓ par 4 words · 4 clk/cycle</span>
+        </div>
+        <div class="mrow solved link" id="row-l4" role="option" aria-selected="false">
+          <span class="num">L4</span><span class="name">Out of order</span>
+          <span class="st">✓ par 5 words · 8 clk/cycle</span>
+        </div>
+        <div class="mrow solved link" id="row-l5" role="option" aria-selected="false">
+          <span class="num">L5</span><span class="name">The long blink</span>
+          <span class="st">✓ par 3 words · 64 clk/cycle</span>
+        </div>
+      </div>
+
+      <div class="chgroup" role="group" aria-label="chapter 2">
+        <div class="chcap"><span class="num">2</span> READING THE WORLD</div>
+        <div class="mrow frontier link kc" id="row-l6" role="option" aria-selected="true">
+          <span class="num">L6</span><span class="name">Listen</span>
+          <span class="st">▸</span>
+        </div>
+        <div class="mrow ahead" id="row-l7" role="option" aria-selected="false">
+          <span class="num">L7</span><span class="name">Echo</span>
+          <span class="st"></span>
+        </div>
+        <div class="mrow ahead" id="row-l8" role="option" aria-selected="false">
+          <span class="num">L8</span><span class="name">Fencepost</span>
+          <span class="st"></span>
+        </div>
+      </div>
+
+      <div class="mrow standing link" id="row-sandbox" role="option" aria-selected="false">
+        <span class="num">—</span><span class="name"><b>Sandbox</b> · everything always</span>
+        <span class="st">6 levels cleared</span>
+      </div>
+    </div>
+
+    <footer>
+      <span id="statusline">L6 · Listen — the next level · Enter opens</span>
+      <span class="right">engine: verified RTL (verilator→wasm) · oracle: pio_model (CI cross-check)</span>
+    </footer>
+  </div>
+</body>
+</html>

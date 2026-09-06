@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>vibe-pio // the campaign</title>
+    <!--
+  vibe-pio campaign landing — the front door (KANBAN C42; the standing
+  spec is mockups/DESIGN-NOTES.md "The campaign's front door", and
+  mockups/landing.html is the mock-up round that picked the rendered
+  decisions). Its own page sharing sm-view.css: classic-script,
+  dependency-free, NO engine boot (no worker, no wasm — the C34
+  own-geometry precedent). The map's rows come from the level registry
+  (levels.js + web/levels/*.js, pure data — the registry is the source;
+  a chapter ships on the map exactly when its first level registers),
+  and the campaign state derives from the same per-level localStorage
+  keys the level pages write (PioLevels.campaign over
+  PioLevels.sessionKey — no new storage shape).
+
+  Three states per row: ✓ solved (par on solved rows only — the
+  expertise-reversal rule projected onto the map), ▸ the frontier
+  (bold amber), dim-but-named ahead (--dimmer; a ?level=<id> URL always
+  deep-links — unlocks are numeric but soft). The map links solved +
+  frontier rows (plus the sandbox standing row, "everything always").
+  Keyboard is the C25 listing-as-listbox grammar verbatim: one Tab stop,
+  ↑/↓ clamp-walk, Enter opens, the cursor boots on the frontier row.
+
+  The door ships clean — era furniture only, zero lore.
+-->
+    <link rel="stylesheet" href="sm-view.css">
+  </head>
+  <body>
+    <div id="win" class="campaign">
+      <!-- the master window as a menu: titlebar, map, footer — no
+           toolbar, because the page commands nothing -->
+      <div id="titlebar">
+        <span class="caption"
+          >vibe-pio · <b>THE CAMPAIGN</b><span class="tail" id="campaign-counts"></span></span
+        >
+      </div>
+      <div id="map" role="listbox" tabindex="0" aria-label="the campaign map"></div>
+      <footer>
+        <span id="statusline"></span>
+        <span class="right"
+          >engine: verified RTL (verilator→wasm) · oracle: pio_model (CI cross-check)</span
+        >
+      </footer>
+    </div>
+    <!-- the era tooltip: the data-tip narration's mouse path (its
+         keyboard path is the status line above — one store, two mouths) -->
+    <div id="tip" hidden></div>
+
+    <script src="levels.js"></script>
+    <script src="levels/l0.js"></script>
+    <script src="levels/l1.js"></script>
+    <script src="levels/l2.js"></script>
+    <script src="levels/l3.js"></script>
+    <script src="levels/l4.js"></script>
+    <script src="levels/l5.js"></script>
+    <script src="levels/l6.js"></script>
+    <script src="levels/l7.js"></script>
+    <script src="levels/l8.js"></script>
+    <script>
+    'use strict';
+    // the landing glue — DOM only; the campaign derivation, the
+    // chapter table, and the par label are levels.js module logic
+    // (pinned by the levels gate)
+    (() => {
+      const P = globalThis.PioLevels;
+      const MAP = document.getElementById('map');
+      const STATUS = document.getElementById('statusline');
+      const TIP = document.getElementById('tip');
+
+      // the same per-level session keys the level pages write
+      // (unreadable storage reads as an unsolved campaign, honestly)
+      const read = (id) => {
+        try {
+          return JSON.parse(localStorage.getItem(P.sessionKey(id))) || null;
+        } catch {
+          return null;
+        }
+      };
+      const CAMPAIGN = P.campaign(read);
+      const cleared = CAMPAIGN.solved.size;
+      const ofAll = CAMPAIGN.order.length;
+
+      // one row per registered level in campaign order, then the
+      // sandbox standing row ("everything always" — its own name, no
+      // chapter's)
+      const ROWS = [
+        ...CAMPAIGN.order.map((id) => ({ id, sandbox: false })),
+        { id: null, sandbox: true },
+      ];
+      const stateOf = (id) =>
+        CAMPAIGN.solved.has(id) ? 'solved' : id === CAMPAIGN.frontier ? 'frontier' : 'ahead';
+      const linked = (row) => row.sandbox || stateOf(row.id) !== 'ahead';
+      const elId = (row) => (row.sandbox ? 'row-sandbox' : `row-${row.id}`);
+      const rowEl = (i) => document.getElementById(elId(ROWS[i]));
+
+      // one narration store, two mouths: every row's data-tip IS the
+      // status line's text for that row
+      const narrate = (row) => {
+        if (row.sandbox)
+          return 'the sandbox — all four machines, everything unlocked · Enter opens';
+        const def = P.get(row.id);
+        const label = `${row.id.replace(/^l/, 'L').toUpperCase()} · ${def.name}`;
+        const st = stateOf(row.id);
+        if (st === 'solved') return `${label} — solved (${P.parText(def)}) · Enter replays`;
+        if (st === 'frontier') return `${label} — the next level · Enter opens`;
+        return `${label} — ahead of the frontier · a ?level=${row.id} URL always deep-links`;
+      };
+
+      // the face: solved rows carry par, the frontier the ▸, ahead
+      // rows only their dimmed name
+      const face = (row) => {
+        if (row.sandbox)
+          return (
+            `<span class="num">—</span><span class="name"><b>Sandbox</b> · everything always</span>` +
+            `<span class="st">${cleared ? `${cleared} of ${ofAll} cleared` : ''}</span>`
+          );
+        const def = P.get(row.id);
+        const st = stateOf(row.id);
+        const mark = st === 'solved' ? `✓ ${P.parText(def)}` : st === 'frontier' ? '▸' : '';
+        return (
+          `<span class="num">${row.id.replace(/^l/, 'L').toUpperCase()}</span>` +
+          `<span class="name">${def.name}</span><span class="st">${mark}</span>`
+        );
+      };
+
+      MAP.innerHTML =
+        CAMPAIGN.chapters
+          .map((ch) => {
+            const rows = ch.levels
+              .map((id) => {
+                const row = { id, sandbox: false };
+                const st = stateOf(id);
+                return (
+                  `<div class="mrow ${st}${linked(row) ? ' link' : ''}" id="${elId(row)}"` +
+                  ` role="option" aria-selected="false" data-tip="${narrate(row)}">${face(row)}</div>`
+                );
+              })
+              .join('');
+            const cap =
+              `<div class="chcap"><span class="num">${ch.n}</span> ${ch.title.toUpperCase()}` +
+              (ch.complete ? ' <span class="done" data-tip="chapter complete">✓</span>' : '') +
+              '</div>';
+            return `<div class="chgroup" role="group" aria-label="chapter ${ch.n}">${cap}${rows}</div>`;
+          })
+          .join('') +
+        `<div class="mrow standing link" id="row-sandbox" role="option" aria-selected="false"` +
+        ` data-tip="${narrate(ROWS[ROWS.length - 1])}">${face(ROWS[ROWS.length - 1])}</div>`;
+
+      document.getElementById('campaign-counts').textContent =
+        ` · ${CAMPAIGN.chapters.length} chapters · ${ofAll} levels`;
+
+      // ---- the C25 listing grammar: one stop, a clamp-walk, Enter ----
+      // the cursor boots on the frontier row (or the sandbox when the
+      // campaign is done) — Enter at first focus does the natural thing
+      const bootRow = CAMPAIGN.frontier
+        ? ROWS.findIndex((r) => !r.sandbox && r.id === CAMPAIGN.frontier)
+        : ROWS.length - 1;
+      let kc = Math.max(0, bootRow);
+      function applyCursor() {
+        for (const el of MAP.querySelectorAll('.mrow')) {
+          const on = el.id === elId(ROWS[kc]);
+          el.classList.toggle('kc', on);
+          el.setAttribute('aria-selected', String(on));
+        }
+        MAP.setAttribute('aria-activedescendant', elId(ROWS[kc]));
+        STATUS.textContent = narrate(ROWS[kc]);
+      }
+      function openRow(i) {
+        const row = ROWS[i];
+        if (!linked(row)) return; // dim rows name the future, they don't open
+        location.href = row.sandbox ? 'sm-view.html' : `sm-view.html?level=${row.id}`;
+      }
+      MAP.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          kc = Math.max(0, Math.min(ROWS.length - 1, kc + (e.key === 'ArrowDown' ? 1 : -1)));
+          applyCursor();
+          rowEl(kc)?.scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          openRow(kc);
+        }
+      });
+      // the mouse path: a click walks the cursor there and opens
+      MAP.addEventListener('click', (e) => {
+        const el = e.target.closest('.mrow');
+        if (!el) return;
+        kc = ROWS.findIndex((r) => elId(r) === el.id);
+        if (kc < 0) return;
+        applyCursor();
+        openRow(kc);
+      });
+      applyCursor();
+      const BODY_KEYS = '↑/↓ walk the map · Enter opens · Tab leaves';
+      MAP.addEventListener('focusout', () => {
+        STATUS.textContent = BODY_KEYS;
+      });
+      MAP.addEventListener('focusin', applyCursor);
+
+      // ---- the era tooltip: the data-tip narration's mouse path -----
+      // hover waits a beat, the cream card portals to <body> near the
+      // pointer, and dies on mousedown/keydown/scroll, era-style
+      let tipTimer = null;
+      function tipHide() {
+        TIP.hidden = true;
+        clearTimeout(tipTimer);
+      }
+      function tipShow(host, x, y) {
+        if (!host?.dataset.tip) {
+          TIP.hidden = true;
+          return;
+        }
+        TIP.textContent = host.dataset.tip;
+        TIP.hidden = false;
+        const w = TIP.offsetWidth;
+        const h = TIP.offsetHeight;
+        let tx = x + 12;
+        let ty = y + 18;
+        if (tx + w > innerWidth - 4) tx = Math.max(4, innerWidth - w - 4);
+        if (ty + h > innerHeight - 4) ty = Math.max(4, y - h - 6);
+        TIP.style.left = `${tx}px`;
+        TIP.style.top = `${ty}px`;
+      }
+      document.addEventListener('mouseover', (e) => {
+        if (!e.target.closest) return;
+        const host = e.target.closest('[data-tip]');
+        if (!host) {
+          tipHide();
+          return;
+        }
+        clearTimeout(tipTimer);
+        tipTimer = setTimeout(() => tipShow(host, e.clientX, e.clientY), 350);
+      });
+      document.addEventListener('mousedown', tipHide);
+      document.addEventListener('keydown', tipHide);
+      addEventListener('scroll', tipHide, true);
+    })();
+    </script>
+  </body>
+</html>

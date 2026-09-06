@@ -260,6 +260,38 @@ to `?level=`). Both sanctioned DOM-glue gates grow landing legs (a
 keyboard-walk leg and a layout-gate leg), each shown red against the
 pre-card page first.
 
+Rendered decisions (the mock-up round, mockups/landing.html — the
+C26/C27 precedent; the mock-up loads the shipped era stylesheet and
+hand-picks a mid-campaign state):
+
+- **The window hugs its map.** A menu window, not the 1726px app:
+  `height:auto` capped at the viewport, max-width 640, centered on the
+  teal — the first cut's fixed 560px window drew a dead silver slab
+  under the last row. No toolbar: the window carries titlebar, map,
+  footer only (a toolless toolbar would be era furniture lying about
+  commands). The titlebar caption counts what shipped — `· 3 chapters
+  · 9 levels` derived from the registry, riding the `.tail` hide.
+- **The map is ONE listbox; chapters are groups in it** (ARIA
+  listbox→group→option, the listing's own shape): one Tab stop for the
+  whole map, the cursor walks every row including the dim ones. The
+  row grid is `44px 1fr auto` — mono level number (the addr column's
+  color), sans name, right-aligned status; rows are 21px and never
+  wrap.
+- **The status faces ride the band's own grammar**: solved = green
+  `✓ par W words · P clk/…` (the named-clock rule, so L6 reads
+  clk/bit); frontier = bold amber `▸`; ahead = the whole row dimmed
+  (`--dimmer`) with an empty status cell — dim-but-named means the
+  name stays legible, only the row's power drops. Linked rows
+  (solved, frontier, sandbox) underline the name on hover; Enter
+  opens. The cursor is the C25 listing grammar verbatim: teal tint +
+  the 2px amber bar, ↑/↓ clamp-walk, aria-activedescendant, and the
+  cursor boots on the frontier row (Enter at first focus opens the
+  next level).
+- **The sandbox is a standing row, not a chapter**: after the last
+  frame, a rule above, `—` for a number, bold name, and a status that
+  advertises harder as the campaign advances (`6 levels cleared`) —
+  "everything always" is the row's own name, not a frame's caption.
+
 ## Layout
 
 - **Not 80×25.** One SM wants ~1440px in three columns: program listing

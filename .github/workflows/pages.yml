@@ -1,5 +1,6 @@
-# GitHub Pages deploy of the shipped client (web/sm-view.html + the
-# C17 AOT wasm engine). Every asset reference in the client is relative
+# GitHub Pages deploy of the shipped client (the C42 campaign landing
+# at web/index.html, linking into web/sm-view.html + the C17 AOT wasm
+# engine). Every asset reference in the client is relative
 # to the page — the engine at ../build/web/pio_engine.js (web/sm-view.js),
 # the wasm beside the engine JS via locateFile (web/engine-worker.js),
 # fonts and levels under web/ — so the artifact simply keeps the repo
@@ -60,12 +61,12 @@ jobs:
       - name: Assemble the site artifact
         run: |
           mkdir -p site/web site/build/web
-          cp -r web/sm-view.html web/sm-view.js web/sm-view.css \
+          cp -r web/index.html web/sm-view.html web/sm-view.js web/sm-view.css \
                 web/engine-driver.js web/engine-worker.js \
                 web/pio-asm.js web/row-complete.js web/levels.js \
                 web/levels web/fonts site/web/
           cp build/web/pio_engine.js build/web/pio_engine.wasm site/build/web/
-          printf '<!doctype html><meta http-equiv="refresh" content="0;url=web/sm-view.html">\n' \
+          printf '<!doctype html><meta http-equiv="refresh" content="0;url=web/index.html">\n' \
             > site/index.html
       - uses: actions/upload-pages-artifact@v3
         with:

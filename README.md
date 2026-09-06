@@ -5,6 +5,11 @@ Pi RP2350 PIO (Programmable I/O) engine. The model is developed with open-source
 tools only — Icarus Verilog for simulation, Yosys for synthesis checks, and
 SymbiYosys (sby) for formal verification.
 
+**Try it:** [the campaign](https://kristofferkoch.github.io/vibe-pio/) — a
+level-by-level walk-through of the PIO machine over the verified engine, with
+the [sandbox](https://kristofferkoch.github.io/vibe-pio/web/sm-view.html)
+(everything unlocked, all four state machines) as its standing row.
+
 ## Why
 
 The end goal goes beyond a hardware replacement block: because the model is
