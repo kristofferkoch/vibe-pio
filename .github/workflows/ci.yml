@@ -62,6 +62,10 @@ jobs:
           git clone https://github.com/raspberrypi/pico-examples third_party/pico-examples
           git -C third_party/pico-examples checkout c81c855ffdedc825975a40ba357723a71358ddf0
       - run: make js
+        env:
+          # the runner's /usr/bin/chromium is Ubuntu's snap stub — it
+          # prints no DevTools endpoint; the real Chrome stable is here
+          PIO_BROWSER: /usr/bin/google-chrome
 
   image:
     runs-on: ubuntu-latest
