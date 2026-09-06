@@ -68,7 +68,11 @@ async function launch() {
   ];
   // containers run as root; Chromium refuses its sandbox there
   if (process.getuid && process.getuid() === 0) args.unshift('--no-sandbox');
-  const proc = spawn(exe, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  // detached = own process group, so close() can SIGKILL the whole
+  // tree: killing the parent alone leaves the renderer/crashpad
+  // children writing into the profile (CI red, run 34059566631: the
+  // after-hook's rmSync hit ENOTEMPTY and the orphans hung the job)
+  const proc = spawn(exe, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
 
   const wsUrl = await new Promise((resolve, reject) => {
     let buf = '';
@@ -183,7 +187,13 @@ async function launch() {
       // connection, which tears undici's socket down for real. The
       // reverse order (a graceful close handshake racing SIGKILL)
       // leaves a half-open socket holding node's event loop — and this
-      // gate — open forever.
+      // gate — open forever. The group kill (negative pid — proc was
+      // spawned detached) takes the children down with the parent.
+      try {
+        process.kill(-proc.pid, 'SIGKILL');
+      } catch {
+        // already gone
+      }
       proc.kill('SIGKILL');
       proc.stderr.destroy();
       await new Promise((resolve) => {
@@ -192,7 +202,12 @@ async function launch() {
         const bail = setTimeout(resolve, 2000);
         bail.unref();
       });
-      fs.rmSync(profile, { recursive: true, force: true });
+      // best-effort: a leaked /tmp profile must never fail the gate
+      try {
+        fs.rmSync(profile, { recursive: true, force: true });
+      } catch {
+        // children still flushing — the OS reaps /tmp
+      }
     },
   };
 }
