@@ -1,0 +1,140 @@
+# CI — the repo's make gates, on GitHub's free public-repo runners.
+#
+# Host-side gates (py, js) run natively on ubuntu-latest: uv is
+# pip-installed at the version pinned below, node/npm and google-chrome
+# (the browser gates' PATH fallback — web/tests/browser.js) are
+# preinstalled on the runner image.
+#
+# RTL-facing gates run inside the pinned container (container/Dockerfile,
+# the same image `make`'s tools fall back to on a bare host): the image
+# is built once per run by the `image` job into the GitHub Actions layer
+# cache (~25 min cold — yosys/boolector/emsdk from source; ~2-3 min
+# restored while the Dockerfile is unchanged), and each gate job
+# restores it, then runs its targets the repo's own way —
+# docker run --rm -v $PWD:/work -w /work.
+#
+# Measured budgets (in-container, 2026-09-06): sim+syn+audit+model
+# ~15 min, equiv+hyperopt ~7 min, synth ~15 min, web ~10 min (the
+# Makefile's own numbers for the latter two); py ~2 min and js ~15 s
+# host-side. `formal` is the exception — the sby notes record a 1:15 h
+# single prove and the 12-task suite runs hours-class; it runs on main
+# pushes, the weekly schedule and dispatch, not on PRs — flip its
+# `if:` if a PR ever touches formal/ or rtl/ invariant sets. The weekly
+# run also refreshes the image layer cache (GHA caches evict after 7
+# days untouched).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * 1" # Mondays 05:00 UTC — full suite + cache refresh
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  py:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install uv==0.12.3
+      - run: make py
+
+  js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: make js
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker buildx create --use
+          docker buildx build \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --tag vibe-pio:ci \
+            container/
+
+  sim:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker buildx create --use
+          docker buildx build \
+            --cache-from type=gha \
+            --tag vibe-pio:ci \
+            --load container/
+      - run: docker run --rm -v "$PWD:/work" -w /work vibe-pio:ci make sim syn audit model
+
+  equiv:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker buildx create --use
+          docker buildx build \
+            --cache-from type=gha \
+            --tag vibe-pio:ci \
+            --load container/
+      - run: docker run --rm -v "$PWD:/work" -w /work vibe-pio:ci make equiv hyperopt
+
+  synth:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker buildx create --use
+          docker buildx build \
+            --cache-from type=gha \
+            --tag vibe-pio:ci \
+            --load container/
+      - run: docker run --rm -v "$PWD:/work" -w /work vibe-pio:ci make synth
+
+  web:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker buildx create --use
+          docker buildx build \
+            --cache-from type=gha \
+            --tag vibe-pio:ci \
+            --load container/
+      - run: docker run --rm -v "$PWD:/work" -w /work vibe-pio:ci make web
+
+  formal:
+    needs: image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker buildx create --use
+          docker buildx build \
+            --cache-from type=gha \
+            --tag vibe-pio:ci \
+            --load container/
+      - run: docker run --rm -v "$PWD:/work" -w /work vibe-pio:ci make formal
