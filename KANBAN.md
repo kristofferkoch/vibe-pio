@@ -429,3 +429,97 @@ stops), make js 179 green, and the live browser session (L3's boot:
 "period — outside" in red with both gold gates painted on the wave;
 L4 solved: "square — PASS (exact)" in green, the live glyph redrawn,
 par beside it).
+
+## Game track — level campaign, chapter 2 (C39–C41)
+
+Scheduled 2026-09-06 by the chapter 2 grilling over
+mockups/LEVELS-NOTES.md (the 2026-09-04 didactics exploration stays
+the design spec; this grilling covered chapter 2 only — chapters 3+
+stay in IDEAS/LEVELS-NOTES for their own grillings). The fun gate read
+on chapters 0–1: **clean, as shipped** — no riders. Owner decisions on
+the record:
+
+- **The stimulus draws on the wave.** One row per driven input pin,
+  above the lens row, at the shared px/clk on one time axis — the echo
+  lesson IS the two traces side by side (the C38 like-for-like grammar
+  extended to stimulus vs response). The pattern panel stays absent
+  (the rows carry the face; the given is never player-editable).
+- **L6 passes by RX judge.** The pushed RX words decode to the driven
+  pattern's bits — a pure judge over RX contents, the same machinery
+  L8's fencepost near-miss needs (one judge, two levels). The predict
+  gate still locks the first run.
+- **L7 is the gated echo.** Data + enable pins driven by the level:
+  mirror data while enable is high, hold the output when it drops.
+  `jmp pin` is the only way — the unconditional copy keeps echoing
+  through disable and reds exactly at the freeze point (a job, not a
+  syntax demo; the L3 precedent).
+- **The monitor flips at L7.** The decode judge (SPEC-16-9 style:
+  decoded bytes over the output wave, per-bit skew windows as the tier
+  ladder, versioned) debuts there; the frame map's START/D0..D7/STOP
+  land as the subgoal labels the notes planned.
+- **Par keeps its honesty on the reading axes.** L7: words × echo
+  latency (clks in→out — visible on the two rows as the trace offset);
+  L8: words × clks/bit gathered. FRONT_CLASS grows echo/gather; the
+  champion must equal the committed par (the C36 discipline unchanged,
+  a new axis per class). Value judges (RX) are exact by design — a
+  value has no tolerance; the tier ladder lives on timing judges
+  (square/decode).
+- **Full perturbation sets.** L6: never-push / in-count-wrong; L7:
+  echo-during-disable + dropped-bit; L8: the fencepost both ways
+  (SPEC-3.1-4's pre-decrement test named where the verdict shows it).
+- **The breather waits.** No Coffee-Time level between ch1 and ch2 —
+  the 0→2 ramp is still small steps; first candidate after ch3's L12,
+  revisited at the ch3 grilling.
+
+Web cards: the JS discipline (docs/js-tooling.md), red/green TDD, DOM
+glue verified by the browser session and `make web` — geometry and
+keyboard only through the two sanctioned headless gates; the levels
+gate stays engine-side. Dependency order: C39 → C40 → C41 (runtime
+unlock order stays numeric regardless: L5 → L6 → L7 → L8).
+
+C39 — the reading slice: stimulus + L6 Listen. The level format grows
+`stimulus` — a list of pattern cfgs ({mode:'square'|'bits', pin,
+period|bits}) mapping 1:1 onto the engine's existing pattern contract
+(the worker's `cmd:'pattern'`), validated at registration, applied at
+level load, read-only forever. The wave grows its second row (layout
+gate: the stimulus rows at both 13" viewports, red first). The goldens
+generator replays stimulus through _SandboxMirror's pattern machinery
+(already the driver's lockstep twin) and records per case the driven
+pins' series plus the pushed RX words (pio_model the oracle; the gate
+replays committed series/words through the judge). The RX judge debuts
+(profile kind 'rx', v:1: expected words, exact — no ladder, per the
+decision above; the verdict names the first divergent bit, the
+near-miss face). The predict word face: L6's candidates render as
+bit-word rows (the same bits grammar, labeled ISR). L6 itself:
+prefilled `in pins,1`/`push`, the ISR panel + the RX half of the FIFO
+row debut (TX absent until L9 — SURFACE key granularity follows the
+absence idiom), no editor (predict→run), predict locks the first run,
+par hand-set and front-trivial (the given program is the only honest
+one — the drift gate still pins it).
+
+C40 — L7 Echo: jmp pin gets its job, the decode judge debuts. Data
+pin (a byte's worth of bits) + enable pin (square) driven by the
+level; the reference is the spin-when-disabled / copy-when-enabled
+loop. The decode judge (kind 'uart' — the name programState already
+anticipates; v:1): pure decode over the output wave's bits like
+squareJudge; expected bytes = the driven data; tiers = per-bit skew
+windows relaxed/exact/strict (the SPEC-16-9 [BIT_LO,BIT_HI] idiom).
+The frame map rides the wave as the subgoal labels; the band face
+extends the C38 grammar to byte glyphs (golden vs measured,
+first-divergence marker); the lens pins to the output (steppers
+locked). Perturbations: echo-during-disable (the unconditional copy)
+and dropped-bit. FRONT_CLASS 'echo' — the gated-loop forms, each
+point model-verified; par = words × echo latency (the trace offset is
+the cost made visible). Opcodes: set+in+out+jmp (jmp's condition slots
+ride the C32 candidates; the pin condition unlocks here).
+
+C41 — L8 Fencepost: the designed off-by-one. `set x` + `jmp x--` to
+gather exactly N bits of the driven pattern, then `push`. The X/Y regs
+panel debuts (the stepper role — Sajaniemi's roles-in-use). Acceptance
+is C39's RX judge over the gathered word; the near-miss is designed
+legible: `set x,N` gathers N+1 (SPEC-3.1-4 — the test sees the
+PRE-decrement value), and the decoded value says so in bits ("one bit
+too many" — the verdict names it, the perturbation goldens pin it both
+ways). FRONT_CLASS 'gather'; par = words × clks/bit. Opcodes:
+set+in+push+jmp (the x-- slot). The delay cell stays shut — structure,
+not delay, is the lesson.

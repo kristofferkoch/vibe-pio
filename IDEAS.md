@@ -48,26 +48,20 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   2026-08-26 round 3 pivoted the simulator into the browser — that
   engine track landed; the 2026-08-27 game-loop round 1 (sandbox)
   promoted the sandbox + multi-SM track, of which the sandbox itself
-  has landed and the multi-SM cards (C22–C24) are on KANBAN with
-  those owner decisions). Still open here, for the *level* grilling
-  once the fun gate is re-read on the sandbox: each level = stimulus +
-  a *receiver-style* conformance monitor (the SPEC-16-9 machinery,
-  spec-eq mode) —
-  acceptance is "the receiver got the right data", never
+  has landed and the multi-SM cards (C22–C24) landed with those owner
+  decisions). The *level* grilling ran 2026-09-04 (chapters 0–1,
+  C34–C37) and 2026-09-06 (chapter 2, C39–C41): each level = stimulus
+  + a *receiver-style* conformance monitor (the SPEC-16-9 machinery)
+  — acceptance is "the receiver got the right data", never
   golden-trace equality, with monitor profiles as a ladder of
   stricter parameterized tolerances over one receiver skeleton
   (profiles are the level's visible spec, versioned with the model);
-  whether levels keep the 1-tick-1-cycle, clkdiv-abstracted
-  rendering (sandbox exposes the real divider, levels need not — the
-  2026-09-04 level grilling answered it for chapters 0–1: abstracted);
-  progression one SM → multi-SM parallel buses → DMA at most as
-  late-game fixed-function pacing; score metric + par/solvability
-  resolved 2026-09-04 by the level grilling — par = committed
-  hyperopt Pareto fronts, solvability = per-level reference
-  solutions, both gated in `make js`. The campaign's first chapters
-  are KANBAN C34–C37 (the grilling's shape decisions on the cards);
-  the chapter 2+ remainder is the learning-curve entry below.
-  Mock-up decisions live in
+  the receiver flip itself is scheduled as C39 (RX judge) / C40
+  (decode judge). Progression one SM → multi-SM parallel buses → DMA
+  at most as late-game fixed-function pacing; score metric + par =
+  committed hyperopt Pareto fronts, solvability = per-level reference
+  solutions, both gated in `make js`. The chapter 3+ remainder is the
+  learning-curve entry below. Mock-up decisions live in
   `mockups/DESIGN-NOTES.md`; the level curve in
   `mockups/LEVELS-NOTES.md`.
 - Keyboard-only navigation (DOS/Win3.11 idiom) + the light era skin:
@@ -133,16 +127,14 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   parser (a real "wait needs pol src index" AsmError), and is the
   TypeError-as-operand-error boundary too broad generally (any
   accidental TypeError inside encodeCore would wear the same mask)?
-- Level learning curve — chapters 0–1 promoted to KANBAN C34–C37 by
-  the 2026-09-04 grilling (owner decisions on the cards; the notes in
+- Level learning curve — chapters 0–2 promoted (0–1 as KANBAN C34–C37
+  by the 2026-09-04 grilling, 2 as C39–C41 by the 2026-09-06 grilling;
+  owner decisions on the cards, the notes in
   `mockups/LEVELS-NOTES.md` stay the design spec). Still open there,
-  for the chapter 2+ grilling once the fun gate reads on 0–1: the
-  monitor flip to receiver-style conformance (decoded-byte acceptance,
-  SPEC-16-9 machinery — the C35 timing-profile ladder is the skeleton
-  it parameterizes), the stall-as-curriculum level (pull on a dry TX),
-  the designed fencepost on `jmp x--` (SPEC-3.1-4), autopull as
-  reward, the ch.3 UART boss and whether its ch.4 sideset re-solve
-  generalizes into a standing capstone type, Coffee-Time breather
-  levels between chapters, sideset's garbling spectacle, wait and
-  multi-SM, and whether later chapters keep the 1-tick-1-cycle
+  for the chapter 3+ grillings: the stall-as-curriculum level (pull on
+  a dry TX), autopull as reward, the ch.3 UART boss and whether its
+  ch.4 sideset re-solve generalizes into a standing capstone type,
+  Coffee-Time breather levels (deferred 2026-09-06 — first candidate
+  after ch3's L12), sideset's garbling spectacle, wait and multi-SM,
+  and whether later chapters keep the 1-tick-1-cycle
   clkdiv-abstracted rendering.

@@ -5,10 +5,12 @@ research says about the slope, a concept DAG derived from it, a
 chapter/level sketch, and the open questions this leaves for the
 grilling. **Chapters 0–1 were promoted to KANBAN C34–C37 by the
 2026-09-04 grilling — the owner decisions made that day are recorded
-on the cards and resolve five of the six open questions below;
-chapters 2+ remain pre-grilling input.** This file stays the design
-spec for the promoted chapters the way DESIGN-NOTES is the spec for
-the sandbox. The owner's starting instincts on the record:
+on the cards and resolve five of the six open questions below.
+Chapter 2 was promoted to KANBAN C39–C41 by the 2026-09-06 grilling
+(decisions on the cards and recorded under the chapter 2 sketch
+below); chapters 3+ remain pre-grilling input.** This file stays the
+design spec for the promoted chapters the way DESIGN-NOTES is the
+spec for the sandbox. The owner's starting instincts on the record:
 first level = a very reduced view of the UI, few instructions, the
 loop comes from wrap, `jmp` only later. The research leg, done
 2026-09-04, backs all three — see the mapping below.
@@ -184,6 +186,18 @@ conformance acceptance, never golden traces).
   (one bit too many/few visible on the decoded value), not a mystery
   red. Misconception inoculation by design.
 
+**Chapter 2 grilling (2026-09-06, promoted as C39–C41):** the stimulus
+draws on the wave — one row per driven pin above the lens row, shared
+px/clk; the pattern panel stays absent. L6 passes by RX judge (the
+pushed words decode to the driven bits; no tier ladder on a value).
+L7 is the gated echo (data + enable; `jmp pin` load-bearing, the
+unconditional copy reds at the freeze). The monitor flips at L7
+(decoded bytes over the output wave, SPEC-16-9 skew-window tiers).
+Par keeps honest axes on readers (words × echo latency; words ×
+clks/bit). Full perturbation sets per level. The fun gate read clean
+on chapters 0–1 (no riders). The breather defers — first candidate
+after ch3's L12, revisited at the ch3 grilling.
+
 **Chapter 3 — The feeder**
 - **L9 Words** [predict→run]. Prefilled `pull` / `out pins,1`; the TX
   feed and OSR panel debut. The stall is the lesson: run the feed dry,
@@ -295,4 +309,4 @@ three chapters; the fun gate can cut deeper.
   feeder third).
 - Does L12's "re-solve with sideset in ch.4" pattern generalize
   (re-solve levels as a standing chapter-capstone type)? — **Still
-  open**, with the chapter 2+ grilling.
+  open**, with the chapter 3+ grilling.
