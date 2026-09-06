@@ -12,6 +12,14 @@ name: formal
 on:
   push:
     branches: [main]
+    # the proofs read rtl/ + formal/ (the .sby scripts) and run in the
+    # container image; nothing else is worth restarting hours of solving
+    paths:
+      - formal/**
+      - rtl/**
+      - sim/**
+      - container/**
+      - .github/workflows/formal.yml
   workflow_dispatch:
   schedule:
     - cron: "0 5 * * 1" # Mondays 05:00 UTC
