@@ -185,3 +185,25 @@ def test_read_subst_map() -> None:
     assert H._read_subst(0x024) == stim.A_FSTAT  # RXF1
     assert H._read_subst(stim.A_RXF0) == stim.A_RXF0
     assert H._read_subst(stim.A_FLEVEL) == stim.A_FLEVEL
+
+
+def test_sby_cmd_native_wraps_sby_in_timeout() -> None:
+    # CI-in-container regression (2026-09-06): with sby native on PATH
+    # (tc == [] — the vibe-pio container) the command used to prepend a
+    # stray `sby` before `timeout`, so sby parsed timeout's flags as its
+    # own ("unrecognized arguments: -k ...") and every e2e leg of
+    # `make equiv`/`make hyperopt` ERRORed in-container. The host's
+    # docker-wrap path built the command correctly, which is why only
+    # in-container runs (the CI jobs) caught it.
+    cmd = H.sby_cmd([], 1800, "st_green", H.BUILD / "equiv" / "st_green")
+    assert cmd == ["timeout", "-k", "5", "1800", "sby", "-f", "-d", "work", "st_green.sby", "bmc"]
+
+
+def test_sby_cmd_docker_wrap_prefixes_the_same_inner() -> None:
+    wrap = ["docker", "run", "--rm", "-v", "/repo:/work", "vibe-pio:latest"]
+    case_dir = H.BUILD / "equiv" / "st_green"
+    cmd = H.sby_cmd(wrap, 1800, "st_green", case_dir)
+    assert cmd[:5] == wrap[:5]
+    assert cmd[5:7] == ["-w", "/work/build/equiv/st_green"]
+    assert cmd[7] == "vibe-pio:latest"
+    assert cmd[8:] == H.sby_cmd([], 1800, "st_green", case_dir)

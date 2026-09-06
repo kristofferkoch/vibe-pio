@@ -638,22 +638,14 @@ class SbyResult(TypedDict):
     log_tail: str
 
 
-def run_sby(pair: ProgPair, horizon: int, timeout: int, tag: str, case_dir: Path) -> SbyResult:
-    """Generate the miter instance + sby task into case_dir and run it.
-    Verdict from the workdir status file (sby's own accounting)."""
-    case_dir.mkdir(parents=True, exist_ok=True)
-    (case_dir / WRAPPER_FILE).write_text(wrapper_sv(pair))
-    rel_repo = os.path.relpath(REPO, case_dir).replace(os.sep, "/")
-    (case_dir / f"{tag}.sby").write_text(case_sby(horizon, rel_repo))
-    tc = toolchain()
-    assert tc is not None, "toolchain checked by caller"
-    # `timeout -k` carries the wall clock in front of sby so the engine
-    # tree dies with the wrapper in both the native and container runs.
-    cmd = [
-        *tc[:1],
-        *tc[1:-1],
-        *(_docker_wd(case_dir) if tc and tc[0] == "docker" else []),
-        tc[-1] if tc else "sby",
+def sby_cmd(tc: list[str], timeout: int, tag: str, case_dir: Path) -> list[str]:
+    """The sby invocation for run_sby: `timeout -k` carries the wall
+    clock in front of sby so the engine tree dies with the wrapper in
+    both the native and container runs. Native (tc == [], sby on PATH —
+    the in-container case) wraps sby directly; the docker wrap prefixes
+    one container run with -w at the case dir (the mount is
+    repo-rooted)."""
+    inner = [
         "timeout",
         "-k",
         "5",
@@ -665,6 +657,21 @@ def run_sby(pair: ProgPair, horizon: int, timeout: int, tag: str, case_dir: Path
         f"{tag}.sby",
         "bmc",
     ]
+    if not tc:
+        return inner
+    return [*tc[:1], *tc[1:-1], *_docker_wd(case_dir), tc[-1], *inner]
+
+
+def run_sby(pair: ProgPair, horizon: int, timeout: int, tag: str, case_dir: Path) -> SbyResult:
+    """Generate the miter instance + sby task into case_dir and run it.
+    Verdict from the workdir status file (sby's own accounting)."""
+    case_dir.mkdir(parents=True, exist_ok=True)
+    (case_dir / WRAPPER_FILE).write_text(wrapper_sv(pair))
+    rel_repo = os.path.relpath(REPO, case_dir).replace(os.sep, "/")
+    (case_dir / f"{tag}.sby").write_text(case_sby(horizon, rel_repo))
+    tc = toolchain()
+    assert tc is not None, "toolchain checked by caller"
+    cmd = sby_cmd(tc, timeout, tag, case_dir)
     r = subprocess.run(cmd, cwd=case_dir, capture_output=True, text=True, check=False)
     log = r.stdout + r.stderr
     (case_dir / "sby.log").write_text(log)
