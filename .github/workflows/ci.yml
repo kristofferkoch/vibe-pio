@@ -13,21 +13,22 @@
 #
 # RTL-facing gates run inside the pinned container (container/Dockerfile,
 # the same image `make`'s tools fall back to on a bare host). The image
-# is built once per run by the `image` job and pushed to GHCR (~20 min
-# cold — yosys/boolector/emsdk from source; the GHA layer cache speeds
-# later builds while the Dockerfile is unchanged). Gate jobs pull it —
-# the cache cannot be handed to sibling jobs within one run, so each
-# gate building its own copy would cold-build every time. They run the
-# targets the repo's own way: docker run --rm -v $PWD:/work -w /work.
+# is pure toolchain, so it is content-addressed by the Dockerfile: an
+# unchanged build context means the pushed GHCR image already exists and
+# the `image` job is a no-op manifest check (~seconds). When the
+# Dockerfile does change, the build (~20 min cold — yosys/boolector/
+# emsdk from source) reuses the previous image's layers via the GHCR
+# registry cache. Gate jobs docker login and run the image directly —
+# they run the targets the repo's own way:
+# docker run --rm -v $PWD:/work -w /work.
 #
-# Measured budgets (in-container, 2026-09-06): sim+syn+audit+model
-# ~15 min, equiv+hyperopt ~7 min, synth ~15 min, web ~10 min (the
-# Makefile's own numbers for the latter two); py ~1 min and js ~30 s
-# host-side. `formal` is the exception — hours-class (the sby notes
-# record a 1:15 h single prove) and lives in its own workflow
-# (formal.yml) so this fast lane's cancel-in-progress concurrency never
-# kills it mid-proof; the weekly formal run also refreshes this lane's
-# image layer cache (GHA caches evict after 7 days untouched).
+# Measured budgets (CI, 2026-09-06): sim+syn+audit+model 41 s,
+# equiv+hyperopt 6m20s, synth 17m27s, web 1m14s; py 1m12s and js 24 s
+# host-side (the Makefile's own ~10/~15 min web/synth budgets are the
+# conservative local-container numbers). `formal` is the exception —
+# hours-class (the sby notes record a 1:15 h single prove) and lives in
+# its own workflow (formal.yml) so this fast lane's cancel-in-progress
+# concurrency never kills it mid-proof.
 name: ci
 
 on:
@@ -81,18 +82,30 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image: ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-${{ github.sha }}
+      image: ${{ steps.img.outputs.image }}
     steps:
       - uses: actions/checkout@v4
-      - run: |
+      - id: img
+        run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          # content-addressed by the build context: while the Dockerfile
+          # is unchanged this tag already exists in GHCR and nothing
+          # rebuilds (the image is pure toolchain — the gates run the
+          # checked-out tree through it)
+          IMAGE="ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-$(sha256sum container/Dockerfile | cut -c1-16)"
+          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           docker buildx create --use
           docker buildx build \
-            --cache-from type=gha \
-            --cache-to type=gha,mode=max \
-            --tag ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-${{ github.sha }} \
+            --cache-from type=registry,ref=ghcr.io/${{ github.repository_owner }}/vibe-pio:cache \
+            --cache-from type=registry,ref=ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-main \
+            --cache-to type=registry,ref=ghcr.io/${{ github.repository_owner }}/vibe-pio:cache,mode=max \
+            --tag "$IMAGE" \
             --tag ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-main \
             --push container/
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
   sim:
     needs: image

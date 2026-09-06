@@ -11,7 +11,7 @@
 # The container comes from GHCR (:ci-main, pushed by ci.yml's image
 # job; it is pure toolchain — the proofs read the checked-out tree via
 # the bind mount). A dispatch before any ci run on main builds it here
-# instead: cache-from pulls whatever layers still live.
+# instead, reusing the registry layer cache.
 name: formal
 
 on:
@@ -50,8 +50,8 @@ jobs:
           if ! docker pull ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-main; then
             docker buildx create --use
             docker buildx build \
-              --cache-from type=gha \
-              --cache-to type=gha,mode=max \
+              --cache-from type=registry,ref=ghcr.io/${{ github.repository_owner }}/vibe-pio:cache \
+              --cache-to type=registry,ref=ghcr.io/${{ github.repository_owner }}/vibe-pio:cache,mode=max \
               --tag ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-main \
               --load container/
           fi
