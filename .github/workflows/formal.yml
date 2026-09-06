@@ -1,0 +1,40 @@
+# The formal lane — `make formal` over every formal/*.sby task, in the
+# pinned container. Split from ci.yml into its own workflow (and its
+# own concurrency group) because it is hours-class: the sby notes
+# record a 1:15 h single prove and the 12-task suite runs much longer,
+# so the fast lane's cancel-in-progress must never kill it mid-proof —
+# only a newer formal run supersedes an in-flight one. Skipped on PRs
+# for the same reason (flip the `if:` for a PR that touches formal/ or
+# rtl/ invariant sets); the weekly run keeps main honest and refreshes
+# the image layer cache GHA evicts after 7 days untouched.
+name: formal
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * 1" # Mondays 05:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  formal:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker buildx create --use
+          docker buildx build \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --tag vibe-pio:ci \
+            --load container/
+      - run: docker run --rm -v "$PWD:/work" -w /work vibe-pio:ci make formal
