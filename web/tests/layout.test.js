@@ -650,6 +650,65 @@ test('state swaps never reflow: run/pause and the copy flash keep their boxes', 
   );
 });
 
+// The owner's live-session report: the machines-bar cell ("SM0 02 EXEC")
+// changed size whenever a running machine's phase swapped, and the bar
+// re-flowed on every rendered clk. The phase chip is auto-width past its
+// old 34px min (measured border-box: EXEC 37px, DELAY 45px, STALL 42px,
+// OFF 34px), the cells sit left-anchored in the flex row, and four
+// machines flip phases independently — EXEC↔DELAY is the default rhythm
+// of a running program. The exec pane's phase row moves with it: the
+// name is auto-width (EXEC 33px, "DELAY 31" 59px) and the group is
+// right-anchored, so the sub text — which re-writes every delay tick —
+// dragged the progress bar along. The C33 max-label rule, for live
+// phase text: every box (cells, chips, the bar's own, name, progress
+// bar, sub) is identical across all four phases, across the running
+// mix, and across the delay countdown's digit changes.
+const PHASE_BOXES = `(() => {
+  const box = (e) => {
+    const b = e.getBoundingClientRect();
+    return [+b.left.toFixed(1), +b.top.toFixed(1), +b.width.toFixed(1), +b.height.toFixed(1)];
+  };
+  const bar = document.querySelector('#smscells');
+  return {
+    bar: box(bar),
+    cells: [...bar.querySelectorAll('.smcell')].map(box),
+    chips: [...bar.querySelectorAll('.smph')].map(box),
+    name: box(document.getElementById('phasename')),
+    pbar: box(document.getElementById('phasebar')),
+    sub: box(document.getElementById('phasesub')),
+  };
+})()`;
+
+test('phase swaps never reflow: the machines bar and the exec phase row hold their boxes', async () => {
+  await load(null, 1280, 800);
+  // phases: the four chips' phases; phase/delay: the selected SM's face
+  // (the exec row follows it)
+  const posture = async (phases, phase, delay) => {
+    await page.evaluate(
+      `render(Object.assign({}, V.state, {
+        phase: ${JSON.stringify(phase)}, delay: ${delay},
+        sms: ${JSON.stringify(phases)}.map((ph) => ({ displayPc: 2, phase: ph })),
+      }))`,
+    );
+    return page.evaluate(PHASE_BOXES);
+  };
+  const base = await posture(['EXEC', 'EXEC', 'EXEC', 'EXEC'], 'EXEC', 0);
+  assert.strictEqual(base.cells.length, 4, 'the machines bar lost its four cells');
+  for (const [name, phases, phase, delay] of [
+    ['all DELAY', ['DELAY', 'DELAY', 'DELAY', 'DELAY'], 'DELAY', 5],
+    ['all STALL', ['STALL', 'STALL', 'STALL', 'STALL'], 'STALL', 0],
+    ['all OFF', ['OFF', 'OFF', 'OFF', 'OFF'], 'OFF', 0],
+    ['the running mix', ['EXEC', 'DELAY', 'STALL', 'OFF'], 'DELAY', 31],
+    ['the delay countdown tick', ['DELAY', 'DELAY', 'DELAY', 'DELAY'], 'DELAY', 1],
+  ]) {
+    assert.deepStrictEqual(
+      await posture(phases, phase, delay),
+      base,
+      `the ${name} posture re-flowed the machines bar or the exec phase row — every phase face holds its possible max label (C33), never its current one`,
+    );
+  }
+});
+
 // the wrap arc's steppers in the degenerate WRAP_TOP == WRAP_BOTTOM state
 // (a fresh SM stepped to 0/0): the WRAP_TOP pair used to land 11px above
 // the listing's scroll origin — clipped out of a scroll container, so

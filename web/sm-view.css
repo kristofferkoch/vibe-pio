@@ -855,6 +855,10 @@ main > * {
   font-size: 11px;
   font-weight: bold;
   letter-spacing: 0.04em;
+  /* holds "DELAY 31", the widest face (59px) — the phase group is
+     right-anchored, so an auto-width name slid the bar and the sub
+     text on every phase swap; the C33 max-label rule */
+  min-width: 60px;
 }
 #phasename.st {
   color: var(--green);
@@ -884,6 +888,10 @@ main > * {
   color: var(--dim);
   font-size: 11px;
   white-space: nowrap;
+  /* holds the STALL sentence, the widest sub (194px) — the sub
+     re-writes every delay tick, and its width changes dragged the
+     progress bar with it; same C33 max-label rule */
+  min-width: 195px;
 }
 /* the fifo twins: one row, even split — the hairline between them is
    the same line-on-gap trick the main grid uses */
@@ -2174,7 +2182,11 @@ button.shiftviz:hover .sv-end {
   background: var(--panel);
   border: 1px solid var(--line);
   color: var(--dim);
-  min-width: 34px;
+  /* holds DELAY, the widest phase label (45px with chrome) — the old
+     34px min let every EXEC↔DELAY swap grow the chip (37px on EXEC)
+     and re-flow the whole left-anchored bar while running; the C33
+     max-label rule, for live phase text */
+  min-width: 45px;
   text-align: center;
 }
 .smcell .smph.x {
