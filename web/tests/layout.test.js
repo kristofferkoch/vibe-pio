@@ -1556,3 +1556,117 @@ for (const [width, height] of VIEWPORTS) {
     );
   });
 }
+
+// C40 — the echo page: the decode judge's face. TWO stimulus rows draw
+// above the lens (the enable square narrating the speaking window, the
+// data pin carrying the frame — the echo lesson is the three traces on
+// one time axis), the frame map debuts as its own panel (the uart lens
+// rides the page), and the band carries the byte glyphs — the golden
+// frame template beside the last measured one (the C38 grammar grown
+// from cycles to frames; the divergent bit marked red on a data red).
+const L7_ABSENT = [
+  '#clkdivtag',
+  '#bempty',
+  '#bdemo',
+  '#bexport',
+  '#bimport',
+  '#bcopy',
+  '#speed',
+  '#binsn',
+  '#smsbar',
+  '#pinstrip',
+  '#regs',
+  '#dsalloc',
+  '#progfoot',
+  '#exectitle',
+  '#execslim',
+  '#fifo', // the TX half: absent until the feeder chapter (L9)
+  '#pullconn',
+  '#osr',
+  '.maptag',
+  '#wavewinaux',
+  '#spin-lenspin', // the lens pins to the output — the steppers stay locked
+  '#feed',
+  '#pattern',
+];
+const L7_SCAN = `(() => {
+  const bad = [];
+  const box = (sel) => document.querySelector(sel)?.getBoundingClientRect();
+  const gone = (sel) => {
+    const el = document.querySelector(sel);
+    return !el || el.offsetParent === null;
+  };
+  for (const sel of ${JSON.stringify(L7_ABSENT)}) {
+    if (document.querySelectorAll(sel).length && !gone(sel))
+      bad.push(sel + ' is still laid out — a locked panel is absence, not a ghost');
+  }
+  // the reading leg stays (L6's knowledge is monotone)
+  for (const sel of ['#isr', '#rxfifo', '#fiforow']) {
+    const b = box(sel);
+    if (!b || b.width < 80 || b.height < 20) bad.push(sel + ' has no box — the reading leg stays');
+  }
+  // the frame map debuts: the uart lens rides the page, so the panel
+  // and its ten cells lay out (START/D0..D7/STOP — the subgoal labels)
+  const fm = box('#framemap');
+  if (!fm || fm.width < 80 || fm.height < 20) bad.push('#framemap has no box — the frame map debuts');
+  if (document.querySelectorAll('#fmcells .fmcell').length !== 10)
+    bad.push('the frame map lost its ten frame cells');
+  // TWO stimulus rows: the enable square and the data frame, both above
+  // the lens trace (top half of the wave's band)
+  const stim = document.querySelectorAll('#wavesvg .stimrow');
+  if (stim.length !== 2) bad.push('two stimulus rows must draw — enable and data');
+  else {
+    const wv = box('#wavesvg');
+    for (const r of stim) {
+      const sb = r.getBoundingClientRect();
+      if (!wv || sb.height < 4 || sb.bottom > wv.top + wv.height / 2)
+        bad.push('a stimulus row is not above the lens trace');
+    }
+  }
+  // the byte glyphs: the golden frame template beside the last measured
+  // frame — real boxes on the band, unlike the rx judge's empty pair
+  for (const sel of ['#lvtarget', '#lvlive']) {
+    const b = box(sel);
+    if (!b || b.width <= 0 || b.height <= 0) bad.push(sel + ' has no box — the decode judge draws glyphs');
+  }
+  // the standing level checks: 32 honest rows, the wave's floor, no
+  // wrap steppers, the head row never wraps
+  if (document.querySelectorAll('#progrows .prow').length !== 32)
+    bad.push('the listing lost rows — 32 rows in every level');
+  if (document.querySelectorAll('.wstep').length) bad.push('the wrap steppers are built');
+  const wave = box('#wavesvg');
+  if (!wave || wave.height < 64) bad.push('the wave lost its 64px floor');
+  if (!wave || wave.width < 420) bad.push('the wave is squeezed under 420px');
+  const head = document.getElementById('lvhead');
+  if (head && head.scrollHeight > head.clientHeight + 1)
+    bad.push('the band head wraps (scrollHeight ' + head.scrollHeight + ' in ' + head.clientHeight + ')');
+  return { bad };
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`the L7 page: two stimulus rows, the frame map debuts, the byte glyphs hold the band ${width}×${height}`, async () => {
+    await page.setViewport(width, height);
+    await page.goto(`${pageUrl()}?level=l7`);
+    await page.evaluate('document.fonts.ready.then(() => {})');
+    await page.evaluate("document.getElementById('boot')?.remove()");
+    // the hermetic page never runs; drive the shipped renderers with a
+    // synthetic window in the level's own shape — the uart lens the
+    // level boots with, two stimulus rows and a quiet line, exactly the
+    // state a real run produces
+    await page.evaluate(
+      `V.state.lens = {mode: 'uart', pin: 0};` +
+        `renderWave({...V.state, cycle: 127, wave: {` +
+        `pins: new Array(128).fill(1), tags: new Array(128).fill(""), startCycle: 0,` +
+        `stim: [` +
+        `{pin: 1, bits: (${JSON.stringify('10'.repeat(64))}).split('').map(Number)},` +
+        `{pin: 2, bits: (${JSON.stringify('0011'.repeat(32))}).split('').map(Number)}]}});` +
+        `renderMonitor(V.state); renderFrameMap(V.state);`,
+    );
+    const { bad } = await page.evaluate(L7_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `L7 geometry broken at ${width}×${height} — the decode judge's face must fit`,
+    );
+  });
+}

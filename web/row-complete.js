@@ -308,7 +308,11 @@
   // `opcodes` field) scopes every candidate the menu may offer — the
   // mnemonic slot offers only the unlocked set, and a locked mnemonic's
   // operand slots stay silent (the menu never teaches ahead of the level;
-  // a filter over the slot model, not new machinery). No whitelist, no
+  // a filter over the slot model, not new machinery). C40 adds the
+  // condition leash: `opts.conds` scopes jmp's condition slot the same
+  // way — the pin condition debuts at L7, the x-- slot at L8, and the
+  // chapter-1 levels offer none (their jmps are unconditional; the
+  // always-jump is digits at the first slot, as ever). No whitelist, no
   // filter: the sandbox menu stays whole.
   function analyze(upto, opts) {
     const ctx = splitCtx(upto);
@@ -324,6 +328,8 @@
       if (!ctx.toks.length) out.cands = out.cands.filter((c) => wl.includes(c.t.toLowerCase()));
       else if (!wl.includes(ctx.toks[0].toLowerCase())) out.cands = [];
     }
+    if (opts && Array.isArray(opts.conds) && out.slot === 'jmp.cond')
+      out.cands = out.cands.filter((c) => opts.conds.includes(c.t));
     return out;
   }
 

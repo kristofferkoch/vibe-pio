@@ -1113,3 +1113,141 @@ test('the L6 walk: the reading debut is keyboard-reachable, the word face commit
     'the page walked the whole loop without an engine error',
   );
 });
+
+// C40 — the L7 walk: the echo authored under keys alone. The condition
+// menu debuts `jmp pin` (the pin condition unlocks here — the chapter-1
+// jmps were unconditional, their menus offered no condition at all), the
+// delays carry the bit-time gate (each set row holds its bit a whole
+// 8-clk bit-time), and the honest solve is 3 words — the high path rides
+// the `·` row home. The run pays it off: the frame map rides the wave
+// under the uart lens, the decode judge passes, and par names its own
+// clock (clk/bit).
+test('the L7 walk: jmp pin debuts in the menu, the 3-word echo solves', async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/sm-view.html?level=l7`);
+  await until('V.ready === true', 'the level page engine to boot');
+
+  // ---- no orphan stops: L6's reading surface, no predict card --------
+  const stops = [];
+  for (let i = 0; i < 12; i++) {
+    await press('Tab');
+    stops.push(await value(activeId));
+  }
+  const allowed = new Set([
+    'brun',
+    'bstep',
+    'breset',
+    'progrows',
+    'BODY',
+    'isrviz',
+    'aptg2',
+    'spin-pushthr',
+    'bdrain',
+    'bdrainall',
+  ]);
+  for (const s of stops)
+    assert.ok(
+      allowed.has(s),
+      `orphan stop ${JSON.stringify(s)} — a locked panel left a focusable behind (${stops.join(', ')})`,
+    );
+
+  // ---- the listing boots empty; the menu offers the echo vocabulary ---
+  assert.strictEqual(
+    await value("document.querySelectorAll('#progrows .prow.empty').length"),
+    32,
+    'from scratch: 32 honest · rows',
+  );
+  await tabUntil(`${activeId} === 'progrows'`, 'the listing');
+  await press('Enter');
+  await until(`${activeId} === 'edittxt'`, 'the editor opens on row 0');
+  assert.deepStrictEqual(
+    (
+      await value(
+        "[...document.querySelectorAll('#edcands .ecand')].map((e) => e.firstChild.textContent)",
+      )
+    ).filter((t) => !t.startsWith('↦')),
+    ['jmp', 'in', 'out', 'set'],
+    'the reading vocabulary: the chapter-1 set grows in and out',
+  );
+
+  // ---- row 0: the condition menu offers exactly `pin` ------------------
+  await type('jmp ');
+  const offered = await value(
+    "[...document.querySelectorAll('#edcands .ecand')].map((e) => e.firstChild.textContent)",
+  );
+  assert.ok(offered.includes('pin'), 'the pin condition debuts at the condition slot');
+  assert.ok(offered.includes('↦ pick row'), 'the gutter pick stays (no condition = always)');
+  await press('Tab'); // accept `pin` — the canonical ', ' separator lands
+  await until("ED.value === 'jmp pin, '", 'Tab to accept the pin condition');
+  await type('2');
+  await press('Enter'); // commit row 0, hop to row 1
+  await until(`${activeId} === 'edittxt'`, 'Enter to commit and hop rows');
+  assert.ok(
+    (await value("document.querySelector('#pr0 .ins').textContent")).includes('jmp pin, 2'),
+    'row 0 carries the first conditional',
+  );
+
+  // ---- rows 1-2: the level holds, one bit-time each --------------------
+  await type('set pins, 0');
+  await press('Tab');
+  await until(`${activeId} === 'eddly'`, 'the delay cell of row 1');
+  await type('6');
+  await press('Enter');
+  await until(`${activeId} === 'edittxt'`, 'row 2 opens');
+  await type('set pins, 1');
+  await press('Tab');
+  await until(`${activeId} === 'eddly'`, 'the delay cell of row 2');
+  await type('5');
+  await press('Enter');
+  await until(`${activeId} === 'edittxt'`, 'Enter to commit row 2');
+  await press('Escape');
+  await until("$('edpop').hidden === true", 'the list to close');
+  await press('Escape');
+  await until(`${activeId} === 'progrows'`, 'Esc to stand down');
+  assert.strictEqual(await value("$('unbuilt').hidden"), true, 'the echo assembles clean');
+
+  // ---- the run: the stimulus draws, the frame map rides ----------------
+  // (the walk's engine is the fake ABI — no PIO core, so no live frame;
+  // the judge itself is engine-side-gated by levels.test.js over these
+  // very goldens. The face is gated here the layout leg's way: feed the
+  // shipped judge the committed golden series through the page's own
+  // levelJudge and watch the band answer.)
+  await page.evaluate("$('speed').value = '8'"); // ×16 — the walk's run moves briskly
+  await page.evaluate('document.activeElement && document.activeElement.blur()');
+  await press('r');
+  await until("$('brun').classList.contains('on') === true", 'R to start the machine');
+  await until(
+    "document.querySelectorAll('#wavesvg .stimrow').length === 2",
+    'the two stimulus rows to draw (enable and data)',
+  );
+  // the frame map rides under the uart lens the level boots with
+  assert.strictEqual(await value("$('framemap').hidden"), false, 'the frame map lays out');
+  assert.strictEqual(
+    await value("document.querySelectorAll('#fmcells .fmcell').length"),
+    10,
+    'START/D0..D7/STOP — the subgoal labels',
+  );
+  // the PASS face over the golden series: the verdict word, the par
+  // reveal naming its own clock, the pause on the payoff frame
+  const L7G = JSON.parse(fs.readFileSync(path.join(__dirname, 'levels-golden.json'), 'utf8'));
+  const series = L7G.levels.l7.cases.find((c) => c.name === 'reference').series;
+  await page.evaluate(
+    `levelJudge({...V.state, wave: {` +
+      `pins: (${JSON.stringify(series)}).split('').map(Number),` +
+      `tags: [], startCycle: 0, stim: []}})`,
+  );
+  await until("$('lvpass').hidden === false", 'the decode judge to pass the golden echo');
+  assert.match(
+    await value("$('lvverdict').textContent"),
+    /frame — PASS/,
+    'the pass word names the frame receiver',
+  );
+  assert.ok(
+    (await value("$('lvpar').textContent")).includes('clk/bit'),
+    'par names its own clock — bit-times, not cycles',
+  );
+  assert.ok(
+    !(await value("/ERROR/.test(document.querySelector('footer').textContent)")),
+    'the page walked the whole loop without an engine error',
+  );
+});

@@ -35,6 +35,12 @@
   // ================= the registry =================
   const LEVELS = new Map();
 
+  // The jmp condition spellings (pio-asm.js JMP_CONDS minus 'always' —
+  // the always-jump is digits at the first slot, unlocked with jmp
+  // itself). The conds whitelist's vocabulary; the levels gate pins it
+  // against the assembler's table so the two can never drift.
+  const CONDS = ['!x', 'x--', '!y', 'y--', 'x != y', 'pin', '!osre'];
+
   function str(v, what, min = 1) {
     if (typeof v !== 'string' || v.length < min) throw new Error(`level: ${what} missing`);
     return v;
@@ -116,6 +122,17 @@
           throw new Error('level: rx expected words are 32-bit values');
     } else if (pr.kind === 'square') {
       // the tier ladder skeleton (relaxed/exact/strict over one receiver)
+    } else if (pr.kind === 'uart') {
+      // C40: the decode judge — SPEC-16-9 run semantics over the output
+      // wave (the monitor flips to receiver conformance at L7); expected
+      // bytes = the driven data, the [BIT_LO,BIT_HI] skew window per
+      // bit-time as the tier ladder. DBITS 8, no parity — the frame
+      // map's own shape.
+      if (!Array.isArray(pr.bytes) || !pr.bytes.length || pr.bytes.length > 4)
+        throw new Error('level: uart profile needs its expected bytes (1..4)');
+      for (const b of pr.bytes)
+        if (!Number.isInteger(b) || b < 0 || b > 255)
+          throw new Error('level: uart expected bytes are 8-bit values');
     } else {
       throw new Error(`level: no receiver for profile kind ${JSON.stringify(pr?.kind)}`);
     }
@@ -129,7 +146,7 @@
       const t = pr.tiers?.[pr.tier];
       // enough completed periods in view for minPeriods to hold at any
       // window phase: risings >= minPeriods+1 needs (minPeriods+2) periods
-      if (t && def.waveWin < (t.minPeriods + 2) * t.periodHi)
+      if (pr.kind === 'square' && t && def.waveWin < (t.minPeriods + 2) * t.periodHi)
         throw new Error('level: waveWin too short for the tier to judge steadily');
     }
     if (!Number.isInteger(pr.pin) || pr.pin < 0 || pr.pin > 31)
@@ -142,6 +159,27 @@
         if (t.periodLo < 2 || t.periodLo > t.periodHi)
           throw new Error(`level: tier ${name} period range`);
       }
+    }
+    if (pr.kind === 'uart') {
+      if (!pr.tiers?.[pr.tier]) throw new Error(`level: tier ${pr.tier} not defined`);
+      for (const [name, t] of Object.entries(pr.tiers)) {
+        for (const f of ['bitLo', 'bitHi'])
+          if (!Number.isInteger(t[f]) || t[f] < 1) throw new Error(`level: tier ${name}.${f}`);
+        if (t.bitLo > t.bitHi) throw new Error(`level: tier ${name} window (bitLo..bitHi)`);
+      }
+    }
+    // C40: the condition leash — the jmp condition spellings a level may
+    // suggest (the assembler's own table minus 'always': the always-jump
+    // is digits at the first slot, unlocked with jmp itself). The pin
+    // condition debuts at L7, the x-- slot at L8; before that the menu
+    // stays shut. levels.js is dependency-free, so the spellings live
+    // here and the gate pins them against PioAsm.JMP_CONDS.
+    if (def?.conds !== undefined) {
+      if (!Array.isArray(def.conds))
+        throw new Error('level: conds must be a list of jmp conditions');
+      for (const c of def.conds)
+        if (!CONDS.includes(c))
+          throw new Error(`level: unknown jmp condition ${JSON.stringify(c)}`);
     }
     const pd = def?.predict;
     if (pd) {
@@ -325,9 +363,139 @@
     };
   }
 
+  // ================= the decode judge (C40) =================
+  // A pure judge over the OUTPUT wave (SPEC-16-9 run semantics, the
+  // uart_tx monitor's receiver): the line is read as maximal
+  // constant-level runs; a run of L clk is m = ceil(L / bitHi)
+  // bit-times, legal iff m*bitLo <= L (the [BIT_LO, BIT_HI] idiom — a
+  // fractional divisor legitimately lands slots anywhere in the window,
+  // an exact window means FRAC 0); the concatenated runs must form
+  // start (0), 8 data bits LSB-first, stop (1) — a high tail completes
+  // the frame once it outlasts the remaining positions' bitLo (a stop
+  // merged into idle costs nothing). Expected bytes = the driven data;
+  // the near-miss faces: a bad run names its frame position, a wrong
+  // byte names the bit. Pure: the browser feeds it the wave window, the
+  // levels gate the committed golden series — the same verdict both
+  // sides. DBITS 8, no parity (the frame map's own shape); frames
+  // decode in order, one expected byte each.
+  function uartJudge(bits, profile, defects) {
+    const DEFECT = !!defects?.judge; // re-injected: any decoded frame passes
+    const tp = profile.tiers[profile.tier];
+    const want = profile.bytes;
+    if (!bits?.length)
+      return { pass: false, code: 'awaiting', verdict: 'awaiting run', frames: [] };
+    // arm on the first 1→0 (the lens rule: a reset-0 pad startup is not
+    // a start bit — the line must be seen high first)
+    let start = -1;
+    for (let k = 1; k < bits.length; k++)
+      if (bits[k - 1] === 1 && bits[k] === 0) {
+        start = k;
+        break;
+      }
+    if (start < 0)
+      return {
+        pass: false,
+        code: 'idle',
+        verdict: 'no frame yet — the line never fell',
+        frames: [],
+      };
+    const runs = [];
+    let i = start;
+    while (i < bits.length) {
+      let j = i + 1;
+      while (j < bits.length && bits[j] === bits[i]) j++;
+      runs.push({ lvl: bits[i] ? 1 : 0, len: j - i });
+      i = j;
+    }
+    const STOP = 9; // frame positions: 0 = start, 1..8 = data, 9 = stop
+    const frames = [];
+    let pos = 0,
+      byte = 0,
+      fb = '';
+    for (const { lvl, len } of runs) {
+      const k = STOP + 1 - pos; // remaining positions incl. the stop
+      const name = pos === 0 ? 'start' : pos <= 8 ? `D${pos - 1}` : 'stop';
+      // the completing high tail: checked by outlasting k*bitLo, never
+      // by the run window (SPEC-16-9 — the merged stop costs nothing)
+      if (lvl === 1 && len >= k * tp.bitLo) {
+        for (let b = 0; b < k; b++) if (pos + b >= 1 && pos + b <= 8) byte |= 1 << (pos + b - 1);
+        fb += '1'.repeat(Math.min(len, k * tp.bitHi));
+        frames.push({ byte, bits: fb });
+        pos = 0;
+        byte = 0;
+        fb = '';
+        continue;
+      }
+      const m = Math.max(1, Math.ceil(len / tp.bitHi)); // fewest bits ([MODEL])
+      if (len < m * tp.bitLo)
+        return {
+          pass: false,
+          code: 'timing',
+          verdict: `${name} runs ${len} clk — outside (${tp.bitLo}..${tp.bitHi} clk/bit)`,
+          frames: frames.map((f) => f.bits),
+        };
+      if (pos + m > STOP + 1)
+        return {
+          pass: false,
+          code: 'frame',
+          verdict: `${name} holds ${len} clk — the frame never completed`,
+          frames: frames.map((f) => f.bits),
+        };
+      for (let b = 0; b < m; b++) if (pos + b >= 1 && pos + b <= 8) byte |= lvl << (pos + b - 1);
+      fb += String(lvl).repeat(len);
+      pos += m;
+      if (pos === STOP + 1) {
+        frames.push({ byte, bits: fb });
+        pos = 0;
+        byte = 0;
+        fb = '';
+      }
+    }
+    const out = frames.map((f) => f.bits);
+    if (DEFECT && frames.length)
+      return { pass: true, code: 'defect', verdict: 'frame (defect: byte unchecked)', frames: out };
+    for (let i = 0; i < Math.min(want.length, frames.length); i++) {
+      const g = frames[i].byte,
+        w = want[i];
+      if (g === w) continue;
+      for (let b = 0; b < 8; b++)
+        if (((g >> b) & 1) !== ((w >> b) & 1))
+          return {
+            pass: false,
+            code: 'data',
+            verdict: `byte ${i + 1} bit D${b} — got ${(g >> b) & 1}, want ${(w >> b) & 1}`,
+            frames: out,
+            diverge: b,
+          };
+    }
+    if (frames.length < want.length)
+      return {
+        pass: false,
+        code: 'watching',
+        verdict: `${frames.length} of ${want.length} byte${want.length !== 1 ? 's' : ''} in — keep watching`,
+        frames: out,
+      };
+    if (frames.length > want.length)
+      return {
+        pass: false,
+        code: 'extra',
+        verdict: `byte ${want.length + 1} — the line drove a byte the world never gave`,
+        frames: out,
+      };
+    const hex = want.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+    return {
+      pass: true,
+      code: 'pass',
+      verdict: `frame · ${hex} — the echo is the given`,
+      frames: out,
+      byte: frames[0].byte,
+    };
+  }
+
   function judge(bits, profile, defects) {
     if (profile.kind === 'square') return squareJudge(bits, profile.tiers[profile.tier], defects);
     if (profile.kind === 'rx') return rxJudge(bits, profile, defects);
+    if (profile.kind === 'uart') return uartJudge(bits, profile, defects);
     throw new Error(`judge: no receiver for ${profile.kind}`);
   }
 
@@ -341,6 +509,30 @@
   // the representative width) and where the next rise may land
   // (periodLo..periodHi; a zero-width window draws as a gold tick).
   function targetGlyph(profile) {
+    if (profile.kind === 'uart') {
+      // C40: the byte glyph — the tier as a frame. The representative
+      // bit-time is the [BIT_LO,BIT_HI] window's center pulled inside
+      // it; the drawn template is the expected byte's own frame (start,
+      // the data bits LSB-first — 2-bit symbols merge into runs, the
+      // run semantics the judge itself reads — then the stop; the idle
+      // tail beyond the stop is not drawn). The two acceptance windows
+      // after the frame's first fall: where the next edge may land (one
+      // bit-time) and the edge after that (two) — the C38 grammar with
+      // the uart tier's own numbers.
+      const tp = profile.tiers[profile.tier];
+      const bt = Math.min(Math.max(Math.round((tp.bitLo + tp.bitHi) / 2), tp.bitLo), tp.bitHi);
+      let bits = '0'.repeat(bt); // the start bit
+      for (let b = 0; b < 8; b++) bits += String(((profile.bytes[0] ?? 0) >> b) & 1).repeat(bt);
+      bits += '1'.repeat(bt); // the stop bit
+      return {
+        clks: 10 * bt,
+        bits,
+        fallFrom: tp.bitLo,
+        fallTo: tp.bitHi,
+        nextFrom: 2 * tp.bitLo,
+        nextTo: 2 * tp.bitHi,
+      };
+    }
     if (profile.kind !== 'square') throw new Error(`targetGlyph: no receiver for ${profile.kind}`);
     const tp = profile.tiers[profile.tier];
     const clks = tp.periodHi;
@@ -490,6 +682,8 @@
     judge,
     squareJudge,
     rxJudge,
+    uartJudge,
+    CONDS,
     targetGlyph,
     gateOpen,
     programState,

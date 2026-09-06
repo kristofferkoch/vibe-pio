@@ -489,6 +489,15 @@ const LV_STATUS = {
   // golden-vs-measured grammar grows bytes at C40, not here)
   nowords: ['no words', 'dim'],
   diverge: ['word differs', 'bad'],
+  // C40: the decode judge's faces — the bit-time red names the frame
+  // position, the byte red names the bit, and the glyph pair is the
+  // frame itself (golden template vs last measured, the divergent bit
+  // marked)
+  idle: ['no frame — idle', 'dim'],
+  timing: ['bit-time — outside', 'bad'],
+  frame: ['frame — incomplete', 'bad'],
+  data: ['byte differs', 'bad'],
+  extra: ['extra byte', 'bad'],
 };
 // both glyphs draw at one shared px/clk so the eye compares like for
 // like, quantized so neither exceeds the 64px glyph budget (the head
@@ -505,22 +514,46 @@ function lvSetGlyph(svg, clks, pad) {
 // the golden template: the tier as a wave (rise first, the centered duty
 // as the drawn high) with its two acceptance windows shaded in-place —
 // the fall band in the upper half, the next-rise band (a tick when the
-// window is a point) in the lower half
+// window is a point) in the lower half. C40: the uart descriptor rides
+// the same grammar — the frame template with the [BIT_LO,BIT_HI] skew
+// windows after its first fall — so one drawing path serves both kinds
+// (a zero-width window draws as a gold tick, whichever band it is)
 function lvDrawTarget() {
   const g = PioLevels.targetGlyph(LEVEL.profile);
   const t = $('lvtarget');
   lvSetGlyph(t, g.clks, 2); // +2 so a next-rise tick at the edge stays visible
+  const band = (x0, x1, y) =>
+    x1 - x0 < 1.5
+      ? `<line x1="${x0 * LVGLYPH_PX}" y1="${y}" x2="${x0 * LVGLYPH_PX}" y2="${y + 8}" stroke="var(--gold)" stroke-width="1.5"/>`
+      : `<rect x="${x0 * LVGLYPH_PX}" y="${y}" width="${(x1 - x0) * LVGLYPH_PX}" height="8" fill="var(--gold)" opacity=".22"/>`;
   t.innerHTML =
-    `<rect x="${g.fallFrom * LVGLYPH_PX}" y="0" width="${(g.fallTo - g.fallFrom) * LVGLYPH_PX}" height="8" fill="var(--gold)" opacity=".22"/>` +
-    (g.nextTo > g.nextFrom
-      ? `<rect x="${g.nextFrom * LVGLYPH_PX}" y="8" width="${(g.nextTo - g.nextFrom) * LVGLYPH_PX}" height="8" fill="var(--gold)" opacity=".22"/>`
-      : `<line x1="${g.nextFrom * LVGLYPH_PX}" y1="8" x2="${g.nextFrom * LVGLYPH_PX}" y2="16" stroke="var(--gold)" stroke-width="1.5"/>`) +
+    band(g.fallFrom, g.fallTo, 0) +
+    band(g.nextFrom, g.nextTo, 8) +
     `<path d="${thumbPath([...g.bits].map(Number))}" stroke="var(--wave-gold)" stroke-width="2" fill="none"/>`;
 }
-// the live glyph: the last measured cycle at the target's own scale; a
-// dim dashed baseline while nothing has been measured yet
+// the live glyph: the last measured cycle (square) or the last decoded
+// frame (uart) at the target's own scale; a dim dashed baseline while
+// nothing has been measured yet. The uart frame carries the judge's
+// first-divergence marker — the near-miss face: one bit wrong reads as
+// one marked bit
 function lvDrawLive(v) {
   const live = $('lvlive');
+  if (LEVEL.profile.kind === 'uart') {
+    const f = v.frames?.[0];
+    if (f) {
+      lvSetGlyph(live, f.length, 2);
+      let s = `<path d="${thumbPath([...f].map(Number))}" stroke="var(--txt)" stroke-width="2" fill="none"/>`;
+      if (v.diverge != null) {
+        const x = Math.round((((1 + v.diverge) / 10) * f.length + 1) * LVGLYPH_PX);
+        s += `<line x1="${x}" y1="12" x2="${x + LVGLYPH_PX}" y2="12" stroke="var(--red)" stroke-width="3"/>`;
+      }
+      live.innerHTML = s;
+    } else {
+      lvSetGlyph(live, 2, 0);
+      live.innerHTML = `<path d="M0 8 L8 8" stroke="var(--dimmer)" stroke-width="2" stroke-dasharray="2 2" fill="none"/>`;
+    }
+    return;
+  }
   if (v.period >= 2) {
     const p = v.period;
     const hi = Math.min(Math.max(Math.round((p * v.dutyPct) / 100), 1), p - 1);
@@ -535,20 +568,24 @@ function lvMonitorFace(v) {
   const [word0, cls] = LV_STATUS[v.code] || [v.verdict, ''];
   const rx = LEVEL.profile.kind === 'rx';
   // the pass word names its receiver — square's tier rides along, rx's
-  // value verdict has no tier to name
-  const word = v.code === 'pass' ? (rx ? 'rx — PASS' : `${word0} (${LEVEL.profile.tier})`) : word0;
+  // value verdict has no tier to name, uart's frame carries the tier
+  const noun = rx ? 'rx' : LEVEL.profile.kind === 'uart' ? 'frame' : 'square';
+  const word =
+    v.code === 'pass' ? (rx ? 'rx — PASS' : `${noun} — PASS (${LEVEL.profile.tier})`) : word0;
   const b = $('lvverdict');
   b.textContent = word;
   b.className = cls;
   const face = v.pass ? `${v.verdict} — PASS${rx ? '' : ` (${LEVEL.profile.tier})`}` : v.verdict;
   const tipTail = rx
     ? 'the rx judge compares the pushed words, exact'
-    : "gold = the tier's acceptance windows";
+    : LEVEL.profile.kind === 'uart'
+      ? 'gold = the [bitLo..bitHi] skew window per bit-time'
+      : "gold = the tier's acceptance windows";
   $('lvmon').dataset.tip = `${face} · ${tipTail}`;
   $('lvmon').setAttribute('aria-label', `monitor: ${face}`);
-  // the square judge's glyph pair (golden tier template + last measured
-  // cycle) — the rx judge has no windows to draw; the verdict word and
-  // the pushed-word tooltip are its whole face
+  // the glyph pair (golden template + last measured cycle/frame) — the
+  // rx judge has no windows to draw; the verdict word and the
+  // pushed-word tooltip are its whole face
   const glyphs = !rx;
   $('lvtarget').toggleAttribute('hidden', !glyphs);
   $('lvlive').toggleAttribute('hidden', !glyphs);
@@ -582,17 +619,30 @@ function levelJudge(st) {
 }
 function lvRevealSolved() {
   $('lvpass').hidden = false;
+  // the period axis names its own clock: cycles for the square judge,
+  // bit-times for the decode judge (par 4 words · 8 clk/bit reads as
+  // the echo's rate, the trace offset the two rows show)
+  const unit = LEVEL.profile.kind === 'uart' ? 'clk/bit' : 'clk/cycle';
   $('lvpar').textContent =
-    `par ${LEVEL.reference.par.words} words · ${LEVEL.reference.par.period} clk/cycle`;
+    `par ${LEVEL.reference.par.words} words · ${LEVEL.reference.par.period} ${unit}`;
   $('lvpar').hidden = false;
   $('lvpred').hidden = true; // the gate's job is done — never punish re-runs
 }
 function levelPass() {
-  if (lvSession.solved) return;
-  lvSession.solved = true;
-  lvSave();
-  lvRevealSolved();
-  pause(); // freeze on the payoff frame
+  const first = !lvSession.solved;
+  if (first) {
+    lvSession.solved = true;
+    lvSave();
+    lvRevealSolved();
+  }
+  // freeze on the payoff frame. A square level's payoff is a steady
+  // state (the wave keeps cycling — a re-run stays live, watching it
+  // blink), but a decode level's payoff is a MOMENT: the frame is
+  // finite, the world says its byte once, and a run that continues
+  // slides the wave window past the frame into mid-frame fragments the
+  // judge honestly reds — so every run freezes on the payoff, not just
+  // the first solve (the live session found the red-under-PASS-chip)
+  if (first || LEVEL.profile.kind === 'uart') pause();
 }
 
 function run() {
@@ -2577,10 +2627,12 @@ function lineCtx() {
 function edModel() {
   // C35: the leash — in a level, the completion menu is scoped to the
   // level's unlocked opcode set (a filter over the slot model's
-  // candidates); the sandbox's menu stays whole
+  // candidates); C40 adds the condition leash — jmp's condition slot
+  // offers only the level's unlocked conditions (absent = none: the
+  // chapter-1 jmps are unconditional). The sandbox's menu stays whole
   const a = RowComplete.analyze(
     ED.value.slice(0, ED.selectionStart),
-    LEVEL ? { opcodes: LEVEL.opcodes } : undefined,
+    LEVEL ? { opcodes: LEVEL.opcodes, conds: LEVEL.conds || [] } : undefined,
   );
   const cands = a.cands.map((c) =>
     a.slot === ''

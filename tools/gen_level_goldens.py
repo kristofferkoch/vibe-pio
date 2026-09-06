@@ -159,6 +159,20 @@ PERTURBATIONS: dict[str, list[tuple[str, list[str]]]] = {
         ("never-push", ["in pins, 1", "nop"]),
         ("in-count-wrong", ["in pins, 2", "push block"]),
     ],
+    # C40 L7: the echo's wrong answers. ungated-echo (the card's
+    # unconditional copy): the branchy pair with no bit-time gate — it
+    # resamples every 2-3 clk and the runs come out 9/15/10 clk, outside
+    # the [8,8] window (the relaxed tier admits the skew; the ladder is
+    # real); dropped-bit: the 9/8 loop drifts one clk per lap through
+    # the frame — the exact tier reds the run, the relaxed tier decodes
+    # a different byte and names the bit; in-out-belief: the L6
+    # instinct — `out` reads an OSR that nothing ever loaded (no pull in
+    # the vocabulary), so the copy drives zeros and the line never rises
+    "l7": [
+        ("ungated-echo", ["jmp pin, 3", "set pins, 0", "jmp 0", "set pins, 1"]),
+        ("dropped-bit", ["jmp pin, 2", "set pins, 0 [6]", "set pins, 1 [6]", "jmp 0"]),
+        ("in-out-belief", ["in pins, 1", "out pins, 1"]),
+    ],
 }
 
 LEVEL_RE = re.compile(

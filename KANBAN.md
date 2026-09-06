@@ -528,21 +528,69 @@ sandbox stayed untouched (no stimulus row, 128 window, pattern panel
 present). make py's five pre-existing ruff findings (C36's note)
 remain — none in this card's files.
 
-C40 — L7 Echo: jmp pin gets its job, the decode judge debuts. Data
-pin (a byte's worth of bits) + enable pin (square) driven by the
-level; the reference is the spin-when-disabled / copy-when-enabled
-loop. The decode judge (kind 'uart' — the name programState already
-anticipates; v:1): pure decode over the output wave's bits like
-squareJudge; expected bytes = the driven data; tiers = per-bit skew
-windows relaxed/exact/strict (the SPEC-16-9 [BIT_LO,BIT_HI] idiom).
-The frame map rides the wave as the subgoal labels; the band face
-extends the C38 grammar to byte glyphs (golden vs measured,
-first-divergence marker); the lens pins to the output (steppers
-locked). Perturbations: echo-during-disable (the unconditional copy)
-and dropped-bit. FRONT_CLASS 'echo' — the gated-loop forms, each
-point model-verified; par = words × echo latency (the trace offset is
-the cost made visible). Opcodes: set+in+out+jmp (jmp's condition slots
-ride the C32 candidates; the pin condition unlocks here).
+C40 landed 2026-09-06: L7 Echo — `jmp pin` gets its job, the decode
+judge debuts. The level drives gpio2 with a byte's UART frame (start 0,
+0x33 LSB-first, stop 1 — 8 clk/bit, inside the enable square's high
+window on gpio1) and the task is the gated echo onto gpio0. One reshape
+vs the card, on the machine's own evidence (model-verified, recorded in
+the level file): with opcodes set+in+out+jmp and no `mov`/`pull`, the
+only pin→pin copy is the branchy pair — `jmp pin` (JMP_PIN = the DATA
+pin) testing the bit, `set pins` driving its value, the delays holding
+each bit-time (the gate the player writes is the RATE; the enable
+square is drawn and narrated as the speaking window, never tested —
+one JMP_PIN names one wire, and `out` reads an empty OSR: the in/out-
+belief golden shows the line never rising). The reference is 3 words —
+`jmp pin, 2` / `set pins, 0 [6]` / `set pins, 1 [5]`, wrap 1..0 — the
+high path rides the `·` row's free jmp 0 home (the L5 lesson
+recurring, budgeted into the [5]); par 3 words · 8 clk/bit. The decode
+judge (levels.js `uartJudge`, kind 'uart' v:1): SPEC-16-9 run
+semantics over the OUTPUT wave — a run of L clk is m=ceil(L/bitHi)
+bit-times legal iff m*bitLo ≤ L, 8 data bits LSB-first, a high tail
+completes the frame (a stop merged into idle costs nothing); expected
+bytes = the driven data; the tiers are the [BIT_LO,BIT_HI] skew
+windows (relaxed 6..10 / exact 8..8 / strict 8..8 — the relaxed tier
+genuinely admits the racer's skew, the ladder is real); the near-miss
+faces name the run ("D1 runs 18 clk — outside") and the bit ("byte 1
+bit D0 — got 0, want 1"). The frame's window discipline is the LIVE
+one: a finite frame leaves every fixed window, so the gate + the front
+assert the sliding window passes at SOME position (the stop-completing
+moment) and never passes a perturbation at ANY position. The band face
+extends the C38 grammar to frames (targetGlyph grows the uart kind:
+the byte's own frame at the window's centered bit-time, the two skew
+windows after its first fall; the live glyph draws the last measured
+frame with the divergent bit marked red); the frame map debuts as the
+wave's subgoal labels (the uart lens at the frame's own 8 clk/bit);
+the lens pins to gpio0 (steppers locked); par names its clock
+("clk/bit"). The condition leash: the level format grows `conds`
+(validated against the assembler's table; absent = none), row-
+complete's `opts.conds` filters jmp's condition slot, and the
+chapter-1 levels now offer no conditions at all (their jmps were
+always unconditional — the menu had been teaching ahead). FRONT_CLASS
+'echo' (hyperopt `_echo_front` + `_uart_judge` mirror): the steady-
+bit-time echo family per r ∈ [bitLo..bitHi], each point model-verified
+through the goldens' own load timeline + stimulus, the analytic r
+pinned to the model's measured start-run. Perturbations: ungated-echo
+(the racer — no bit-time gate, runs skew), dropped-bit (the 9/8 drift
+— exact reds the run, relaxed decodes a different byte), in-out-
+belief. Gates: levels.test.js (10 new legs — red first: MODULE_NOT_FOUND,
+the level file did not exist; the conds leash ran red against the
+unfiltered menu), the layout gate's L7 leg at both 13" viewports (ran
+red: #framemap had no box under the hermetic drive), the keyboard
+walk's L7 leg (ran red against the sandbox page: orphan stops bempty/
+bdemo/…; green with the menu-driven `jmp pin` authored under keys, the
+PASS face gated by feeding the shipped judge the golden series — the
+walk's engine is the fake ABI), pytest 191 (a tampered l7 par
+red-flags; the uart mirror's verdicts pinned; doctests), make js 199,
+make web re-verified, make hyperopt. The live browser session verified
+the whole face by mouse (authoring, PASS, par reveal, the readable
+128-sample wave with both stimulus rows, the near-miss red naming bit
+D0, solved reload, the sandbox untouched) and caught one shell bug
+before commit: on a solved level the payoff freeze was first-solve-
+only, so a re-run slid the wave window past the finite frame into
+mid-frame fragments the judge honestly reds under the PASS chip — a
+decode level's payoff is a moment, not a steady state, so levelPass
+now freezes every uart run (square levels keep the shipped live
+re-run).
 
 C41 — L8 Fencepost: the designed off-by-one. `set x` + `jmp x--` to
 gather exactly N bits of the driven pattern, then `push`. The X/Y regs

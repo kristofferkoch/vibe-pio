@@ -424,6 +424,43 @@ def test_level_front_flags_a_tampered_given_par(tmp_path) -> None:
     assert checks["front-l6-reference"] is True  # 2 words still fit the lying 3
 
 
+def test_level_front_flags_a_tampered_echo_par(tmp_path) -> None:
+    # C40: the echo front (the gated echo loops at every steady
+    # bit-time) must bite too — the champion rides the `·` row home at 3
+    # words, so a par with one word of slack is drift. The red side
+    # re-injects it into l7's par.
+    (tmp_path / "web").mkdir()
+    shutil.copytree(H.REPO / "web" / "levels", tmp_path / "web" / "levels")
+    p = tmp_path / "web" / "levels" / "l7.js"
+    assert '"words": 3' in p.read_text()  # the par line is the only hit
+    p.write_text(p.read_text().replace('"words": 3', '"words": 4'))
+    checks = dict(H.level_front_checks(tmp_path))
+    assert checks["front-l7-par"] is False
+    assert checks["front-l7-reference"] is True  # 3 words still fit the lying 4
+
+
+def test_uart_judge_mirror_names_the_first_divergent_bit() -> None:
+    # C40: the uart mirror's near-miss faces — a bad run names its frame
+    # position (the bit-time red), a wrong byte names the bit (the value
+    # red, the legibility point of a decode judge)
+    p = {"kind": "uart", "tier": "exact", "bytes": [0x33], "tiers": {"exact": {"bitLo": 8, "bitHi": 8}}}
+    frame = "0" * 8 + "1" * 16 + "0" * 16 + "1" * 16 + "0" * 16 + "1" * 40
+    assert H._uart_judge("1" * 8 + frame, p)["pass"] is True
+    # the racer's skew: the start run 9 clk, outside the exact window
+    v = H._uart_judge("1" * 8 + "0" * 9 + frame[9:], p)
+    assert v["pass"] is False
+    assert v["verdict"] == "start runs 9 clk — outside (8..8 clk/bit)"
+    # the dropped bit at the relaxed window: the drift decodes a
+    # different byte — bit D0 is 0 where the driven bit is 1
+    pr = {**p, "tier": "relaxed", "tiers": {**p["tiers"], "relaxed": {"bitLo": 6, "bitHi": 10}}}
+    drop = "1" * 8 + "0" * 16 + "1" * 18 + "0" * 16 + "1" * 40
+    v2 = H._uart_judge(drop, pr)
+    assert v2["pass"] is False
+    assert v2["verdict"] == "byte 1 bit D0 — got 0, want 1"
+    # the idle line: no frame ever started
+    assert "never fell" in H._uart_judge("1" * 64, p)["verdict"]
+
+
 def test_rx_judge_mirror_names_the_first_divergent_bit() -> None:
     # C39: the rx mirror's near-miss face — the verdict names the word
     # and the bit, the whole legibility point of a value judge

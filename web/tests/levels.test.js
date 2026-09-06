@@ -890,6 +890,271 @@ test('par dominates the l6 given program (front-trivial, still pinned)', () => {
   assert.equal(used, L6.reference.par.words, 'the given program IS the par — front-trivial');
 });
 
+// ---- C40: L7 Echo — jmp pin gets its job, the decode judge debuts ----
+// Chapter 2's make level: the world drives a byte's UART frame on gpio2
+// (8 clk/bit — start 0, D0..D7 LSB-first, stop 1) while the enable square
+// on gpio1 marks the speaking window, and the task is the gated echo:
+// copy the frame to gpio0 one bit-time at a time. The copy in the
+// set+in+out+jmp vocabulary is the branchy pair — `jmp pin` (JMP_PIN =
+// the data pin) testing the bit, `set pins` driving its value, the
+// delays holding each bit for its whole bit-time (the gate the player
+// writes is the RATE: the ungated racer skews). `out` cannot copy — the
+// OSR is empty without a pull (the in/out-belief golden: the line never
+// rises) — and the decode judge (SPEC-16-9 run semantics, the
+// [BIT_LO,BIT_HI] idiom as the tier ladder) reads the OUTPUT wave.
+require('../levels/l7.js');
+const L7 = PioLevels.get('l7');
+const G7 = GOLDEN.levels.l7;
+// the driven byte 0x33, LSB-first at 8 clk/bit, inside the enable-high
+// window (clks 80..159 of the stimulus), idle-high before and after
+const L7_FRAME = '0'.repeat(8) + '1'.repeat(16) + '0'.repeat(16) + '1'.repeat(16) + '0'.repeat(16);
+const L7_DATA = '1'.repeat(80) + L7_FRAME + '1'.repeat(8) + '1'.repeat(96);
+
+test('l7 registers complete: the gated echo, the uart profile, the pin condition', () => {
+  assert.equal(L7.id, 'l7');
+  assert.equal(L7.name, 'Echo');
+  assert.equal(L7.chapter, 2);
+  assert.ok(L7.goal.length > 8);
+  // the stimulus: the enable square narrates the speaking window, the
+  // data bits carry the frame (aligned: the frame plays while enable is
+  // high, the line idles while it is low — the echo's hold)
+  assert.deepEqual(L7.stimulus, [
+    { mode: 'square', pin: 1, period: 160 },
+    { mode: 'bits', pin: 2, bits: L7_DATA },
+  ]);
+  // the wiring: JMP_PIN names the data pin (the copy's test), IN_BASE
+  // reads it, SET/OUT drive gpio0
+  assert.equal(L7.program.sms[0].execctrl.jmpPin, 2);
+  assert.equal(L7.program.sms[0].pinctrl.inBase, 2);
+  assert.equal(L7.program.sms[0].pinctrl.setCnt, 1);
+  assert.equal(L7.program.sms[0].pinctrl.outCnt, 1);
+  // the make-level surface: the reading leg stays (isr/rxfifo), the
+  // delay column carries the bit-time gate, and the frame map debuts as
+  // the wave's subgoal labels (START/D0..D7/STOP under the uart lens)
+  for (const key of ['transport', 'listing', 'wave', 'delayCol', 'frameMap', 'isr', 'rxfifo'])
+    assert.ok(L7.panels.includes(key), `${key} is L7's surface`);
+  for (const absent of [
+    'txfifo',
+    'osr',
+    'pullconn',
+    'feed',
+    'pattern',
+    'wrapSteppers',
+    'monitorAux',
+  ])
+    assert.ok(!L7.panels.includes(absent), `${absent} must stay absent in L7`);
+  // the leash grows the reading vocabulary; the pin condition debuts
+  assert.deepEqual(L7.opcodes, ['set', 'in', 'out', 'jmp']);
+  assert.deepEqual(L7.conds, ['pin']);
+  // the decode judge: versioned, expected bytes = the driven data, the
+  // [BIT_LO,BIT_HI] skew window as the tier ladder (SPEC-16-9)
+  assert.equal(L7.profile.kind, 'uart');
+  assert.equal(L7.profile.v, 1);
+  assert.equal(L7.profile.pin, 0);
+  assert.equal(L7.profile.tier, 'exact');
+  assert.deepEqual(L7.profile.bytes, [0x33]);
+  assert.deepEqual(L7.profile.tiers.exact, { bitLo: 8, bitHi: 8 });
+  // the frame is finite, so the wave keeps the readable default (128 —
+  // unlike L5's periodic wave, no stability window needs whole periods
+  // at every phase; the judge passes at the live moment, the sliding
+  // window below)
+  assert.equal(L7.waveWin, undefined);
+  // a make level boots empty and never locks the gate
+  assert.deepEqual(L7.program.listing, []);
+  assert.equal(PioLevels.gateOpen(L7, {}), true);
+  // the reference rides the `·` row home: the high path's set returns
+  // through the empty row 3 (a free jmp 0 that still costs its clk —
+  // the L5 lesson recurring, budgeted into the [5]) — 3 words, not 4
+  assert.deepEqual(L7.reference.listing, ['jmp pin, 2', 'set pins, 0 [6]', 'set pins, 1 [5]']);
+  assert.deepEqual(L7.reference.par, { words: 3, period: 8 });
+});
+
+test('the l7 uart-profile and conds validation reject malformed levels', () => {
+  const bad = (mutate, what) => {
+    const d = structuredClone(L7);
+    mutate(d);
+    assert.throws(() => PioLevels.register(`l7-${what}`, d), Error, what);
+  };
+  // the bytes: 8-bit values, at least one
+  bad((d) => {
+    d.profile = { ...d.profile, bytes: [0x100] };
+  }, 'byte-too-wide');
+  bad((d) => {
+    d.profile = { ...d.profile, bytes: [] };
+  }, 'no-bytes');
+  // the tiers: the [BIT_LO,BIT_HI] window per bit-time
+  bad((d) => {
+    d.profile.tiers.exact = { bitLo: 9, bitHi: 8 };
+  }, 'window-inverted');
+  bad((d) => {
+    delete d.profile.tiers.exact;
+  }, 'no-active-tier');
+  bad((d) => {
+    d.profile.tiers.exact = { bitLo: 0, bitHi: 8 };
+  }, 'zero-window');
+  // the conds whitelist: known spellings only (the assembler's table)
+  bad((d) => {
+    d.conds = 'pin';
+  }, 'conds-not-a-list');
+  bad((d) => {
+    d.conds = ['pin', 'maybe'];
+  }, 'cond-unknown');
+});
+
+test('l7 words are pio_model-equal and canonically spelled; the boot is empty', () => {
+  const prog = PioAsm.createProgram('c40-l7');
+  prog.sidesetBits = 0;
+  for (const row of [...L7.program.listing, ...L7.reference.listing]) {
+    const w = PioAsm.assembleInstruction(row, prog, {}, `l7 row ${row}`);
+    assert.equal(PioAsm.disassemble(w, false, 0), row, `${row} is not the canonical spelling`);
+  }
+  assert.ok(PioLevels.programState(L7, PioAsm, VibeDriver).words.every((w) => w === 0));
+  const words = new Array(32).fill(0);
+  L7.reference.listing.forEach((row, i) => {
+    words[i] = PioAsm.assembleInstruction(row, prog, {}, `l7 ref row ${i}`);
+  });
+  assert.deepEqual(words, G7.words, 'the reference assembles to the golden words');
+  // the lens pins to the output under the uart receiver (the name
+  // programState already anticipated)
+  const st = PioLevels.programState(L7, PioAsm, VibeDriver);
+  assert.deepEqual(st.lens, { mode: 'uart', pin: 0 });
+});
+
+test('the l7 wave contract: the reference decodes 33, the wrongs red legibly', () => {
+  // the reference: the gated echo — one bit-time per bit, the stop
+  // merged into the idle tail (SPEC-16-9: costs nothing)
+  const ref = caseOf(G7, 'reference');
+  const full = PioLevels.judge(bits(ref.series), L7.profile);
+  assert.equal(full.pass, true, full.verdict);
+  assert.equal(full.code, 'pass');
+  assert.match(full.verdict, /33/);
+  // the browser judges the wave window as it slides (the driver's last
+  // 128 samples) — a finite frame leaves every fixed window eventually,
+  // so the live contract: the reference passes at the moment its stop
+  // completes (SOME window position), and a perturbed echo never passes
+  // at ANY position
+  const winJudge = (series, profile, win = 128) => {
+    for (let k = win; k <= series.length; k++)
+      if (PioLevels.judge(bits(series.slice(k - win, k)), profile).pass) return true;
+    return false;
+  };
+  assert.equal(winJudge(ref.series, L7.profile), true, 'the live window passes the echo');
+  // the empty boot: the parked machine never drives — the line never fell
+  const boot = PioLevels.judge(bits(G7.boot.series), L7.profile);
+  assert.equal(boot.pass, false);
+  assert.equal(boot.code, 'idle');
+  // the ungated copy (the racer): no bit-time gate, the runs skew —
+  // the near-miss names the first bad run
+  const race = PioLevels.judge(bits(caseOf(G7, 'ungated-echo').series), L7.profile);
+  assert.equal(race.pass, false, 'the ungated copy must not pass the exact tier');
+  assert.equal(race.code, 'timing');
+  assert.match(race.verdict, /outside \(8\.\.8 clk\/bit\)/);
+  assert.equal(
+    winJudge(caseOf(G7, 'ungated-echo').series, L7.profile),
+    false,
+    'the racer never passes at any window position',
+  );
+  // the ladder is real: the relaxed window admits the racer's skew
+  const relaxed = { ...L7.profile, tier: 'relaxed' };
+  assert.equal(PioLevels.judge(bits(caseOf(G7, 'ungated-echo').series), relaxed).pass, true);
+  // the dropped bit: the 9/8 loop drifts through the frame — the exact
+  // tier reds the run, the relaxed tier decodes a different byte and
+  // names the bit (the value face: one bit wrong reads as one bit)
+  const drop = PioLevels.judge(bits(caseOf(G7, 'dropped-bit').series), L7.profile);
+  assert.equal(drop.pass, false);
+  assert.match(drop.verdict, /D1 runs 18 clk/);
+  assert.equal(winJudge(caseOf(G7, 'dropped-bit').series, L7.profile), false);
+  const dropR = PioLevels.judge(bits(caseOf(G7, 'dropped-bit').series), relaxed);
+  assert.equal(dropR.pass, false);
+  assert.equal(dropR.code, 'data');
+  assert.equal(dropR.verdict, 'byte 1 bit D0 — got 0, want 1');
+  // the in/out belief (the L6 instinct): out reads an empty OSR — the
+  // line never rises, the echo never starts
+  const io = PioLevels.judge(bits(caseOf(G7, 'in-out-belief').series), L7.profile);
+  assert.equal(io.pass, false);
+  assert.equal(io.code, 'idle');
+  assert.equal(winJudge(caseOf(G7, 'in-out-belief').series, L7.profile), false);
+});
+
+test('the uart judge codes: the band face never parses the prose', () => {
+  const ones = bits('1'.repeat(64));
+  assert.equal(PioLevels.judge([], L7.profile).code, 'awaiting');
+  assert.equal(PioLevels.judge(ones, L7.profile).code, 'idle');
+  // a half-arrived frame keeps watching (the stop never came — the
+  // window ends on a legal run, mid-frame)
+  const half = bits('1'.repeat(8) + '0'.repeat(8) + '1'.repeat(16) + '0'.repeat(16));
+  assert.equal(PioLevels.judge(half, L7.profile).code, 'watching');
+  // an inverted echo decodes a different byte: the data code, the bit named
+  const inv = bits(
+    '1'.repeat(8) +
+      '0'.repeat(8) +
+      '1'.repeat(8) +
+      '0'.repeat(8) +
+      '1'.repeat(8) +
+      '0'.repeat(8) +
+      '1'.repeat(8) +
+      '0'.repeat(8) +
+      '1'.repeat(8) +
+      '0'.repeat(8) +
+      '1'.repeat(16),
+  );
+  assert.equal(PioLevels.judge(inv, L7.profile).code, 'data');
+  // the standing defect hook: the byte comparison skipped — any decoded
+  // frame passes; the divergence demonstrated in-process
+  assert.equal(PioLevels.judge(inv, L7.profile, { judge: true }).pass, true);
+  assert.equal(PioLevels.judge(inv, L7.profile).pass, false, 'clean stays red');
+  assert.equal(
+    PioLevels.judge(ones, L7.profile, { judge: true }).pass,
+    false,
+    'no frame at all stays red even defective',
+  );
+});
+
+test('the l7 leash: jmp offers the pin condition — and only it', () => {
+  // L7: the pin condition debuts (always = digits at the first slot, as ever)
+  const wl = { opcodes: L7.opcodes, conds: L7.conds };
+  assert.deepEqual(
+    RowComplete.analyze('jmp ', wl).cands.map((c) => c.t),
+    ['pin'],
+    "the condition menu offers exactly the level's unlocked conditions",
+  );
+  assert.deepEqual(
+    RowComplete.analyze('jmp x', wl).cands,
+    [],
+    'a locked condition is never suggested',
+  );
+  // the chapter-1 levels never offered conditions at all — the leash
+  // closes the teaching-ahead gap (their jmps are unconditional)
+  for (const L of [L3, L4, L5]) {
+    const c = RowComplete.analyze('jmp ', { opcodes: L.opcodes, conds: [] }).cands;
+    assert.deepEqual(c, [], `${L.id}: the condition menu stays shut before L7`);
+  }
+  // the sandbox menu stays whole — no whitelist, all seven conditions
+  assert.deepEqual(
+    RowComplete.analyze('jmp ').cands.map((c) => c.t),
+    ['!x', 'x--', '!y', 'y--', 'x != y', 'pin', '!osre'],
+  );
+});
+
+test('targetGlyph draws the uart frame: the byte glyph is the tier as geometry', () => {
+  const g = PioLevels.targetGlyph(L7.profile);
+  // the representative frame at the drawn bit-time: start, the byte's
+  // runs (2-bit symbols merge — SPEC-16-9 run semantics), the stop
+  assert.equal(g.clks, 80);
+  assert.equal(g.bits, L7_FRAME + '1'.repeat(8));
+  // the two acceptance windows after the frame's first fall: where the
+  // next edge may land (one bit-time: [BIT_LO, BIT_HI]) and the edge
+  // after that (two bit-times) — the square grammar, uart numbers
+  assert.deepEqual([g.fallFrom, g.fallTo], [8, 8]);
+  assert.deepEqual([g.nextFrom, g.nextTo], [16, 16]);
+  // the relaxed window draws a wider template, still the tier's numbers
+  const r = PioLevels.targetGlyph({ ...L7.profile, tier: 'relaxed' });
+  assert.deepEqual([r.fallFrom, r.fallTo], [6, 10]);
+  assert.deepEqual([r.nextFrom, r.nextTo], [12, 20]);
+  // purity
+  assert.deepEqual(PioLevels.targetGlyph(L7.profile), g);
+});
+
 // targetGlyph is the pure descriptor the band glyphs and the wave-panel
 // gates render: the profile tier itself as geometry — a representative
 // accepted cycle plus the two windows the judge actually checks (the
@@ -938,12 +1203,8 @@ test('targetGlyph: l3 spot values and the kind contract', () => {
     nextFrom: 4,
     nextTo: 4,
   });
-  // the glyph shares the judge's receiver contract — square only (the
-  // rx judge has no windows to draw; C40's byte glyphs are its face)
-  assert.throws(
-    () => PioLevels.targetGlyph({ kind: 'uart', tier: 'x', tiers: { x: {} } }),
-    /no receiver/,
-  );
+  // the glyph shares the judge's receiver contract — square and uart
+  // draw (the rx judge has no windows: a value has no tolerance)
   assert.throws(() => PioLevels.targetGlyph(L6.profile), /no receiver/);
 });
 

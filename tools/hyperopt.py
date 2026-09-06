@@ -898,8 +898,11 @@ def tamper_delay(ctx: SeedCtx, cand: Candidate) -> list[Candidate]:
 # so the honest space is the permutations); "given" = the level's own
 # program is the only honest one (L6: a predict→run level with no editor —
 # nothing else can be authored, so the front is the single given point and
-# the drift gate pins par == it). Every level under web/levels/ needs an
-# entry.
+# the drift gate pins par == it); "echo" = the gated echo loops (L7: the
+# branchy `jmp pin`+`set` pair at a steady bit-time — the test row, the
+# two level-holding set rows, the return by wrap or the `·` row's free
+# jmp 0; the analytic period is the bit-time r). Every level under
+# web/levels/ needs an entry.
 FRONT_CLASS: dict[str, str] = {
     "l0": "wrap",
     "l1": "wrap",
@@ -908,6 +911,7 @@ FRONT_CLASS: dict[str, str] = {
     "l4": "scramble",
     "l5": "wrap",
     "l6": "given",
+    "l7": "echo",
 }
 
 
@@ -951,6 +955,97 @@ def _rx_judge(seen: Sequence[int], prof: dict[str, Any]) -> dict[str, Any]:
 
 _ROW_MAX = 32  # one row's clks: the instruction plus at most 31 delay (SPEC-4-3)
 
+
+def _uart_judge(bits: str, prof: dict[str, Any]) -> dict[str, Any]:
+    """The Python mirror of web/levels.js uartJudge (C40) — the JS gate
+    stays the authority (it replays the committed goldens); this mirror
+    exists so the front search can judge the echo without a browser.
+    Same semantics (SPEC-16-9 run decode over the output wave): arm on
+    the first 1→0, a run of L clk is m = ceil(L/bitHi) bit-times legal
+    iff m*bitLo <= L, 8 data bits LSB-first, a high tail completes the
+    frame once it outlasts the remaining positions' bitLo (a stop merged
+    into idle costs nothing); expected bytes compared exactly, a wrong
+    byte names its first divergent bit.
+
+    >>> p = {"kind": "uart", "tier": "exact", "bytes": [0x33],
+    ...      "tiers": {"exact": {"bitLo": 8, "bitHi": 8}}}
+    >>> frame = "0"*8 + "1"*16 + "0"*16 + "1"*16 + "0"*16 + "1"*40
+    >>> _uart_judge("1"*8 + frame, p)["pass"]
+    True
+    >>> _uart_judge("1"*8 + "0"*9 + frame[9:], p)["verdict"]
+    'start runs 9 clk — outside (8..8 clk/bit)'
+    >>> _uart_judge("1"*64, p)["verdict"]
+    'no frame yet — the line never fell'
+    >>> _uart_judge("1"*8 + "0"*8 + "1"*16, p)["verdict"]
+    '0 of 1 byte in — keep watching'
+    """
+    tp = prof["tiers"][prof["tier"]]
+    lo, hi, want = tp["bitLo"], tp["bitHi"], prof["bytes"]
+    if not bits:
+        return {"pass": False, "code": "awaiting", "verdict": "awaiting run"}
+    start = next((k for k in range(1, len(bits)) if bits[k - 1] == "1" and bits[k] == "0"), -1)
+    if start < 0:
+        return {"pass": False, "code": "idle", "verdict": "no frame yet — the line never fell"}
+    runs: list[tuple[int, int]] = []
+    i = start
+    while i < len(bits):
+        j = i + 1
+        while j < len(bits) and bits[j] == bits[i]:
+            j += 1
+        runs.append((int(bits[i]), j - i))
+        i = j
+    stop = 9  # frame positions: 0 = start, 1..8 = data, 9 = stop
+    frames: list[int] = []
+    pos, byte = 0, 0
+    for lvl, ln in runs:
+        k = stop + 1 - pos
+        name = "start" if pos == 0 else f"D{pos - 1}" if pos <= 8 else "stop"
+        if lvl == 1 and ln >= k * lo:  # the completing high tail (SPEC-16-9)
+            for b in range(k):
+                if 1 <= pos + b <= 8:
+                    byte |= 1 << (pos + b - 1)
+            frames.append(byte)
+            pos, byte = 0, 0
+            continue
+        m = max(1, -(-ln // hi))  # fewest bits: ceil(ln/hi)
+        if ln < m * lo:
+            return {"pass": False, "code": "timing", "verdict": f"{name} runs {ln} clk — outside ({lo}..{hi} clk/bit)"}
+        if pos + m > stop + 1:
+            return {"pass": False, "code": "frame", "verdict": f"{name} holds {ln} clk — the frame never completed"}
+        for b in range(m):
+            if 1 <= pos + b <= 8:
+                byte |= lvl << (pos + b - 1)
+        pos += m
+        if pos == stop + 1:
+            frames.append(byte)
+            pos, byte = 0, 0
+    for idx in range(min(len(want), len(frames))):
+        g, w = frames[idx], want[idx]
+        if g == w:
+            continue
+        for b in range(8):
+            if ((g >> b) & 1) != ((w >> b) & 1):
+                return {
+                    "pass": False,
+                    "code": "data",
+                    "verdict": f"byte {idx + 1} bit D{b} — got {(g >> b) & 1}, want {(w >> b) & 1}",
+                }
+    if len(frames) < len(want):
+        return {
+            "pass": False,
+            "code": "watching",
+            "verdict": f"{len(frames)} of {len(want)} byte{'' if len(want) == 1 else 's'} in — keep watching",
+        }
+    if len(frames) > len(want):
+        return {
+            "pass": False,
+            "code": "extra",
+            "verdict": f"byte {len(want) + 1} — the line drove a byte the world never gave",
+        }
+    hexs = " ".join(f"{b:02X}" for b in want)
+    return {"pass": True, "code": "pass", "verdict": f"frame · {hexs} — the echo is the given", "frames": frames}
+
+
 _ROW_DELAY = re.compile(r"\[(\d+)\]$")
 
 
@@ -978,6 +1073,96 @@ def _given_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, list[st
     period = sum(1 + (int(m.group(1)) if (m := _ROW_DELAY.search(r)) else 0) for r in ref)
     used = len([w for w in w32 if w])
     return [(used, period, ref)]
+
+
+def _echo_listings(tp: dict[str, int]) -> Iterator[tuple[int, int, list[str]]]:
+    """L7's class: the gated echo loops — the branchy pair at a steady
+    bit-time r (both paths r clks: `jmp pin` tests the data pin, the set
+    row drives its level for 1+delay clks, the return is the wrap on the
+    low path and the `·` row's free jmp 0 on the high path — a clk it
+    still costs, the L5 lesson, budgeted into the delay). The
+    explicit-return twin (a real `jmp 0` row) enumerates too — same r,
+    one word more, dominated. Delays are 5-bit (SPEC-4-3), so r tops at
+    33. -> (words, predicted bit-time, listing).
+
+    >>> next(_echo_listings({"bitLo": 8, "bitHi": 8}))[2]
+    ['jmp pin, 2', 'set pins, 0 [6]', 'set pins, 1 [5]']
+    >>> [(w, r) for w, r, _ in _echo_listings({"bitLo": 8, "bitHi": 10})]
+    [(3, 8), (4, 8), (3, 9), (4, 9), (3, 10), (4, 10)]
+    """
+    for r in range(max(3, tp["bitLo"]), tp["bitHi"] + 1):
+        d0, d1 = r - 2, r - 3
+        if d0 > 31 or d1 > 31:
+            break
+        lo = f"set pins, 0 [{d0}]" if d0 else "set pins, 0"
+        hi = f"set pins, 1 [{d1}]" if d1 else "set pins, 1"
+        yield 3, r, ["jmp pin, 2", lo, hi]
+        yield 4, r, ["jmp pin, 2", lo, hi, "jmp 0"]
+
+
+def _uart_win_passes(series: str, prof: dict[str, Any], win: int) -> bool:
+    """The browser's live window over a finite-frame level: the judge
+    sees the last `win` samples as they slide, so the honest contract is
+    "passes at SOME window position" — the moment the stop completes.
+    (A fixed last-window slice would red every finite frame once the run
+    outlives it; periodic waves — the square class — have no such moment.)
+
+    >>> p = {"kind": "uart", "tier": "exact", "bytes": [0x33],
+    ...      "tiers": {"exact": {"bitLo": 8, "bitHi": 8}}}
+    >>> frame = "0"*8 + "1"*16 + "0"*16 + "1"*16 + "0"*16 + "1"*40
+    >>> _uart_win_passes("1"*64 + frame + "1"*200, p, 128)
+    True
+    >>> _uart_win_passes("1"*64 + "0"*9 + frame[9:] + "1"*200, p, 128)
+    False
+    """
+    return any(_uart_judge(series[k - win : k], prof)["pass"] for k in range(win, len(series) + 1))
+
+
+def _echo_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, list[str]]]:
+    """derive_level_front's echo leg (C40's L7): every steady-bit-time
+    gated echo, deduped by (words, bit-time), each distinct point
+    model-verified through the goldens' own load timeline + stimulus
+    and judged by the uart mirror over the full series AND the sliding
+    waveWin window (the browser judges the live window; a finite frame
+    passes at the moment its stop completes). The analytic bit-time
+    must equal the model's measured start-run — the enumeration and the
+    model never drift apart silently."""
+    prof = defn["profile"]
+    tp = prof["tiers"][prof["tier"]]
+    sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
+    stimulus = defn.get("stimulus") or []
+    win = defn.get("waveWin", 128)
+    seen: dict[tuple[int, int], list[str]] = {}
+    for words, r, listing in _echo_listings(tp):
+        seen.setdefault((words, r), listing)
+    evs: list[Evaluated] = []
+    listings: dict[tuple[int, int], list[str]] = {}
+    for (words, r), listing in sorted(seen.items()):
+        w32 = gg_assemble(listing, sms[0], f"front:{lid}") + [0] * (32 - len(listing))
+        rc = gg_run_case(w32, sms, stimulus, prof["pin"], False)
+        series = rc["series"]
+        # the measured bit-time: the start run after the arming edge
+        arm = next((k for k in range(1, len(series)) if series[k - 1] == "1" and series[k] == "0"), -1)
+        measured = 0
+        if arm >= 0:
+            j = arm + 1
+            while j < len(series) and series[j] == series[arm]:
+                j += 1
+            measured = j - arm
+        if not (_uart_judge(series, prof)["pass"] and _uart_win_passes(series, prof, win)):
+            continue
+        if measured != r:
+            raise SystemExit(f"front {lid}: {listing} predicted bit-time {r}, the model's start run is {measured}")
+        evs.append(
+            Evaluated(
+                cand=_cand(tuple(w32[:words]), 0, tuple(range(words)), ()),
+                screen=Screening(ok=True, div=None),
+                period=r,
+            )
+        )
+        listings[(words, r)] = listing
+    front = sorted(pareto_front(evs), key=lambda e: (len(e.cand.words), e.period or 0))
+    return [(len(e.cand.words), e.period or 0, listings[(len(e.cand.words), e.period or 0)]) for e in front]
 
 
 def _js_round_div(num: int, den: int) -> int:
@@ -1233,6 +1418,8 @@ def derive_level_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, l
         return _scramble_front(lid, defn)
     if kind == "given":
         return _given_front(lid, defn)
+    if kind == "echo":
+        return _echo_front(lid, defn)
     prof = defn["profile"]
     tp = prof["tiers"][prof["tier"]]
     sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
@@ -1308,6 +1495,17 @@ def level_front_checks(repo: Path = REPO) -> list[tuple[str, bool]]:
             rc = gg_run_case(w32, sms, defn.get("stimulus") or [], prof["pin"], True)
             v_rx = _rx_judge(rc.get("rx", []), prof)
             checks.append((f"front-{lid}-reference", bool(v_rx["pass"]) and used <= par["words"]))
+            continue
+        if prof["kind"] == "uart":
+            # C40: the echo levels' reference leg — the decode judge over
+            # the model's output wave, the full series and the sliding
+            # waveWin window both (the stimulus replays: the echo needs
+            # the driven frame; a finite frame passes at the moment its
+            # stop completes, never at every window phase)
+            rc = gg_run_case(w32, sms, defn.get("stimulus") or [], prof["pin"], False)
+            v_u = _uart_judge(rc["series"], prof)
+            w_ok = _uart_win_passes(rc["series"], prof, defn.get("waveWin", 128))
+            checks.append((f"front-{lid}-reference", bool(v_u["pass"] and w_ok) and used <= par["words"]))
             continue
         v = _square_judge(gg_pin_series(w32, sms, prof["pin"]), tp)
         checks.append(
