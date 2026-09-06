@@ -1,0 +1,155 @@
+# CI hardware lane — the make gates that run inside the pinned toolchain
+# container (container/Dockerfile): sim+syn+audit+model, equiv+hyperopt,
+# synth, web. These read rtl/, sim/, formal/, tools/ and the Makefile —
+# none of which change while the game (web/) is developed, so the lane
+# is paths-filtered: a web/-only push gets the fast lane only (ci.yml,
+# which also unit-covers the client core against the fake engine and
+# the pio_model goldens); this runs when the HDL/model side moves.
+#
+# The image is pure toolchain, so it is content-addressed by the
+# Dockerfile: an unchanged build context means the pushed GHCR image
+# already exists and the `image` job is a no-op manifest check
+# (~seconds); a changed one rebuilds once (~20 min cold), reusing the
+# previous image's layers via the GHCR registry cache. Gate jobs
+# docker login and run the targets the repo's own way:
+# docker run --rm -v $PWD:/work -w /work, with the gitignored
+# third_party/pico-examples clone at the pinned commit materialized
+# first (the conformance corpus is parsed by the model/equiv/web
+# self-tests alike).
+#
+# Measured budgets (CI, 2026-09-06): sim lane 41 s, equiv+hyperopt
+# 6m20s, synth 17m27s, web 1m14s.
+name: hdl
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - rtl/**
+      - sim/**
+      - formal/**
+      - tools/**
+      - container/**
+      - Makefile
+      - .github/workflows/hdl.yml
+  pull_request:
+    paths:
+      - rtl/**
+      - sim/**
+      - formal/**
+      - tools/**
+      - container/**
+      - Makefile
+      - .github/workflows/hdl.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hdl-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PINNED_PICO_EXAMPLES: c81c855ffdedc825975a40ba357723a71358ddf0
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.img.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: img
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          # content-addressed by the build context: while the Dockerfile
+          # is unchanged this tag already exists in GHCR and nothing
+          # rebuilds (the image is pure toolchain — the gates run the
+          # checked-out tree through it)
+          IMAGE="ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-$(sha256sum container/Dockerfile | cut -c1-16)"
+          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          docker buildx create --use
+          docker buildx build \
+            --cache-from type=registry,ref=ghcr.io/${{ github.repository_owner }}/vibe-pio:cache \
+            --cache-from type=registry,ref=ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-main \
+            --cache-to type=registry,ref=ghcr.io/${{ github.repository_owner }}/vibe-pio:cache,mode=max \
+            --tag "$IMAGE" \
+            --tag ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-main \
+            --push container/
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+  sim:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      # make model's asm-check parses the conformance .pio sources
+      - run: |
+          git clone https://github.com/raspberrypi/pico-examples third_party/pico-examples
+          git -C third_party/pico-examples checkout $PINNED_PICO_EXAMPLES
+      - run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker run --rm -v "$PWD:/work" -w /work ${{ needs.image.outputs.image }} make sim syn audit model
+
+  equiv:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      # the hyperopt self-test reaches difftest's asm corpus
+      - run: |
+          git clone https://github.com/raspberrypi/pico-examples third_party/pico-examples
+          git -C third_party/pico-examples checkout $PINNED_PICO_EXAMPLES
+      - run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker run --rm -v "$PWD:/work" -w /work ${{ needs.image.outputs.image }} make equiv hyperopt
+
+  synth:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      # the witness replay legs run the model over the corpus programs
+      - run: |
+          git clone https://github.com/raspberrypi/pico-examples third_party/pico-examples
+          git -C third_party/pico-examples checkout $PINNED_PICO_EXAMPLES
+      - run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker run --rm -v "$PWD:/work" -w /work ${{ needs.image.outputs.image }} make synth
+
+  web:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      # the three-way gate's model leg parses the .pio sources
+      - run: |
+          git clone https://github.com/raspberrypi/pico-examples third_party/pico-examples
+          git -C third_party/pico-examples checkout $PINNED_PICO_EXAMPLES
+      - run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker run --rm -v "$PWD:/work" -w /work ${{ needs.image.outputs.image }} make web
