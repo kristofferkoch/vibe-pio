@@ -616,6 +616,10 @@
     rxfifo: ['#rxfifo'],
     pullConn: ['#pullconn'],
     osr: ['#osr'],
+    // C41: the scratch registers debut alone at L8 (the stepper role —
+    // each register debuts in the level whose task needs it); the regs
+    // section's own visibility is derived below, the #fiforow precedent
+    xy: ['#xy'],
     frameMap: ['#framemap'],
     mapTags: ['.maptag'],
     waveAux: ['#wavewinaux'],
@@ -651,6 +655,21 @@
     // halves are locked (the whole-row absence every earlier level ships)
     const fiforow = doc.querySelector('#fiforow');
     if (fiforow) fiforow.hidden = !(unlocked.has('txfifo') || unlocked.has('rxfifo'));
+    // C41: the regs section's own visibility is derived the same way —
+    // it stays while anything inside it is unlocked. `xy` alone (L8's
+    // scratch debut) shows the section with ONLY the X/Y panel: the irq
+    // lamps are chapter 5's and the inspector is config, neither is
+    // this level's teaching; `regs` (a whole-section unlock) shows all
+    // three as before
+    const regsSec = doc.querySelector('#regs');
+    if (regsSec) {
+      regsSec.hidden = !(unlocked.has('regs') || unlocked.has('xy'));
+      if (!unlocked.has('regs'))
+        for (const sel of ['#irqpanel', '#inspector'])
+          doc.querySelectorAll(sel).forEach((el) => {
+            el.hidden = true;
+          });
+    }
     // lensPick pins rather than removes: the steppers (a Tab stop) leave
     // the order entirely while the pin NUMBER stays on the wave row's
     // face — the shell rewrites the label's own text node (C29

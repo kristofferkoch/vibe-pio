@@ -90,6 +90,24 @@ function savedState() {
 // merged over the hardware reset (parseState does the validating).
 let curState = LEVEL ? PioLevels.programState(LEVEL) : savedState() || VD.newState(); // the view's stored-program copy
 
+// C41: a level run after an edit starts from the level's own load. The
+// engine live-patches edited rows (the C19 discipline — the sandbox's
+// contract), but a level's program is judged against a replay that
+// starts at the LOAD: the stimulus pattern's phase 0 (L8's gather is
+// phase-locked — an authored-then-run gather mid-flight samples a
+// rotated window and a CORRECT solution reds; the live session caught
+// it: 0xFB000000 where the golden says 0xFE000000). So the first
+// run/step after buildAndPush re-posts the load — the same restart the
+// RESET button gives, without the player having to know the phase
+// contract. Untouched re-runs keep the shipped live behavior (square
+// levels' payoff stays a steady state, C40's note).
+let lvRunDirty = false;
+function lvRestartIfDirty() {
+  if (!LEVEL || !lvRunDirty) return;
+  lvRunDirty = false;
+  post({ cmd: 'reset', state: curState }); // rebuildListing not needed: the listing IS current
+}
+
 // Absence first: the gated panels leave the page (and the Tab order)
 // before the first build/render, so the boot-measured geometry is the
 // level's own.
@@ -620,9 +638,11 @@ function levelJudge(st) {
 function lvRevealSolved() {
   $('lvpass').hidden = false;
   // the period axis names its own clock: cycles for the square judge,
-  // bit-times for the decode judge (par 4 words · 8 clk/bit reads as
-  // the echo's rate, the trace offset the two rows show)
-  const unit = LEVEL.profile.kind === 'uart' ? 'clk/bit' : 'clk/cycle';
+  // bit-times for the decode judge AND the reading judges (par 4 words
+  // · 2 clk/bit reads as the gather's rate — the in+jmp loop's steady
+  // per-bit cost; L6's 2 clk/bit is the in+push lap, the same axis)
+  const unit =
+    LEVEL.profile.kind === 'uart' || LEVEL.profile.kind === 'rx' ? 'clk/bit' : 'clk/cycle';
   $('lvpar').textContent =
     `par ${LEVEL.reference.par.words} words · ${LEVEL.reference.par.period} ${unit}`;
   $('lvpar').hidden = false;
@@ -652,6 +672,7 @@ function run() {
     pause();
     return;
   }
+  lvRestartIfDirty(); // C41: a level run after an edit starts from the load
   lvRanOnce = true;
   timer = setInterval(runTick, +$('speed').value);
   // C33: the PAUSE face rides .on — both faces are authored twin labels,
@@ -678,6 +699,7 @@ $('brun').onclick = run;
 $('breset').onclick = () => {
   pause();
   asmErr = null;
+  lvRunDirty = false; // the explicit reset reloads — the restart is done
   swMark(-1); // C37: a reset stands the trade's mark down with the machine
   rebuildListing(); // back to the stored program's listing
   // a level resets to itself — its program is the stored program
@@ -686,12 +708,14 @@ $('breset').onclick = () => {
 $('bstep').onclick = () => {
   pause();
   if (!lvGateCheck()) return;
+  lvRestartIfDirty(); // C41: a level step after an edit starts from the load
   lvRanOnce = true;
   post({ cmd: 'step' });
 };
 $('binsn').onclick = () => {
   pause();
   if (!lvGateCheck()) return;
+  lvRestartIfDirty(); // C41: same contract as the single step
   lvRanOnce = true;
   post({ cmd: 'stepInsn' });
 };
@@ -2183,6 +2207,9 @@ function buildAndPush() {
     const rows = wordsToRows(BUILT);
     PROG = BUILT.map((w, i) => ({ w, ...parseRow(rows[i]) }));
     post({ cmd: 'program', words: BUILT });
+    // C41: the live patch landed — the next level run restarts from the
+    // load (the stimulus phase contract, lvRestartIfDirty)
+    if (LEVEL) lvRunDirty = true;
     requestAutosave();
   }
   updateUnbuilt();

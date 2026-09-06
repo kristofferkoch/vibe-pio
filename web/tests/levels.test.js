@@ -1225,3 +1225,205 @@ test('the judge carries a machine-readable code for the band face', () => {
   const pass = PioLevels.judge(bits(G3.cases[0].series), L3.profile);
   assert.equal(pass.code, 'pass');
 });
+
+// ---- C41: L8 Fencepost — the designed off-by-one, x-- gets its slot ----
+// Chapter 2's closing make level: the world ticks its bits on gpio1 (a
+// 2-clk low tick then sixteen 1s, period 18 clk), and the task is the
+// counting gather: `set x` arms the stepper, `jmp x--` closes the loop
+// (SPEC-3.1-4: the test sees the PRE-decrement value, X always
+// decrements), `push` hands the word to the RX FIFO. The fencepost is
+// the designed near-miss, legible ON THE DECODED VALUE: the correct
+// word is 11111110 (0xFE — the tick's 0 plus seven 1s); one bit too
+// many pushes 11111111 (the extra 1 shifted the 0 off the end — the
+// verdict lands at bit 24), one too few pushes 1111110 (a 1 missing —
+// bit 25). The long run of 1s is the tuning: the one-clk shift the
+// extra bit causes stays invisible until the word's edge.
+// The X/Y scratch panel debuts (the stepper role — Sajaniemi's
+// roles-in-use); acceptance is C39's RX judge over the first four
+// pushed words (the 18-clk gather lap over the 18-clk pattern reads
+// the same word every lap, and the fifth push stalls on the full FIFO
+// — the honest machine, L6's story recurring).
+require('../levels/l8.js');
+const L8 = PioLevels.get('l8');
+const G8 = GOLDEN.levels.l8;
+// the driven pattern: a 2-clk low tick then sixteen 1s (nine 2-clk
+// slots, 0,1,1,1,1,1,1,1,1), period 18 clk — the window's long run of
+// 1s is what makes the fencepost legible on the decoded value
+const L8_PERIOD = '001111111111111111';
+
+test('l8 registers complete: the stepper leash, the x-- slot, the xy debut', () => {
+  assert.equal(L8.id, 'l8');
+  assert.equal(L8.name, 'Fencepost');
+  assert.equal(L8.chapter, 2);
+  assert.ok(L8.goal.length > 8);
+  // the given: one pattern cfg — the driven bits, 18-clk periodic
+  assert.equal(L8.stimulus.length, 1);
+  assert.equal(L8.stimulus[0].mode, 'bits');
+  assert.equal(L8.stimulus[0].pin, 1);
+  assert.equal(L8.stimulus[0].bits.length, 256);
+  assert.equal(L8.stimulus[0].bits.slice(0, 18), L8_PERIOD);
+  assert.equal(L8.stimulus[0].bits.slice(18, 36), L8_PERIOD);
+  // the wiring: IN_BASE reads the driven pin; the set lane is inert
+  // (set writes X, never pins); the wrap loops the whole 4-row program
+  assert.equal(L8.program.sms[0].pinctrl.inBase, 1);
+  assert.equal(L8.program.sms[0].execctrl.wrapTop, 3);
+  assert.equal(L8.program.sms[0].execctrl.wrapBot, 0);
+  // the make-level surface: the reading leg stays, the X/Y scratch
+  // debuts (the stepper role), and the delay column stays SHUT —
+  // structure, not delay, is the lesson (the card)
+  for (const key of ['transport', 'listing', 'wave', 'isr', 'rxfifo', 'xy'])
+    assert.ok(L8.panels.includes(key), `${key} is L8's surface`);
+  for (const absent of [
+    'txfifo',
+    'osr',
+    'pullconn',
+    'feed',
+    'pattern',
+    'frameMap',
+    'wrapSteppers',
+    'monitorAux',
+    'delayCol',
+    'regs',
+  ])
+    assert.ok(!L8.panels.includes(absent), `${absent} must stay absent in L8`);
+  // the leash: the gather vocabulary; the x-- condition debuts (L7's
+  // pin is not this task's — the leash is task-scoped, the L7 precedent)
+  assert.deepEqual(L8.opcodes, ['set', 'in', 'push', 'jmp']);
+  assert.deepEqual(L8.conds, ['x--']);
+  // the rx judge again: versioned, exact words — the gather's byte,
+  // four times (the FIFO fills, the fifth push stalls: honest)
+  assert.equal(L8.profile.kind, 'rx');
+  assert.equal(L8.profile.v, 1);
+  assert.equal(L8.profile.pin, 1);
+  assert.deepEqual(L8.profile.words, [0xfe000000, 0xfe000000, 0xfe000000, 0xfe000000]);
+  // a make level boots empty and never locks the gate
+  assert.deepEqual(L8.program.listing, []);
+  assert.equal(PioLevels.gateOpen(L8, {}), true);
+  // the shipped answer: the stepper armed at N-1 (SPEC-3.1-4 — set x, 7
+  // gathers 8), the 2-clk loop, the hand-off
+  assert.deepEqual(L8.reference.listing, ['set x, 7', 'in pins, 1', 'jmp x--, 1', 'push block']);
+  assert.deepEqual(L8.reference.par, { words: 4, period: 2 });
+});
+
+test('l8 words are pio_model-equal and canonically spelled; the boot is empty', () => {
+  const prog = PioAsm.createProgram('c41-l8');
+  prog.sidesetBits = 0;
+  for (const row of [...L8.program.listing, ...L8.reference.listing]) {
+    const w = PioAsm.assembleInstruction(row, prog, {}, `l8 row ${row}`);
+    assert.equal(PioAsm.disassemble(w, false, 0), row, `${row} is not the canonical spelling`);
+  }
+  assert.ok(PioLevels.programState(L8, PioAsm, VibeDriver).words.every((w) => w === 0));
+  const words = new Array(32).fill(0);
+  L8.reference.listing.forEach((row, i) => {
+    words[i] = PioAsm.assembleInstruction(row, prog, {}, `l8 ref row ${i}`);
+  });
+  assert.deepEqual(words, G8.words, 'the reference assembles to the golden words');
+  const st = PioLevels.programState(L8, PioAsm, VibeDriver);
+  assert.deepEqual(st.lens, { mode: 'off', pin: 1 }, 'reading is invisible on the pins');
+});
+
+test('the l8 word contract: the gather greens, the fencepost reds both ways', () => {
+  // the reference: four identical words — the 18-clk gather lap reads
+  // the 18-clk pattern at the same phase every lap (pio_model's own
+  // arithmetic, committed below)
+  const ref = caseOf(G8, 'reference');
+  assert.deepEqual(ref.rx, [0xfe000000, 0xfe000000, 0xfe000000, 0xfe000000]);
+  const v = PioLevels.judge(ref.rx, L8.profile);
+  assert.equal(v.pass, true, v.verdict);
+  assert.equal(v.code, 'pass');
+  assert.match(v.verdict, /4 words/);
+  // the designed misconception, one bit too many: set x, 8 — the X=1
+  // jump still fires (SPEC-3.1-4), the ninth 1 shifts the tick's 0 off
+  // the end of the word and the verdict lands at the window's edge
+  const many = caseOf(G8, 'fencepost-too-many');
+  assert.deepEqual(many.rx[0], 0xff000000);
+  const vm = PioLevels.judge(many.rx, L8.profile);
+  assert.equal(vm.pass, false);
+  assert.equal(vm.code, 'diverge');
+  assert.equal(vm.verdict, 'word 1 bit 24 — got 1, want 0');
+  // one bit too few: set x, 6 — the eighth 1 never arrives, a 1 is
+  // missing one position inside the edge
+  const few = caseOf(G8, 'fencepost-too-few');
+  assert.deepEqual(few.rx[0], 0xfc000000);
+  const vf = PioLevels.judge(few.rx, L8.profile);
+  assert.equal(vf.pass, false);
+  assert.equal(vf.verdict, 'word 1 bit 25 — got 0, want 1');
+  // the count-is-width belief: in pins, 8 samples EIGHT ADJACENT PINS
+  // once (gpio1..gpio8), not one pin eight times — the word is one bit
+  // at 24, everything else zero
+  const wide = caseOf(G8, 'count-is-width');
+  assert.deepEqual(wide.rx[0], 0x01000000);
+  const vw = PioLevels.judge(wide.rx, L8.profile);
+  assert.equal(vw.pass, false);
+  assert.equal(vw.verdict, 'word 1 bit 31 — got 0, want 1');
+  // a partial gather keeps watching (3 of 4 words in)
+  assert.equal(PioLevels.judge(ref.rx.slice(0, 3), L8.profile).code, 'watching');
+  // the standing defect hook: any pushed words pass — divergence
+  // demonstrated in-process, clean stays green
+  assert.equal(PioLevels.judge(few.rx, L8.profile, { judge: true }).pass, true);
+  assert.equal(PioLevels.judge(ref.rx, L8.profile).pass, true);
+});
+
+test('the l8 stimulus composes lockstep with the golden series (driver ↔ mirror)', () => {
+  // the empty boot's own load timeline (no imem writes) — the golden's
+  // boot case replays exactly it, so the driver's composed input per
+  // rendered clk must match the mirror's, clk for clk
+  const drv = VibeDriver.create(createFake());
+  drv.setStimulus(L8.stimulus);
+  drv.load(PioLevels.programState(L8, PioAsm, VibeDriver));
+  drv.run(160);
+  const got = drv
+    .allGpioIn()
+    .map((w) => (w >>> 1) & 1)
+    .join('');
+  const golden = G8.boot.stim['1'];
+  assert.ok(golden.length > got.length, 'the golden replay is at least as long');
+  assert.equal(
+    golden.slice(0, got.length),
+    got,
+    'the driver composed a different stimulus than the mirror',
+  );
+  // the wave window's stimulus row carries the same series (windowed)
+  const st = drv.getState();
+  assert.equal(st.wave.stim.length, 1);
+  assert.equal(st.wave.stim[0].pin, 1);
+  assert.equal(st.wave.stim[0].bits.join(''), got.slice(-128));
+});
+
+test('par dominates the l8 reference on both axes (front-champion)', () => {
+  const used = G8.words.filter((w) => w !== 0).length;
+  assert.equal(used, L8.reference.par.words, 'the reference is the 4-word champion');
+  // the period axis names its own clock: 2 clk/bit — the in+jmp loop's
+  // steady rate, pinned by the hyperopt front (the drift gate)
+  assert.equal(L8.reference.par.period, 2);
+});
+
+test('the l8 leash: jmp offers the x-- slot — and only it', () => {
+  // L8: the decrement condition debuts (always = digits at the first
+  // slot, as ever); the pin condition is not this task's — the leash is
+  // task-scoped, the L7 precedent for opcodes
+  const wl = { opcodes: L8.opcodes, conds: L8.conds };
+  assert.deepEqual(
+    RowComplete.analyze('jmp ', wl).cands.map((c) => c.t),
+    ['x--'],
+    "the condition menu offers exactly the level's unlocked conditions",
+  );
+  assert.deepEqual(
+    RowComplete.analyze('jmp pin', wl).cands,
+    [],
+    'a locked condition is never suggested',
+  );
+  // the mnemonic menu offers the gather vocabulary (the C32 order)
+  assert.deepEqual(
+    RowComplete.analyze('', wl).cands.map((c) => c.t),
+    ['jmp', 'in', 'push', 'set'],
+  );
+  // set's own slots stay live under the leash: the stepper arms with a
+  // 5-bit immediate
+  assert.ok(RowComplete.analyze('set ', wl).cands.some((c) => c.t === 'x'));
+  // the sandbox menu stays whole
+  assert.deepEqual(
+    RowComplete.analyze('jmp ').cands.map((c) => c.t),
+    ['!x', 'x--', '!y', 'y--', 'x != y', 'pin', '!osre'],
+  );
+});

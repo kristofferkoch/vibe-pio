@@ -1670,3 +1670,120 @@ for (const [width, height] of VIEWPORTS) {
     );
   });
 }
+
+// C41 — the fencepost page: the stepper's debut. The X/Y scratch panel
+// arrives as its own surface key (#xy): the regs SECTION shows while
+// only the scratch is unlocked — the irq lamps are chapter 5's and the
+// inspector is config, neither is this level's teaching (the fifo-row
+// derivation precedent). The reading leg stays (isr/rxfifo), one
+// stimulus row draws the tick pattern, and the delay column stays
+// SHUT — structure, not delay, is the lesson.
+const L8_ABSENT = [
+  '#clkdivtag',
+  '#bempty',
+  '#bdemo',
+  '#bexport',
+  '#bimport',
+  '#bcopy',
+  '#speed',
+  '#binsn',
+  '#smsbar',
+  '#pinstrip',
+  '#irqpanel', // xy alone: the regs section shows the scratch ONLY
+  '#inspector',
+  '#dsalloc',
+  '#progfoot',
+  '#exectitle',
+  '#execslim',
+  '#fifo', // the TX half: absent until the feeder chapter (L9)
+  '#pullconn',
+  '#osr',
+  '#framemap', // the rx judge has no frame to label
+  '.maptag',
+  '#wavewinaux',
+  '#spin-lenspin',
+  '#mon',
+  '#feed',
+  '#pattern',
+];
+const L8_SCAN = `(() => {
+  const bad = [];
+  const box = (sel) => document.querySelector(sel)?.getBoundingClientRect();
+  const gone = (sel) => {
+    const el = document.querySelector(sel);
+    return !el || el.offsetParent === null;
+  };
+  for (const sel of ${JSON.stringify(L8_ABSENT)}) {
+    if (document.querySelectorAll(sel).length && !gone(sel))
+      bad.push(sel + ' is still laid out — a locked panel is absence, not a ghost');
+  }
+  // the scratch debut: the regs section shows and the X/Y panel inside
+  // it has a real box — the stepper is visible while it counts
+  const xy = box('#xy');
+  if (!xy || xy.width < 80 || xy.height < 20) bad.push('#xy has no box — the stepper debuts');
+  const regsSec = box('#regs');
+  if (!regsSec || regsSec.width < 80) bad.push('#regs has no box — the section follows its child');
+  // the reading leg stays (L6's knowledge is monotone)
+  for (const sel of ['#isr', '#rxfifo', '#fiforow']) {
+    const b = box(sel);
+    if (!b || b.width < 80 || b.height < 20) bad.push(sel + ' has no box — the reading leg stays');
+  }
+  // the delay column stays SHUT: the lesson is structure, not delay —
+  // the listing's delay cells leave layout with the column
+  const prog = document.getElementById('program');
+  if (!prog || prog.classList.contains('col-delay'))
+    bad.push('the delay column is built — the fencepost is not a delay lesson');
+  // the stimulus row: exactly one driven input (the tick pattern),
+  // drawn INSIDE the wave's svg in the band ABOVE the lens trace
+  const stim = document.querySelectorAll('#wavesvg .stimrow');
+  if (stim.length !== 1) bad.push('the stimulus row is missing — the given draws on the wave');
+  else {
+    const sb = stim[0].getBoundingClientRect();
+    const wv = box('#wavesvg');
+    if (!wv || sb.height < 4) bad.push('the stimulus row has no geometry');
+    else if (sb.bottom > wv.top + wv.height / 2)
+      bad.push('the stimulus row is not above the lens trace');
+  }
+  // the rx judge has no glyph pair — hidden, never empty boxes
+  for (const sel of ['#lvtarget', '#lvlive']) {
+    const b = box(sel);
+    if (!b || b.width > 0 || b.height > 0)
+      bad.push(sel + ' shows on an rx level — the value judge has no windows');
+  }
+  // the standing level checks: 32 honest rows, the wave's floor, no
+  // wrap steppers, the head row never wraps
+  if (document.querySelectorAll('#progrows .prow').length !== 32)
+    bad.push('the listing lost rows — 32 rows in every level');
+  if (document.querySelectorAll('.wstep').length) bad.push('the wrap steppers are built');
+  const wave = box('#wavesvg');
+  if (!wave || wave.height < 64) bad.push('the wave lost its 64px floor');
+  if (!wave || wave.width < 420) bad.push('the wave is squeezed under 420px');
+  const head = document.getElementById('lvhead');
+  if (head && head.scrollHeight > head.clientHeight + 1)
+    bad.push('the band head wraps (scrollHeight ' + head.scrollHeight + ' in ' + head.clientHeight + ')');
+  return { bad };
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`the L8 page: the scratch debuts inside the regs section, one stimulus row ${width}×${height}`, async () => {
+    await page.setViewport(width, height);
+    await page.goto(`${pageUrl()}?level=l8`);
+    await page.evaluate('document.fonts.ready.then(() => {})');
+    await page.evaluate("document.getElementById('boot')?.remove()");
+    // the hermetic page never runs (the engine is held open), so the
+    // wave's own renderer is driven with a synthetic window — the
+    // shipped renderWave, the level's own stimulus cfg shape, exactly
+    // the state a real run produces (one driven row: the tick pattern)
+    await page.evaluate(
+      `renderWave({...V.state, cycle: 127, wave: {` +
+        `pins: new Array(128).fill(0), tags: new Array(128).fill(""), startCycle: 0,` +
+        `stim: [{pin: 1, bits: (${JSON.stringify('001111111111111111'.repeat(8))}).split('').map(Number)}]}})`,
+    );
+    const { bad } = await page.evaluate(L8_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `L8 geometry broken at ${width}×${height} — the stepper's debut must fit`,
+    );
+  });
+}

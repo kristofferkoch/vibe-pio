@@ -1228,7 +1228,21 @@ test('the L7 walk: jmp pin debuts in the menu, the 3-word echo solves', async ()
     'START/D0..D7/STOP — the subgoal labels',
   );
   // the PASS face over the golden series: the verdict word, the par
-  // reveal naming its own clock, the pause on the payoff frame
+  // reveal naming its own clock, the pause on the payoff frame. Pause
+  // FIRST (the L6 walk's discipline): while the run ticks, every live
+  // state reply re-judges the fake engine's empty wave and would
+  // overwrite the fed verdict mid-assert — C41's auto-reload made the
+  // reply stream long enough to lose that race reliably
+  await press('r');
+  await until(
+    "$('brun').classList.contains('on') === false",
+    'R to pause before feeding the judge',
+  );
+  // a settle beat on the NODE side (Runtime.evaluate does not await
+  // promises, so a page-side sleep is a no-op): the last in-flight
+  // state reply lands well inside it — after it, the fed verdict is
+  // the page's last word and the assert reads a stable face
+  await new Promise((r) => setTimeout(r, 350));
   const L7G = JSON.parse(fs.readFileSync(path.join(__dirname, 'levels-golden.json'), 'utf8'));
   const series = L7G.levels.l7.cases.find((c) => c.name === 'reference').series;
   await page.evaluate(
@@ -1245,6 +1259,157 @@ test('the L7 walk: jmp pin debuts in the menu, the 3-word echo solves', async ()
   assert.ok(
     (await value("$('lvpar').textContent")).includes('clk/bit'),
     'par names its own clock — bit-times, not cycles',
+  );
+  assert.ok(
+    !(await value("/ERROR/.test(document.querySelector('footer').textContent)")),
+    'the page walked the whole loop without an engine error',
+  );
+});
+
+// C41 — the L8 walk: the gather authored under keys alone. The x--
+// condition debuts in the menu (the fencepost's own slot — the
+// chapter-1 jmps were unconditional, L7's tested the world, this one
+// counts), set arms the stepper with a plain 5-bit immediate, and the
+// honest solve is 4 words: set x, 7 — one LESS than the bit count,
+// because jmp x-- tests the value BEFORE it decrements (SPEC-3.1-4).
+// The run pays it off: the tick pattern draws on the stimulus row, the
+// X/Y panel is on the page (the stepper's debut — no new Tab stop, a
+// display), and the rx judge passes the four gathered words.
+test('the L8 walk: jmp x-- debuts in the menu, the 4-word gather solves', async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/sm-view.html?level=l8`);
+  await until('V.ready === true', 'the level page engine to boot');
+
+  // ---- no orphan stops: L7's make surface, the stepper adds no stop --
+  const stops = [];
+  for (let i = 0; i < 12; i++) {
+    await press('Tab');
+    stops.push(await value(activeId));
+  }
+  const allowed = new Set([
+    'brun',
+    'bstep',
+    'breset',
+    'progrows',
+    'BODY',
+    'isrviz',
+    'aptg2',
+    'spin-pushthr',
+    'bdrain',
+    'bdrainall',
+  ]);
+  for (const s of stops)
+    assert.ok(
+      allowed.has(s),
+      `orphan stop ${JSON.stringify(s)} — a locked panel left a focusable behind (${stops.join(', ')})`,
+    );
+
+  // ---- the listing boots empty; the menu offers the gather vocabulary -
+  assert.strictEqual(
+    await value("document.querySelectorAll('#progrows .prow.empty').length"),
+    32,
+    'from scratch: 32 honest · rows',
+  );
+  await tabUntil(`${activeId} === 'progrows'`, 'the listing');
+  await press('Enter');
+  await until(`${activeId} === 'edittxt'`, 'the editor opens on row 0');
+  assert.deepStrictEqual(
+    (
+      await value(
+        "[...document.querySelectorAll('#edcands .ecand')].map((e) => e.firstChild.textContent)",
+      )
+    ).filter((t) => !t.startsWith('↦')),
+    ['jmp', 'in', 'push', 'set'],
+    'the gather vocabulary: the reading leg grows push',
+  );
+
+  // ---- row 0: the stepper arms with a 5-bit immediate ------------------
+  await type('set x, 7');
+  await press('Enter'); // commit row 0, hop to row 1
+  await until(`${activeId} === 'edittxt'`, 'Enter to commit and hop rows');
+
+  // ---- row 1: one bit per lap ------------------------------------------
+  await type('in pins, 1');
+  await press('Enter');
+  await until(`${activeId} === 'edittxt'`, 'row 2 opens');
+
+  // ---- row 2: the condition menu offers exactly `x--` ------------------
+  await type('jmp ');
+  const offered = await value(
+    "[...document.querySelectorAll('#edcands .ecand')].map((e) => e.firstChild.textContent)",
+  );
+  assert.ok(offered.includes('x--'), 'the decrement condition debuts at the condition slot');
+  assert.ok(offered.includes('↦ pick row'), 'the gutter pick stays (no condition = always)');
+  assert.ok(!offered.includes('pin'), "L7's pin condition is not this task's");
+  await press('Tab'); // accept `x--` — the canonical ', ' separator lands
+  await until("ED.value === 'jmp x--, '", 'Tab to accept the x-- condition');
+  await type('1'); // the back edge targets the in row
+  await press('Enter');
+  await until(`${activeId} === 'edittxt'`, 'row 3 opens');
+
+  // ---- row 3: the hand-off ------------------------------------------------
+  await type('push block');
+  await press('Enter');
+  await until(`${activeId} === 'edittxt'`, 'Enter to commit row 3');
+  await press('Escape');
+  await until("$('edpop').hidden === true", 'the list to close');
+  await press('Escape');
+  await until(`${activeId} === 'progrows'`, 'Esc to stand down');
+  assert.strictEqual(await value("$('unbuilt').hidden"), true, 'the gather assembles clean');
+
+  // ---- the run: the tick pattern draws, the stepper's page holds ---------
+  // (the walk's engine is the fake ABI — no PIO core, so no live gather;
+  // the judge itself is engine-side-gated by levels.test.js over these
+  // very goldens. The face is gated the layout leg's way: feed the
+  // shipped judge the committed golden words through the page's own
+  // levelJudge and watch the band answer.)
+  await page.evaluate("$('speed').value = '8'"); // ×16 — the walk's run moves briskly
+  await page.evaluate('document.activeElement && document.activeElement.blur()');
+  await press('r');
+  await until("$('brun').classList.contains('on') === true", 'R to start the machine');
+  await until(
+    "document.querySelectorAll('#wavesvg .stimrow').length === 1",
+    'the stimulus row to draw (the tick pattern)',
+  );
+  // the stepper's debut: the X/Y panel lays out beside the gather
+  const xyBox = await value(
+    "(function(){ const b = document.querySelector('#xy')?.getBoundingClientRect(); return b && b.width > 80; })()",
+  );
+  assert.ok(xyBox, '#xy has a box — the stepper is on the page');
+  // the delay column stays shut: the lesson is structure, not delay
+  assert.strictEqual(
+    await value("document.getElementById('program').classList.contains('col-delay')"),
+    false,
+    'the delay column stays shut on L8',
+  );
+  // the PASS face over the golden words: the verdict word, the par
+  // reveal naming its own clock (clks/bit — the loop's steady rate).
+  // Pause first (the L7 leg's race): the run's live replies re-judge
+  // the fake engine's empty rxSeen and would overwrite the fed verdict
+  await press('r');
+  await until(
+    "$('brun').classList.contains('on') === false",
+    'R to pause before feeding the judge',
+  );
+  // a settle beat on the NODE side (Runtime.evaluate does not await
+  // promises, so a page-side sleep is a no-op): the last in-flight
+  // state reply lands well inside it — after it, the fed verdict is
+  // the page's last word and the assert reads a stable face
+  await new Promise((r) => setTimeout(r, 350));
+  const L8G = JSON.parse(fs.readFileSync(path.join(__dirname, 'levels-golden.json'), 'utf8'));
+  const rx = L8G.levels.l8.cases.find((c) => c.name === 'reference').rx;
+  await page.evaluate(
+    `levelJudge({...V.state, sms: [{...V.state.sms[0], rxSeen: (${JSON.stringify(rx)})}]})`,
+  );
+  await until("$('lvpass').hidden === false", 'the rx judge to pass the golden gather');
+  assert.match(
+    await value("$('lvverdict').textContent"),
+    /rx — PASS/,
+    'the pass word names the rx receiver',
+  );
+  assert.ok(
+    (await value("$('lvpar').textContent")).includes('clk/bit'),
+    'par names its own clock — clks/bit, the reading levels' + "' own axis",
   );
   assert.ok(
     !(await value("/ERROR/.test(document.querySelector('footer').textContent)")),

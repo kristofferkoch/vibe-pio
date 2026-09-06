@@ -439,6 +439,22 @@ def test_level_front_flags_a_tampered_echo_par(tmp_path) -> None:
     assert checks["front-l7-reference"] is True  # 3 words still fit the lying 4
 
 
+def test_level_front_flags_a_tampered_gather_par(tmp_path) -> None:
+    # C41: the gather front (the counting gathers — set x arms the
+    # stepper, the in+jmp x-- loop gathers one bit per lap at the
+    # loop's steady rate) must bite too: the champion is the 4-word
+    # 2-clk/bit gather, so a par with one word of slack is drift. The
+    # red side re-injects it into l8's par.
+    (tmp_path / "web").mkdir()
+    shutil.copytree(H.REPO / "web" / "levels", tmp_path / "web" / "levels")
+    p = tmp_path / "web" / "levels" / "l8.js"
+    assert '"words": 4' in p.read_text()  # the par line is the only hit
+    p.write_text(p.read_text().replace('"words": 4', '"words": 5'))
+    checks = dict(H.level_front_checks(tmp_path))
+    assert checks["front-l8-par"] is False
+    assert checks["front-l8-reference"] is True  # 4 words still fit the lying 5
+
+
 def test_uart_judge_mirror_names_the_first_divergent_bit() -> None:
     # C40: the uart mirror's near-miss faces — a bad run names its frame
     # position (the bit-time red), a wrong byte names the bit (the value

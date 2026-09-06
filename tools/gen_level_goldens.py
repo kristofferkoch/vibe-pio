@@ -173,6 +173,19 @@ PERTURBATIONS: dict[str, list[tuple[str, list[str]]]] = {
         ("dropped-bit", ["jmp pin, 2", "set pins, 0 [6]", "set pins, 1 [6]", "jmp 0"]),
         ("in-out-belief", ["in pins, 1", "out pins, 1"]),
     ],
+    # C41 L8: the fencepost both ways — the designed off-by-one. set x, 8
+    # gathers NINE bits (SPEC-3.1-4: the X=1 jump still fires — the test
+    # sees the PRE-decrement value), so the ninth bit shifts in at bit 23;
+    # set x, 6 gathers seven, missing the eighth bit's 1 at bit 24 (the
+    # pattern's closing slots are both 1, so both wrongs diverge legibly —
+    # the profile is tuned for exactly this, the notes' design); and the
+    # count-is-width belief: in pins, 8 samples EIGHT ADJACENT PINS once
+    # (gpio1..gpio8 — only gpio1 is driven), not one pin eight times
+    "l8": [
+        ("fencepost-too-many", ["set x, 8", "in pins, 1", "jmp x--, 1", "push block"]),
+        ("fencepost-too-few", ["set x, 6", "in pins, 1", "jmp x--, 1", "push block"]),
+        ("count-is-width", ["in pins, 8", "push block"]),
+    ],
 }
 
 LEVEL_RE = re.compile(

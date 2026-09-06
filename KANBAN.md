@@ -430,7 +430,7 @@ stops), make js 179 green, and the live browser session (L3's boot:
 L4 solved: "square — PASS (exact)" in green, the live glyph redrawn,
 par beside it).
 
-## Game track — level campaign, chapter 2 (C40–C41)
+## Game track — level campaign, chapter 2 (C39–C41) — COMPLETE
 
 Scheduled 2026-09-06 by the chapter 2 grilling over
 mockups/LEVELS-NOTES.md (the 2026-09-04 didactics exploration stays
@@ -592,13 +592,56 @@ decode level's payoff is a moment, not a steady state, so levelPass
 now freezes every uart run (square levels keep the shipped live
 re-run).
 
-C41 — L8 Fencepost: the designed off-by-one. `set x` + `jmp x--` to
-gather exactly N bits of the driven pattern, then `push`. The X/Y regs
-panel debuts (the stepper role — Sajaniemi's roles-in-use). Acceptance
-is C39's RX judge over the gathered word; the near-miss is designed
-legible: `set x,N` gathers N+1 (SPEC-3.1-4 — the test sees the
-PRE-decrement value), and the decoded value says so in bits ("one bit
-too many" — the verdict names it, the perturbation goldens pin it both
-ways). FRONT_CLASS 'gather'; par = words × clks/bit. Opcodes:
-set+in+push+jmp (the x-- slot). The delay cell stays shut — structure,
-not delay, is the lesson.
+C41 landed 2026-09-06: L8 Fencepost — `jmp x--` gets its slot, the
+designed off-by-one ships. The world ticks on gpio1 (a 2-clk low pulse
+then sixteen 1s, 18-clk periodic — the first pattern tuned so the
+fencepost reads ON THE DECODED VALUE): the correct 8-bit gather pushes
+11111110 (0xFE — the tick's 0 plus seven 1s), `set x, 8` pushes
+11111111 (SPEC-3.1-4: the X=1 jump still fires — the extra 1 shifts
+the 0 off the end; the verdict lands at bit 24, "got 1, want 0"), and
+`set x, 6` leaves a 1 missing at bit 25 — both wrongs diverge at the
+word's edge, never a mystery red (an earlier alternating-pattern draft
+made the shift flip every bit — the model trial red it before it
+shipped). The gather lap is exactly the pattern's period (set 1 +
+in/jmp ×8 + push 1 = 18 clk), so every lap pushes the same word and
+the fifth push stalls on the full FIFO (L6's honest machine). The X/Y
+scratch panel debuts as its own surface key (`xy`: #xy) with the regs
+section's visibility derived, the #fiforow precedent — under `xy`
+alone the irq lamps and inspector stay absent (ch.5 / config, not
+this task's teaching). The delay column stays shut (structure, not
+delay); par names its clock — reading levels' period axis is now
+clk/bit on the band (L6's face gains the honest unit too). The conds
+leash grows the x-- slot (L8's menu offers exactly it). FRONT_CLASS
+'gather' (hyperopt `_gather_front` + `_rx_judge`): the counting
+gathers at every steady rate, the arm value read from the reference
+listing (the _prefix_listings precedent), each distinct point
+model-verified through the goldens' own load timeline + stimulus —
+only the undelayed 2-clk/bit loop survives (any delay desynchronizes
+the lap from the pattern's period and the exact judge reds the
+drifted words); champion 4 words · 2 clk/bit == the committed par.
+Perturbations: fencepost-too-many, fencepost-too-few, and
+count-is-width (`in pins, 8` samples eight ADJACENT pins once — 0x01
+at bit 24, "bit 31 — got 0, want 1"). Gates: levels.test.js (10 new
+legs — ran red first: MODULE_NOT_FOUND, the level file did not exist),
+the par drift gate (ran red first: "l8: no FRONT_CLASS entry"; pytest
+also red-flags a tampered l8 par), the layout gate's L8 leg at both
+13" viewports (ran red against the pre-C41 levels.js: the page failed
+to register l8 and booted the sandbox), the keyboard walk's L8 leg
+(ran red the same way — orphan stops bempty/bdemo/…; the clk/bit
+par-name assertion also ran red against the pre-C41 sm-view), make js
+208, make py 192 (the pre-existing ruff findings from C36's note are
+gone — clean on HEAD now), make web re-verified, make hyperopt. The
+live browser session (authoring by mouse, PASS, the bit-24 near-miss,
+par reveal, solved reload, the sandbox untouched, X counting down
+live) also caught one shell bug before commit, the C36 class: on a
+level page the engine live-patches edited rows, so an authored-then-
+run gather sampled a ROTATED stimulus window and a correct solution
+reds (0xFB000000 where the golden says 0xFE000000) — the golden's
+replay starts at the load, so lvRestartIfDirty now makes the first
+run/step after an edit re-post the level's load (untouched re-runs
+keep the shipped live behavior; red/green demonstrated live). The
+walk fix it forced: the walks' face-feed technique now pauses and
+settles before feeding the judge (a page-side sleep was a no-op —
+Runtime.evaluate does not await promises; a Node-side settle is the
+honest wait). No cards remain; chapter 3 (the feeder, L9+) starts
+from IDEAS/LEVELS-NOTES at its own grilling.

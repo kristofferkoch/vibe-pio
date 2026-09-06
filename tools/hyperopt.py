@@ -901,7 +901,10 @@ def tamper_delay(ctx: SeedCtx, cand: Candidate) -> list[Candidate]:
 # the drift gate pins par == it); "echo" = the gated echo loops (L7: the
 # branchy `jmp pin`+`set` pair at a steady bit-time — the test row, the
 # two level-holding set rows, the return by wrap or the `·` row's free
-# jmp 0; the analytic period is the bit-time r). Every level under
+# jmp 0; the analytic period is the bit-time r); "gather" = the counting
+# gathers (L8: `set x` arms the stepper, the in+jmp x-- loop gathers
+# one driven bit per lap, push hands the word over — the analytic period
+# is the loop's steady clks/bit). Every level under
 # web/levels/ needs an entry.
 FRONT_CLASS: dict[str, str] = {
     "l0": "wrap",
@@ -912,6 +915,7 @@ FRONT_CLASS: dict[str, str] = {
     "l5": "wrap",
     "l6": "given",
     "l7": "echo",
+    "l8": "gather",
 }
 
 
@@ -1161,6 +1165,71 @@ def _echo_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, list[str
             )
         )
         listings[(words, r)] = listing
+    front = sorted(pareto_front(evs), key=lambda e: (len(e.cand.words), e.period or 0))
+    return [(len(e.cand.words), e.period or 0, listings[(len(e.cand.words), e.period or 0)]) for e in front]
+
+
+def _gather_listings(arm: int) -> Iterator[tuple[int, int, list[str]]]:
+    """L8's class: the counting gathers — `set x, arm` arms the stepper
+    (SPEC-3.1-4 tests the PRE-decrement value, so set x, M gathers M+1
+    bits — the fencepost IS the lesson; the arm value comes from the
+    level's own reference listing, the _prefix_listings precedent of
+    reading a class parameter from the given data), the loop gathers
+    one driven bit per lap (`in pins, 1` + the `jmp x--` back edge),
+    `push block` hands the word over. Delays only slow the loop's
+    steady rate (2 + d clks/bit — the delay cell is shut on this level,
+    but the row editor's text still assembles them, so the honest space
+    keeps them; every d > 0 point is dominated). -> (words, clks/bit,
+    listing).
+
+    >>> next(_gather_listings(7))[2]
+    ['set x, 7', 'in pins, 1', 'jmp x--, 1', 'push block']
+    >>> [(w, r) for w, r, _ in _gather_listings(7)][:3]
+    [(4, 2), (4, 3), (4, 4)]
+    """
+    for d in range(62):  # the in row's delay: the loop rate tops at 63
+        row = f"in pins, 1 [{d}]" if d else "in pins, 1"
+        yield 4, 2 + d, [f"set x, {arm}", row, "jmp x--, 1", "push block"]
+
+
+_GATHER_ARM = re.compile(r"^set x, (\d+)$")
+
+
+def _gather_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, list[str]]]:
+    """derive_level_front's gather leg (C41's L8): every counting gather
+    at its steady rate, deduped by (words, clks/bit), each distinct
+    point model-verified through the goldens' own load timeline +
+    stimulus (the rx judge over the pushed words — the same replay the
+    gate commits). The analytic rate must hold in the pushed words: at
+    any rate but 2 the gather lap leaves the stimulus's period, the
+    words drift apart, and the exact judge reds — only the undelayed
+    loop survives, and the front is its single point."""
+    prof = defn["profile"]
+    sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
+    stimulus = defn.get("stimulus") or []
+    ref = defn.get("reference", {}).get("listing") or defn["program"]["listing"]
+    m = _GATHER_ARM.match(ref[0])
+    if not m:
+        raise SystemExit(f"front {lid}: gather class needs `set x, <n>` as the reference's first row")
+    arm = int(m.group(1))
+    seen: dict[tuple[int, int], list[str]] = {}
+    for words, rate, listing in _gather_listings(arm):
+        seen.setdefault((words, rate), listing)
+    evs: list[Evaluated] = []
+    listings: dict[tuple[int, int], list[str]] = {}
+    for (words, rate), listing in sorted(seen.items()):
+        w32 = gg_assemble(listing, sms[0], f"front:{lid}") + [0] * (32 - len(listing))
+        rc = gg_run_case(w32, sms, stimulus, prof["pin"], True)
+        if not _rx_judge(rc.get("rx", []), prof)["pass"]:
+            continue
+        evs.append(
+            Evaluated(
+                cand=_cand(tuple(w32[:words]), 0, tuple(range(words)), ()),
+                screen=Screening(ok=True, div=None),
+                period=rate,
+            )
+        )
+        listings[(words, rate)] = listing
     front = sorted(pareto_front(evs), key=lambda e: (len(e.cand.words), e.period or 0))
     return [(len(e.cand.words), e.period or 0, listings[(len(e.cand.words), e.period or 0)]) for e in front]
 
@@ -1420,6 +1489,8 @@ def derive_level_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, l
         return _given_front(lid, defn)
     if kind == "echo":
         return _echo_front(lid, defn)
+    if kind == "gather":
+        return _gather_front(lid, defn)
     prof = defn["profile"]
     tp = prof["tiers"][prof["tier"]]
     sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
