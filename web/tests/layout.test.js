@@ -1388,3 +1388,53 @@ for (const [width, height] of VIEWPORTS) {
     );
   });
 }
+
+// C38 — the visual monitor: the band's numeric verdict (period clk,
+// duty %) becomes a pair of mini-waves — the golden tier template
+// (#lvtarget) beside the last measured cycle (#lvlive) — and the wave
+// panel gains translucent gold acceptance gates over the live trace.
+// Geometry contract: both glyphs ride the band's head row without
+// wrapping it (the standing L0 wrap check above stays the gate for
+// every level page), the target draws at build time and the live glyph
+// at least its placeholder, and the gates are paint inside the existing
+// #wavesvg box — the wave panel must not grow.
+const L3_MON_SCAN = `(() => {
+  const bad = [];
+  const box = (sel) => document.querySelector(sel)?.getBoundingClientRect();
+  const head = document.getElementById('lvhead');
+  if (head && head.scrollHeight > head.clientHeight + 1)
+    bad.push('the band head wraps (scrollHeight ' + head.scrollHeight + ' in ' + head.clientHeight + ')');
+  for (const sel of ['#lvtarget', '#lvlive']) {
+    const b = box(sel);
+    if (!b) bad.push(sel + ' is missing — the monitor draws its waves');
+    else if (b.height < 8 || b.width < 4) bad.push(sel + ' has no box to draw into');
+  }
+  const mon = box('.lvmon');
+  const tgt = box('#lvtarget');
+  const ver = box('#lvverdict');
+  if (mon && tgt && (tgt.left < mon.left || tgt.right > mon.right + 1))
+    bad.push('the golden template left the monitor span');
+  if (tgt && ver && ver.left < tgt.right - 1)
+    bad.push('the verdict word overlaps the golden glyphs');
+  // the gates ride the wave svg without moving it
+  const wave = box('#wavesvg');
+  if (!wave || wave.height < 64) bad.push('the wave lost its 64px floor');
+  const band = box('#lvband');
+  return { bad, band: band && [band.left, band.top, band.width, band.height].map(Math.round) };
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`the visual monitor: golden glyphs on the band head, gates in the wave ${width}×${height}`, async () => {
+    await page.setViewport(width, height);
+    await page.goto(`${pageUrl()}?level=l3`);
+    await page.evaluate('document.fonts.ready.then(() => {})');
+    await page.evaluate("document.getElementById('boot')?.remove()");
+    const { bad, band } = await page.evaluate(L3_MON_SCAN);
+    assert.deepStrictEqual(bad, [], `the monitor glyphs broke the band at ${width}×${height}`);
+    // l3 carries no predict row — one head row, still inside the band box
+    assert.ok(
+      band && band[3] >= 20 && band[3] <= 90,
+      `the band left its box at ${width}×${height}: ${JSON.stringify(band)}`,
+    );
+  });
+}

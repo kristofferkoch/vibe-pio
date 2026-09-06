@@ -395,3 +395,37 @@ marked row, PASS verdict, par reveal). Separation note: a concurrent
 C38 WIP (the visual monitor face) landed uncommitted in the shared tree
 mid-card and was interleaved in the same files; this commit carries
 C37 only — the WIP was preserved untouched in the working tree.
+
+## Web track — the visual monitor (C38) — COMPLETE
+
+Scheduled 2026-09-06 by owner request after an inter-session review.
+Provenance on record: the change arrived as a finished-but-uncommitted
+working-tree diff from a concurrent worker session that was supposed to
+be isolated in a worktree and never committed anywhere (verified: no
+branch, no stash, no dangling commit — the tree diff was the only
+copy); the owner's review-and-commit instruction stands in for the
+grilling, the C27–C30 precedent. Findings on record: the band's numeric
+verdict (period clk, duty %) asked the player to read numbers where the
+lesson is shape. C38 makes the monitor's tolerances geometry — the
+judge's every return carries a machine-readable code (additive; the
+verdict prose stays pinned verbatim by the wave-contract tests), and
+the band face maps it to a status word (ok green, bad red, dim pending)
+beside two mini-waves at one shared px/clk so the eye compares like for
+like: the tier itself as a golden template (targetGlyph — pure module
+logic in levels.js: the profile's own numbers as a representative
+accepted cycle plus the two acceptance windows the judge checks) next
+to the last measured cycle; the numbers live on the tooltip/aria-label,
+never parsed back out of the prose. The wave panel paints the same two
+windows over the live trace at its last rising edge — paint only, the
+panel's geometry never moves, the sandbox is untouched (LEVEL-only
+paths). Gates: the levels gate's targetGlyph + code tests (shown red
+against re-injected defects before landing — the duty-window endpoints
+swapped: "l0: high 25 clk outside the duty window [102.4, 25.6]"; the
+duty code field removed: "actual undefined, expected 'duty'"), the
+layout gate's monitor leg at both 13" viewports (the head row must not
+wrap, the glyphs keep their boxes, the verdict word does not overlap
+them, the wave keeps its 64px floor), the standing walks (no new Tab
+stops), make js 179 green, and the live browser session (L3's boot:
+"period — outside" in red with both gold gates painted on the wave;
+L4 solved: "square — PASS (exact)" in green, the live glyph redrawn,
+par beside it).

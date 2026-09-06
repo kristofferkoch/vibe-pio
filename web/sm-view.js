@@ -446,16 +446,78 @@ function lvGateCheck() {
   return false;
 }
 // the judge: same verdict the engine-side gate replays over the pio_model
-// goldens — the band shows it live over the wave window
+// goldens — the band shows it live over the wave window. C38: the face is
+// visual — a golden tier template beside the last measured cycle, the
+// verdict a status word by the judge's machine-readable code, the numbers
+// demoted to the tooltip (never parsed back out of the prose)
+const LV_STATUS = {
+  awaiting: ['awaiting run', 'dim'],
+  noblink: ['no blink', 'dim'],
+  watching: ['keep watching', 'dim'],
+  period: ['period — outside', 'bad'],
+  duty: ['duty — outside', 'bad'],
+  defect: ['square (defect)', 'ok'],
+  pass: ['square — PASS', 'ok'],
+};
+// both glyphs draw at one shared px/clk so the eye compares like for
+// like, quantized so neither exceeds the 64px glyph budget (the head
+// row must not wrap — the standing L0 layout gate)
+const LVGLYPH_PX = 4;
+function lvGlyphScale(clks) {
+  return LVGLYPH_PX / Math.max(1, Math.ceil(Math.max(1, clks) / 16));
+}
+function lvSetGlyph(svg, clks, pad) {
+  svg.setAttribute('viewBox', `0 0 ${clks * LVGLYPH_PX + (pad || 0)} 16`);
+  const w = (clks * LVGLYPH_PX + (pad || 0)) * (lvGlyphScale(clks) / LVGLYPH_PX);
+  svg.setAttribute('width', String(Math.max(8, Math.round(w))));
+}
+// the golden template: the tier as a wave (rise first, the centered duty
+// as the drawn high) with its two acceptance windows shaded in-place —
+// the fall band in the upper half, the next-rise band (a tick when the
+// window is a point) in the lower half
+function lvDrawTarget() {
+  const g = PioLevels.targetGlyph(LEVEL.profile);
+  const t = $('lvtarget');
+  lvSetGlyph(t, g.clks, 2); // +2 so a next-rise tick at the edge stays visible
+  t.innerHTML =
+    `<rect x="${g.fallFrom * LVGLYPH_PX}" y="0" width="${(g.fallTo - g.fallFrom) * LVGLYPH_PX}" height="8" fill="var(--gold)" opacity=".22"/>` +
+    (g.nextTo > g.nextFrom
+      ? `<rect x="${g.nextFrom * LVGLYPH_PX}" y="8" width="${(g.nextTo - g.nextFrom) * LVGLYPH_PX}" height="8" fill="var(--gold)" opacity=".22"/>`
+      : `<line x1="${g.nextFrom * LVGLYPH_PX}" y1="8" x2="${g.nextFrom * LVGLYPH_PX}" y2="16" stroke="var(--gold)" stroke-width="1.5"/>`) +
+    `<path d="${thumbPath([...g.bits].map(Number))}" stroke="var(--wave-gold)" stroke-width="2" fill="none"/>`;
+}
+// the live glyph: the last measured cycle at the target's own scale; a
+// dim dashed baseline while nothing has been measured yet
+function lvDrawLive(v) {
+  const live = $('lvlive');
+  if (v.period >= 2) {
+    const p = v.period;
+    const hi = Math.min(Math.max(Math.round((p * v.dutyPct) / 100), 1), p - 1);
+    lvSetGlyph(live, p, 0);
+    live.innerHTML = `<path d="${thumbPath([...('1'.repeat(hi) + '0'.repeat(p - hi))].map(Number))}" stroke="var(--txt)" stroke-width="2" fill="none"/>`;
+  } else {
+    lvSetGlyph(live, 2, 0);
+    live.innerHTML = `<path d="M0 8 L8 8" stroke="var(--dimmer)" stroke-width="2" stroke-dasharray="2 2" fill="none"/>`;
+  }
+}
+function lvMonitorFace(v) {
+  const [word, cls] = LV_STATUS[v.code] || [v.verdict, ''];
+  const b = $('lvverdict');
+  b.textContent = v.code === 'pass' ? `${word} (${LEVEL.profile.tier})` : word;
+  b.className = cls;
+  const face = v.pass ? `${v.verdict} — PASS (${LEVEL.profile.tier})` : v.verdict;
+  $('lvmon').dataset.tip = `${face} · gold = the tier's acceptance windows`;
+  $('lvmon').setAttribute('aria-label', `monitor: ${face}`);
+  lvDrawTarget();
+  lvDrawLive(v);
+}
 function levelJudge(st) {
   if (!st.wave.pins.length || (!lvRanOnce && st.wave.pins.every((b) => b === 0))) {
-    $('lvverdict').textContent = 'awaiting run';
-    $('lvverdict').classList.remove('ok');
+    lvMonitorFace({ code: 'awaiting', verdict: 'awaiting run', period: null, dutyPct: null });
     return;
   }
   const v = PioLevels.judge(st.wave.pins, LEVEL.profile);
-  $('lvverdict').textContent = v.pass ? `${v.verdict} — PASS (${LEVEL.profile.tier})` : v.verdict;
-  $('lvverdict').classList.toggle('ok', v.pass);
+  lvMonitorFace(v);
   if (v.pass) levelPass();
 }
 function lvRevealSolved() {
@@ -1584,6 +1646,32 @@ function renderWave(st) {
       s += `<text x="${((i + j) * CW) / 2}" y="${TAGY}" fill="${col}" font-size="16" font-family="var(--mono)" text-anchor="middle" opacity=".85">${tags[i]}</text>`;
     }
     i = j;
+  }
+  // C38: the golden acceptance gates — the tier's two windows painted
+  // over the live trace at its last rising edge: the fall must land in
+  // the duty gate, the next rise in the period gate (a zero-width gate
+  // draws as a tick — the exact tiers demand a point). The judge's
+  // ruler as geometry; paint only, never layout — the measured cycle
+  // comes from the window itself, the same edges the judge counts.
+  if (LEVEL) {
+    const tp = LEVEL.profile.tiers[LEVEL.profile.tier];
+    let r1 = -1,
+      r2 = -1; // the last two rising edges in-window
+    for (let k = 1; k < n; k++)
+      if (pins[k - 1] === 0 && pins[k] === 1) {
+        r2 = r1;
+        r1 = k;
+      }
+    if (r1 >= 0) {
+      const x = r1 * CW;
+      const p = r2 >= 0 ? r1 - r2 : tp.periodHi;
+      const gate = (x0, x1) =>
+        x1 - x0 < 1.5
+          ? `<line x1="${x0}" y1="${HI - 4}" x2="${x0}" y2="${LO + 4}" stroke="var(--gold)" stroke-width="1.5" opacity=".8"/>`
+          : `<rect x="${x0}" y="${HI - 4}" width="${x1 - x0}" height="${LO + 8 - HI}" fill="var(--gold)" opacity=".15"/>`;
+      s += gate(x + ((p * tp.dutyLoPct) / 100) * CW, x + ((p * tp.dutyHiPct) / 100) * CW);
+      s += gate(x + tp.periodLo * CW, x + tp.periodHi * CW);
+    }
   }
   s += `<line x1="${n * CW - 1}" y1="6" x2="${n * CW - 1}" y2="${LO + 6}" stroke="var(--amber)" stroke-width="1" opacity=".8"/>`;
   s += `<text x="${n * CW - 5}" y="${RULY}" fill="var(--amber)" font-size="16" font-family="var(--mono)" text-anchor="end">${st.cycle}</text>`;

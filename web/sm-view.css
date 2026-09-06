@@ -58,6 +58,8 @@
   --wave-data: #1f9119;
   --wave-ctrl: #b26a00;
   --wave-idle: #909090;
+  --gold: #8a6d00; /* C38: the monitor's acceptance windows (text-weight) */
+  --wave-gold: #b28a00; /* the golden template's stroke — distinct from ctrl-amber fills */
   --green: #0d6e0d;
   --green-dim: #3f6b3f;
   --red: #a31414;
@@ -2529,10 +2531,24 @@ main.level #program:not(.col-side) #edside {
   color: var(--dim);
   white-space: nowrap;
 }
+/* C38: the monitor face is a pair of mini-waves — the golden tier
+   template beside the last measured cycle — riding the head row's text
+   baseline; the verdict is a status word (ok green, bad red, dim
+   pending), the numbers live on the tooltip */
+.lvmon svg {
+  vertical-align: -3px;
+  height: 16px;
+}
 .lvmon b {
   font-family: var(--mono);
   font-weight: normal;
   color: var(--txt);
+}
+.lvmon b.dim {
+  color: var(--dim);
+}
+.lvmon b.bad {
+  color: var(--red);
 }
 .lvmon b.ok {
   color: var(--green);

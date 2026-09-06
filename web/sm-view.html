@@ -164,10 +164,16 @@
         <div class="lvrow" id="lvhead">
           <span class="lvname" id="lvname"></span>
           <span class="lvgoal" id="lvgoal"></span>
+          <!-- C38: the monitor face is visual — the golden tier template
+               (#lvtarget) beside the last measured cycle (#lvlive), the
+               verdict a status word; the numbers ride the tooltip -->
           <span
             class="lvmon"
+            id="lvmon"
             data-tip="pass = receiver conformance: the level's monitor judges the wave over its profile tier — any program drawing the same wave passes"
-            >monitor · <b id="lvverdict">awaiting run</b></span
+            >monitor · <svg id="lvtarget" width="16" height="16" aria-hidden="true"></svg
+            ><svg id="lvlive" width="8" height="16" aria-hidden="true"></svg>
+            <b id="lvverdict">awaiting run</b></span
           >
           <span class="lvpass" id="lvpass" hidden>✓ passed</span>
           <span

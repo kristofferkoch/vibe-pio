@@ -679,3 +679,77 @@ test('par dominates the l3/l4/l5 reference solutions on both axes', () => {
     assert.ok(v.period <= L.reference.par.period, `${L.id}: ${v.period} clk/cycle > par`);
   }
 });
+
+// ===== the visual monitor (C38): the tier drawn as a golden wave ========
+// targetGlyph is the pure descriptor the band glyphs and the wave-panel
+// gates render: the profile tier itself as geometry — a representative
+// accepted cycle plus the two windows the judge actually checks (the
+// falling edge inside the duty band, the next rise inside the period
+// band). The judge stays the judge; this only makes its tolerances
+// visible, so the descriptor's numbers ARE the tier's numbers.
+test('targetGlyph: the tier as geometry, for every shipped level', () => {
+  for (const L of [L0, L1, L2, L3, L4, L5]) {
+    const tp = L.profile.tiers[L.profile.tier];
+    const g = PioLevels.targetGlyph(L.profile);
+    // the representative cycle is the widest accepted one, one rise first
+    assert.equal(g.clks, tp.periodHi, `${L.id}: clks`);
+    assert.equal(g.bits.length, tp.periodHi, `${L.id}: bits length`);
+    assert.equal(g.bits[0], '1', `${L.id}: a cycle starts at the rise`);
+    assert.ok(g.bits.endsWith('0'), `${L.id}: a cycle ends low before the next rise`);
+    // the drawn falling edge sits inside the duty window — the template
+    // never draws a wave the tier itself would red
+    const hi = g.bits.indexOf('0');
+    assert.ok(
+      g.fallFrom <= hi && hi <= g.fallTo,
+      `${L.id}: high ${hi} clk outside the duty window [${g.fallFrom}, ${g.fallTo}]`,
+    );
+    // the windows are the tier's own tolerances, in clk — honest by design
+    const eps = 1e-9;
+    assert.ok(Math.abs(g.fallFrom - (tp.periodHi * tp.dutyLoPct) / 100) < eps, `${L.id}: fallFrom`);
+    assert.ok(Math.abs(g.fallTo - (tp.periodHi * tp.dutyHiPct) / 100) < eps, `${L.id}: fallTo`);
+    assert.deepEqual(
+      [g.nextFrom, g.nextTo],
+      [tp.periodLo, tp.periodHi],
+      `${L.id}: next-rise window`,
+    );
+    // purity: the same profile draws the same glyph twice
+    assert.deepEqual(PioLevels.targetGlyph(L.profile), g, `${L.id}: not pure`);
+  }
+});
+
+test('targetGlyph: l3 spot values and the kind contract', () => {
+  // L3 exact: 4..4 clk, 15..40% — the glyph is a 4-clk cycle, one high,
+  // the fall free to land anywhere in [0.6, 1.6] clk, the next rise at
+  // exactly clk 4 (a zero-width window reads as a gold tick)
+  assert.deepEqual(PioLevels.targetGlyph(L3.profile), {
+    clks: 4,
+    bits: '1000',
+    fallFrom: 0.6,
+    fallTo: 1.6,
+    nextFrom: 4,
+    nextTo: 4,
+  });
+  // the glyph shares the judge's receiver contract — square only
+  assert.throws(
+    () => PioLevels.targetGlyph({ kind: 'uart', tier: 'x', tiers: { x: {} } }),
+    /no receiver/,
+  );
+});
+
+test('the judge carries a machine-readable code for the band face', () => {
+  // the visual monitor maps verdicts to a status word by code, never by
+  // parsing the prose (the strings stay pinned by the wave-contract
+  // tests above; the code is additive glue surface)
+  assert.equal(PioLevels.judge([], L3.profile).code, 'awaiting');
+  assert.equal(PioLevels.judge([0, 0, 0], L3.profile).code, 'noblink');
+  assert.equal(PioLevels.judge(bits('0110110'), L3.profile).code, 'watching');
+  // period 13 with duty in range: the period code, not duty
+  const boot = PioLevels.judge(bits(G3.boot.series), L3.profile);
+  assert.equal(boot.code, 'period');
+  // duty red: a period-4 wave held 3 of 4 high (duty 75 > 40) — the
+  // period is in-window so the duty clause is the first to fail
+  const duty = PioLevels.judge(bits('0111'.repeat(8)), L3.profile);
+  assert.equal(duty.code, 'duty');
+  const pass = PioLevels.judge(bits(G3.cases[0].series), L3.profile);
+  assert.equal(pass.code, 'pass');
+});

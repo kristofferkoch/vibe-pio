@@ -138,7 +138,17 @@
   // verdict text is the near-miss feedback the band shows.
   function squareJudge(bits, tp, defects) {
     const DEFECT = !!defects?.judge; // re-injected: any single in-range period passes
-    if (!bits?.length) return { pass: false, verdict: 'awaiting run', period: null, dutyPct: null };
+    // every return carries a machine-readable `code` — the band face maps
+    // it to a status word instead of parsing the prose (the verdict
+    // strings stay pinned by the wave-contract tests verbatim)
+    if (!bits?.length)
+      return {
+        pass: false,
+        code: 'awaiting',
+        verdict: 'awaiting run',
+        period: null,
+        dutyPct: null,
+      };
     const rising = [];
     for (let k = 1; k < bits.length; k++) if (bits[k - 1] === 0 && bits[k] === 1) rising.push(k);
     const cycles = [];
@@ -153,6 +163,7 @@
     if (!rising.length)
       return {
         pass: false,
+        code: 'noblink',
         verdict: 'no blink yet — the pin never rose',
         period: null,
         dutyPct: null,
@@ -162,6 +173,7 @@
       if (c && c.period >= tp.periodLo && c.period <= tp.periodHi)
         return {
           pass: true,
+          code: 'defect',
           verdict: 'square (defect: one period)',
           period: c.period,
           dutyPct: c.dutyPct,
@@ -170,6 +182,7 @@
     if (cycles.length < tp.minPeriods)
       return {
         pass: false,
+        code: 'watching',
         verdict: `${rising.length} rising edge${rising.length === 1 ? '' : 's'} — keep watching`,
         period: null,
         dutyPct: null,
@@ -179,6 +192,7 @@
     if (badP)
       return {
         pass: false,
+        code: 'period',
         verdict: `period ${badP.period} clk — outside${range}`,
         period: badP.period,
         dutyPct: badP.dutyPct,
@@ -187,6 +201,7 @@
     if (badD)
       return {
         pass: false,
+        code: 'duty',
         verdict: `duty ${badD.dutyPct}% — outside${dutyRange}`,
         period: badD.period,
         dutyPct: badD.dutyPct,
@@ -194,6 +209,7 @@
     const c = last[last.length - 1];
     return {
       pass: true,
+      code: 'pass',
       verdict: `square · ${c.period} clk/cycle · ${c.dutyPct}% duty`,
       period: c.period,
       dutyPct: c.dutyPct,
@@ -203,6 +219,39 @@
   function judge(bits, profile, defects) {
     if (profile.kind !== 'square') throw new Error(`judge: no receiver for ${profile.kind}`);
     return squareJudge(bits, profile.tiers[profile.tier], defects);
+  }
+
+  // ================= the golden target glyph =================
+  // C38: the visual monitor draws the tier itself as a golden wave — the
+  // profile is the level's visible spec, conformance never golden traces,
+  // so the glyph's numbers ARE the tier's numbers. Pure drawing data, no
+  // DOM: a representative accepted cycle as a bit string (rise first, the
+  // centered duty as the drawn high) plus the two windows the judge
+  // checks, in clk — where the falling edge may land (the duty band on
+  // the representative width) and where the next rise may land
+  // (periodLo..periodHi; a zero-width window draws as a gold tick).
+  function targetGlyph(profile) {
+    if (profile.kind !== 'square') throw new Error(`targetGlyph: no receiver for ${profile.kind}`);
+    const tp = profile.tiers[profile.tier];
+    const clks = tp.periodHi;
+    const fallFrom = (clks * tp.dutyLoPct) / 100;
+    const fallTo = (clks * tp.dutyHiPct) / 100;
+    // the drawn high is the band's center, pulled inside it and kept to
+    // less than the full cycle (a template that drew a flat line would
+    // not be a square wave)
+    const mid = Math.min(
+      Math.max(Math.round((fallFrom + fallTo) / 2), Math.ceil(fallFrom)),
+      Math.floor(fallTo),
+    );
+    const hi = Math.min(Math.max(mid, 1), clks - 1);
+    return {
+      clks,
+      bits: '1'.repeat(hi) + '0'.repeat(clks - hi),
+      fallFrom,
+      fallTo,
+      nextFrom: tp.periodLo,
+      nextTo: tp.periodHi,
+    };
   }
 
   // ================= the predict gate =================
@@ -320,6 +369,7 @@
     all: () => [...LEVELS.keys()],
     judge,
     squareJudge,
+    targetGlyph,
     gateOpen,
     programState,
     SURFACE,
