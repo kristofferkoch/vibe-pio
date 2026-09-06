@@ -138,3 +138,427 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   after ch3's L12), sideset's garbling spectacle, wait and multi-SM,
   and whether later chapters keep the 1-tick-1-cycle
   clkdiv-abstracted rendering.
+- The campaign's front door — a landing page + the level-to-level
+  transition (doodled 2026-09-06, input for the level/menu-shell
+  grilling the game-track cards keep deferring here). What exists:
+  sm-view.html is the only page — the sandbox bare, a level by
+  `?level=<id>` (the document.write loader), and the two never link;
+  per-level state is the localStorage session {predicted, pick,
+  solved} with no aggregate; a pass reveals par and freezes the payoff
+  frame (C40's decode lesson), and the only way to the next level is
+  the URL bar. Two threads already touch this — the C26 entry reserves
+  "at most sparing game-transition effects much later" with
+  "transition effects once levels exist" left open, and LEVELS-NOTES
+  parks the breathers as "where the sandbox gets advertised". The
+  doodle, in leans: the landing is the era master window wearing a CUA
+  listbox — chapter group frames (First light / Time and loops /
+  Reading the world; titles become registry data, they live only in
+  LEVELS-NOTES prose today), one row per level (number, name, status:
+  ✓ solved · ▸ the frontier · dim ahead), par shown on solved rows
+  only — the expertise-reversal rule projected onto the map, par as
+  the collectible the map tracks; the sandbox rides the same list as a
+  standing row ("everything always", the contrast-is-the-motivator
+  line), advertised harder as chapters complete. Keyboard is the
+  listing-as-listbox grammar verbatim (C25: arrows walk, Enter opens).
+  It should be its OWN page, not a sandbox mode — the landing needs no
+  engine boot (sm-view.html pulls worker+wasm to show what would be a
+  static list), and the C34 own-geometry precedent says a page is its
+  own geometry, not an absence-table hack hiding an entire app to draw
+  a menu; a small index.html sharing sm-view.css, with serve.py/README
+  repointed so the campaign is the front door and the sandbox keeps
+  its URL for tool users. The transition out of a level is one missing
+  affordance, not a system: on pass, beside the chip and par, a NEXT
+  pushbutton (Alt+N) joins the band — a plain location hop, no SPA
+  routing in a dependency-free classic-script app, and no
+  auto-advance: the payoff frame holds until the player acts (C40's
+  freeze lesson generalized). Exit-to-map is a toolbar button
+  (Alt+M) — today the URL bar is the only way out. Effects: none
+  proposed, the C26 decision stands; one candidate on the much-later
+  pile, the era-true content swap itself (caption change + a brief
+  fixed-palette wipe), never more. Unlock semantics: numeric (the
+  C34/C39 decision) but SOFT — `?level=<id>` always deep-links (the
+  ?row=31 demo spirit: levels stay shareable), the landing links only
+  the frontier; campaign state derives from the existing per-level
+  keys (furthest = max contiguous solved — no new storage shape), and
+  the one new datum worth its salt is lvSession keeping the player's
+  solved listing, so a solved reload replays YOUR solution (today it
+  re-boots the level's boot program) and the landing can badge
+  par-matched / par-beaten. Open questions if promoted: locked rows
+  absent (the C34 absence doctrine) vs dim-but-named (lean dim — the
+  doctrine was about level-page panels, and a campaign map naming its
+  future is content, with --dimmer the era's "visible not hidden");
+  does the landing show your words·clk beside par (needs the
+  solved-listing datum); the slice — post-C41 so the first map is
+  three complete chapters, vs earlier; the landing's own keyboard-walk
+  and layout-gate legs (the two sanctioned DOM-glue gates —
+  card-shaping, presumably yes); chapter-complete marks on the map
+  (the C38 glyph grammar as badges?) or a pure era tool; and whether
+  an "in progress" status earns a cell between ▸ and ✓.
+- The campaign's lore — hidden, TIS-100-style (owner one-liner
+  2026-09-06, doodled as grilling input; pairs with the front-door
+  entry above — the landing is where most of it would surface).
+  TIS-100's craft, on the record: the story never touches the game
+  UI — it lives in the shipped reference manual's margin notes (a
+  dead relative's handwriting over the real ISA docs — the teaching
+  artifact and the fiction's vehicle are the same document), the
+  machine-as-artifact frame (inherited hardware, the boot self-test
+  you are there to fix — the fiction EXCUSES the interface), and
+  everything opt-in; no cutscenes, the UI never interrupts. What
+  already exists here, for free: every boot program and reference
+  solution is somebody's authored work (L2's name says it — Author's
+  hand), the chapter titles already read as a recovery arc (First
+  light → Reading the world → The feeder), and the level names are
+  already a voice (Metronome, Listen, Echo, Fencepost) — the fiction
+  only has to own them. The doodle, in leans: the frame is the
+  board's previous owner, shelved mid-curriculum — the boots are
+  their teaching programs, and the payoff is that the era skin turns
+  diegetic: the chrome stops being style and becomes their 90s bench
+  software (the title bar, the master window, the sandbox-as-a-
+  standing-row all become the fiction's furniture); the vehicle is
+  era artifacts, not narration — an in-fiction README.TXT / help
+  file over real docs/pio-spec.md excerpts (this repo ships the
+  manual TIS-100 only faked, and the stable SPEC-IDs make excerpt
+  anchors free; the margin notes are the previous owner's, one
+  escalating thread, never a sentence of tutorial); fragments gate
+  on SOLVED, never par — par is the mastery collectible, lore is the
+  completionist's (the front-door entry's collectible line gains a
+  second track); and lore never sits on a level page's teaching face
+  and never gates a run (the predict/payoff-freeze lessons stand —
+  it lands on the map's chapter frames, in files, at most one line
+  in a pass moment's tooltip). Open questions if promoted: the slice
+  — the front-door grilling decides vehicle + voice, then each
+  chapter's own grilling lands its fragments (writing them all now
+  would fence chapters 3+ that are not grilled yet); the author's
+  identity and the arc's end (named, with a one-line fate,
+  TIS-100-minimal, vs anonymous — and does the endgame answer it or
+  leave it); where fragments surface (desktop icons beside the
+  landing window vs files inside it vs chapter-frame captions); how
+  hidden is hidden (dim-and-visible vs opt-in file-open — lean
+  opt-in, TIS-100's way); does the sandbox carry any (lean:
+  mentioned, never used — tool users never hit a lore page); and
+  the breather pairing — Coffee-Time levels as the natural find-spot
+  for fragments, the parked "where the sandbox gets advertised" line
+  gains a second tenant.
+- The lore rides the payloads — the story arrives as decoded bits
+  (owner riff 2026-09-06, extends the lore entry above; input for the
+  same grillings — and it upgrades that entry's vehicle: the
+  README.TXT stays as the fiction's furniture, but the story itself
+  only arrives over the wire, through the protocols the campaign
+  teaches). Two directions, both native to machinery that already
+  exists: READ — a level whose stimulus is a frame stream and whose
+  expected words ARE the fiction: text fragments as plain bytes (the
+  exact RX judge already names the first divergent bit — a wrong bit
+  is a garbled glyph, the near-miss grammar doing story work), images
+  as word rows (a 32-bit word IS a 32-px raster line; the glimpse is
+  the decode judge's own words re-projected as a 1-bit raster — the
+  C38 never-parse-the-prose rule, a view, not a new judge); and the
+  near-miss faces mean a FAILED run still glimpses the fragment
+  half-arrived — readable in proportion to correctness, never gated
+  on PASS. DRAW — the monitor task: the level feeds words into the
+  RX FIFO (a new stimulus kind — today stimulus drives pins only; a
+  fifo feed is a word list with timing, mirrored in pio_model and
+  the driver under the C39 lockstep discipline), the program pulls
+  and serializes them onto the wire that drives a MONITOR — an
+  output face rendering the decoded bytes as pixels; wrong bit-times
+  smear the image (the tier ladder's skew windows become visible
+  ghosting — the 85% dial you can SEE), and what the monitor shows
+  is a story scrap. The uncanny responder (the owner's "some
+  uncanny response"): when the player transmits per the taught
+  protocol, the level ANSWERS — reactive stimulus, not a fixed
+  pattern (today's stimulus is armed fixed before load; a responder
+  watches the player's output pins and scripts the reply — the one
+  genuinely new engine machinery, and the expensive bit: it must be
+  mirrored in pio_model or the goldens' oracle breaks). What makes
+  it uncanny, in leans: it answers YOUR bytes, with one telling
+  wrongness (a bit flipped, one lap late, the enable dropping
+  mid-frame — the near-miss grammar again), and it is never
+  explained; L7 Echo retro-reads as first contact — the player
+  thought they were the echo; someone was echoing THEM. Placement
+  leans: no landed-level retrofits (chapters 0–2 are shipped
+  teaching surfaces; lore levels debut fresh — first carriers in
+  chapter 3, where L10 already decodes bytes and L12 transmits
+  them); the responder is a chapter-5/endgame voice (Synchronization
+  is where a dialogue lives); the fifo-feed and the responder card
+  out only at those chapters' own grillings. Open questions if
+  promoted: one voice or two (the previous owner's log arriving over
+  the wire — or someone else answering: the story's engine, the
+  boots were left FOR you but the wire answers TO you?); do images
+  stay 1-bit word-rasters forever (era-true) or grow; does the
+  sandbox ever get a monitor face (lean no — the bench stays a
+  bench); and whether the responder ever addresses the player rather
+  than their bytes (the fourth wall — lean never, TIS-100-minimal).
+- The transcoder — the multi-SM capstone that receives a signal and
+  displays it on the monitor (owner riff 3, 2026-09-06; extends the
+  payload-lore entries above and lands on LEVELS-NOTES' chapter 5 /
+  endgame, whose grilling decides it). The shape: the campaign's two
+  halves meet in one level — SM0 receives the signal (the reading
+  chapters: edge waits, in, push), SM1 drives the monitor (the
+  feeder chapters: pull, out, the raster face from the DRAW
+  direction), and the player builds the chain between them. Multi-SM
+  is load-bearing the L3 way — a job, not a syntax demo: the
+  deadlines are designed to collide (the C41 craft applied to time
+  instead of counting — input edge jitter only wait can tolerate,
+  against a pixel clock that never stalls; a single SM parked on the
+  edge misses the pixel, and the monitor SHOWS the miss as
+  missing/smeared pixels — the reason the machine has four SMs
+  becomes visible, the SM bar earning its ch5 debut). The inter-SM
+  channel, in leans: irq sync + a pin-pair wire between the machines
+  (honest to real PIO — FIFOs are per-SM; the C22–C24 multi-SM
+  machinery and the pio_model multi-SM oracle already exist, and the
+  clocked-input example CC-23 is the receiving leg's precedent).
+  Lore integration: the transcoder's output is where the deepest
+  scrap lands — the signal only the whole machine can hear (one SM
+  receives bits; the chain renders the message — whether the far end
+  is the previous owner's last transmission or the other voice is
+  exactly the two-voices question parked above). Placement: very
+  advanced, the owner's words — chapter 5's boss at the earliest
+  (after irq-multi-sm lands), the endgame more honestly; the monitor
+  face debuts with chapter 3's DRAW carriers and is reused here, not
+  built here. Open questions if promoted: par — the standing
+  every-level-ships-par rule (C34) meets the multi-SM front
+  (FRONT_CLASS over two listings is real hyperopt work; lean: the
+  chain is over-determined enough that the front is small, but if it
+  is not, a par-free boss needs the rule amended on the record);
+  which signal (the slow external clock of the clocked-input
+  example? Manchester? the choice is the grilling's); does the
+  uncanny responder live at the far end of THIS level (its natural
+  home — the signal answers back?); and is this the final level —
+  the one the whole fiction arc was waiting for?
+- The other voice is generated — a very tiny local LLM behind the
+  responder (owner riff 4, 2026-09-06; the engine for the uncanny
+  responder in the payloads entry above — the wire stays scripted,
+  the voice is generated). What the owner asked: a very-very-tiny
+  WebGL-run LLM, primed on the lore, answering mysteriously. The
+  leans that make it fit this repo: TRAIN IT HERE — not a pretrained
+  blob but a char-level micro-model (~1M params, a tools/ script
+  under the make py/hyperopt discipline) over the lore corpus and
+  the real pio-spec text — tiny IS the guardrail: a model that knows
+  only the corpus cannot answer out of fiction, it babbles in
+  register when asked anything else, which is "answering
+  mysteriously" as an emergent property (and it speaks the machine's
+  own language, trained on the spec); VOICE, NOT FACTS — the corpus
+  is register and mood, the load-bearing lore beats stay scripted,
+  so the shipped weights are public to dataminers by construction
+  (a client-side binary; the TIS-100 spirit — hidden means
+  unexplained, not encrypted) but spoil nothing and fence no future
+  chapter; IT SPEAKS THROUGH THE WIRE — the model's output is
+  serialized by the responder machinery into stimulus frames, and
+  the player only ever reads it through the decode path (the
+  terminal/monitor face is a lens over frames, not a chat box; your
+  program must be running to hear the answer — you can only talk to
+  the other voice THROUGH the PIO, which is the fiction's whole
+  point); THE WIRE STAYS DETERMINISTIC — generation never gates a
+  judge: each response's protocol-level facts (timing, the one
+  telling wrongness) stay scripted and pio_model-mirrored per the
+  entry above, and the model fills only the prose bytes inside the
+  frames; LATENCY IS DIEGETIC — the answer arrives at teletype/
+  300-baud rate, era-true, and hides whatever inference costs (at
+  this scale a typed-array worker likely carries it — the owner's
+  WebGL is the ceiling, not the floor, a WebGL2/WebGPU kernel being
+  the escalation if the model grows; it is content-compute, not a
+  WebGL UI sim, so the C26 ban is not touched — cite the
+  distinction at the grilling); and the weights fetch rides the
+  existing worker+wasm precedent (the page already pulls binaries;
+  runtime JS stays dependency-free). Fixed-seed sampling is
+  deterministic, so even the model can carry a drift golden
+  (weights hash + prompt + seed → committed text, checked in make
+  js). Open questions if promoted: where the dialogue lives
+  (post-campaign terminal epilogue vs a chapter-5 level vs the
+  transcoder's far end — the engine composes with all three); the
+  training card itself (corpus curation is AUTHORING — whose voice,
+  how much, and does the grilling write the corpus or only the
+  rules for it); do the two sanctioned DOM-glue gates grow legs for
+  the terminal face (geometry presumably yes; generation covered by
+  the fixed-seed golden instead); and the fourth-wall question gains
+  an engine — does it stay "never" now that the model could be
+  pointed at the player's par (lean: still never — the corpus does
+  not contain the word par).
+- Manual slips — sinister context leaking through the dry register
+  (owner riff 5, 2026-09-06; the TIS-100 device, named: the manual
+  is dry technical prose until one word — "civilian control" —
+  implies its complement, and the reader who notices feels the
+  ground shift; the reader who doesn't loses nothing). Why it fits
+  this campaign: it is the cheapest lore there is — pure authored
+  prose on artifacts that already exist in the fiction (the
+  README.TXT, the manual-over-spec excerpts, the About box), zero
+  engine machinery, and it compounds: the slips form a pattern only
+  when read together, and after the reveal every slip rereads loud
+  (the second-read reward is the retention hook). The grammar of
+  slips, in leans: the COMPLEMENT LEAK (a word whose necessary
+  opposite is the fact — "civilian control" needs military control
+  to exist; "suitable for civilian applications"); the ERRATUM
+  CORRECTION (v1.1 fixes a phrase and the fix is worse than the
+  original — "operator safety" corrected to "asset recovery"); the
+  BOILERPLATE LEAK (compliance text referencing a facility, an
+  authority, a disposal requirement); the era-canon DENIABLE SLIP
+  (no sinister word at all — the in-fiction board carries the
+  military temp-grade part-number suffix, per real 90s datasheet
+  convention; why does a hobby bench have the M-grade part?); and
+  this repo's native device, the FALSE CITATION — the in-fiction
+  manual excerpt cites a SPEC-<section>-<n> that the real
+  docs/pio-spec.md does not contain, a mechanically checkable ghost
+  fact. The discipline that keeps them slips: deniable as era
+  documentation noise on first read (awkward translated English,
+  compliance boilerplate — the era provides the cover), and never
+  on a level page's teaching face — the goal prose teaches, the
+  artifacts carry atmosphere; margin notes (entry 1) are the
+  previous owner's handwriting on the artifact, slips are the
+  artifact's own printed text leaking — two channels, one page.
+  This refines entry 4's voice-not-facts rule: AUTHORED static
+  prose may carry facts as slips (deliberate, invisible, in plain
+  sight — datamining them is just reading); the generated model's
+  corpus stays register-only. Placement: shippable now — the first
+  slip can ride the front-door card itself (one "civilian" in the
+  About box), and each chapter's grilling lands its slips alongside
+  that chapter's fragments; landed goal prose is never retrofitted
+  (the standing no-retrofits lean). Open questions if promoted: the
+  sinister direction itself — WHAT do the slips foreshadow (military
+  procurement of the board? a facility? the other voice's origin?)
+  — the fiction decision the slips are breadcrumbs toward; density
+  (one slip per chapter vs a scattered set with the landing page
+  holding the first); whether slips get gate insurance (prose in
+  static assets is one well-meaning edit from being "fixed" — pin
+  the slip phrases the way the wave-contract tests pin verdict
+  prose, cheap); and whether the endgame reveal makes the reread
+  explicit or trusts the player to reread alone.
+- The parallel-universe frame — the Foundation that grew (owner
+  riff 6, 2026-09-06; answers entry 5's first open question with an
+  owner lean: this is from a parallel universe where the raspberry
+  pi foundation became something powerful and self corrupting). The
+  arc shape, in leans: SELF-corrupting is the word — not conquered,
+  not villainous; an educational mission (cheap computers for
+  everyone) that curdled by its own success, and the telling is
+  sediment, not story: the M-grade parts appearing in the education
+  SKU, the errata correcting "operator safety" to "asset recovery",
+  a name-change in a v1.1 masthead — each slip deniable, the pattern
+  damning; the corruption is legible only in reread, which is why
+  entry 5's register carries it. THE HARDWARE IS HONEST — the load-
+  bearing rule: the silicon in their universe is identical to ours
+  (same part, same spec — that is why the real docs/pio-spec.md
+  stays the teaching doc and every lesson stays true); the
+  divergence is INSTITUTIONAL, living entirely in the paperwork the
+  slips ride. THE NAME IS FICTIONAL — the real Foundation is
+  beloved and stays unnamed; the parallel universe is the firewall
+  in both taste and care, and the counterpart gets its own name
+  (a lean example, grilling's call: the Bramble Foundation — the
+  thicket, not the fruit; same plant, and an institution of pis is
+  exactly a bramble); the name-change itself can be a slip beat —
+  early docs carry the old masthead, later errata the new one. What
+  the frame gives the parked threads: the previous owner (entry 1)
+  becomes a curriculum engineer inside the institution — the boot
+  programs ARE curriculum, L2's Author's hand is literal, and the
+  board was shelved mid-curriculum because the mission curdled
+  under it (the player inherits the unfinished honest course);
+  the other voice (entries 2/4) gains candidates — a former
+  colleague on another bench, a former STUDENT (you are not the
+  first; the boots were left FOR you, and the wire may answer TO
+  the one who studied before you), or the institution's own still-
+  answering machinery; the transcoder's far end (entry 3) gains a
+  candidate: the deep signal the whole machine can hear is what the
+  institution is still broadcasting. The era tension, recorded
+  honestly: the chrome is 1990s, the chip is real-2020s silicon,
+  the real Foundation is 2010s — the parallel universe must absorb
+  all three (lean: their history diverged where the cheap
+  educational-computer age arrived a generation early, and the
+  Win3.11 bench is what their 90s looked like — legacy
+  institutional tooling is also era-true cover). Open questions if
+  promoted: the fiction bible — who writes the institutional
+  timeline, and how much of it is ever SHOWN vs only implied (lean:
+  the sediment principle — nothing is shown that a slip cannot
+  carry); the previous owner's exact position and fate (entry 1's
+  one-line-fate question); does the PLAYER exist in the fiction
+  (who inherited the board, why are they running the course — the
+  fourth-wall-adjacent question gains teeth); when the counterpart
+  name first appears (a slip? the About box? never?); and whether
+  the arc's endgame reveal is archival (the reread made explicit)
+  or stays trust.
+- The doctrine — coherent story, then show nothing (owner riff 7,
+  2026-09-06; the synthesis the six entries above were waiting
+  for). Two owner decisions on the record: THE TONAL ANCHOR is the
+  end of the Cold War — dark mystery and fear, secret programs,
+  secret underground military facilities, CONTRASTED with the "end
+  of history" (Fukuyama's phrase) optimism we now know was naive —
+  the campaign's register is that exact 1989–1995 window, which
+  locks the era skin into the fiction: the cheerful light chrome is
+  no longer vintage style but the period's own performed optimism
+  (C26's decisions reread as the institution's canon, and the
+  player's 2026 hindsight over the fiction's 1995 cheer is free
+  dramatic irony); and THE SHOWING DISCIPLINE — write a fully
+  coherent story first, then show nothing of it: no cutscenes, no
+  reveal, no archive dump, no explicit reread — only leaks through
+  the game (this resolves entry 5's last open question — trust, the
+  explicit reveal is dead — and promotes entry 6's sediment lean to
+  doctrine). Why coherence first: incoherent leaks produce random
+  theories; coherent leaks make the player's reconstruction
+  CONVERGE — that mind-racing is the product, and it only races
+  toward dread if every slip triangulates to the same unseen whole
+  (the iceberg doctrine, Dark Souls' environmental canon; the bible
+  is the aquifer every channel leaks from). The leak channels,
+  unified: slips in the prose (entry 5), the payload fragments and
+  the wire's voice (entries 2/4), the artifacts' texture (entry 6's
+  part numbers and mastheads) — and the surface never moves: no
+  atmosphere arc, no darkening chrome, the optimism stays performed
+  to the end (showing nothing includes showing no mood swing). The
+  facilities go underground (entry 5's boilerplate leak gains its
+  referent; entry 3's far end gains its image — the deep signal
+  answers from somewhere buried). Open questions if promoted: bible
+  custody — the owner holds the canon and each grilling surfaces
+  the slice its chapter needs (lean: NOT committed; a repo-resident
+  bible datamines the whole doctrine away, and the slips already
+  pinned by tests are the public leaks by design); sequencing — the
+  bible must exist before the first leak-bearing card, so a bible
+  session comes before the front-door/chapter-3 grillings pick
+  their leaks (the front door itself carries at most a masthead and
+  one "civilian"); the taste line — how much Cold War facility
+  trope the deniable register can hold before slips stop being
+  deniable (lean: the fear lives in procurement language, never in
+  threat language); and whether the performed optimism has one
+  in-fiction author (the curriculum's voice IS the institution's
+  cheer — the goal-prose register becomes canon the grilling writes
+  to, new chapters only).
+- The link — signals to and from a parallel reality, shifted (owner
+  riff 8, 2026-09-06; the fiction's engine, composing with the
+  entries above: the transcoder's far end (3), the uncanny
+  responder's wrongness (2/4), the Bramble universe (6), under the
+  doctrine (7)). The owner's decision: the story is trans-
+  dimensional — signals cross to and from a parallel reality, and
+  they arrive SHIFTED, systematically wrong; the PIO's dynamic
+  adaptability is the in-fiction reason the link works at all
+  (the owner's "hehe" — the real chip's headline virtue, a
+  re-writable I/O state machine for ANY protocol, becomes the
+  fiction's instrument: fixed peripherals cannot follow a shifted
+  protocol; a PIO program can be re-written to follow the drift —
+  so the campaign's authoring levels ARE the link-operator's job,
+  retuning the receiver level by level). The deep resonance,
+  recorded: the campaign already built the shift instrument as its
+  difficulty system — the tier ladders' skew windows ([BIT_LO,
+  BIT_HI]), the relaxed-but-never-exact tiers, the near-miss faces
+  naming the run that ran wrong — in-fiction, a signal that passes
+  RELAXED but never EXACT is evidence of the other side (the C40
+  ladder rereads as tuning into the shift), and the responder's
+  "one telling wrongness" gets its why: the wrongness IS the shift.
+  A new leak channel with it: MECHANICAL leaks, not prose ones —
+  the player who MEASURES the stimulus finds it wrong in a
+  consistent direction (entry 5's slips leak in words; the shift
+  leaks in bit-times) — and the doctrine extends: the shift is
+  never explained in-game, only measurable (procurement language
+  never threat language; measurement, never explanation; the reveal
+  stays dead). Bible candidates, recorded as leans for the bible
+  session, not decisions: the PIO architecture itself was RECEIVED
+  (the chip is the decoded signal, productized as an educational
+  computer — which is why the silicon is identical in both
+  universes, giving entry 6's rule its why); the curriculum is
+  link-operator training wearing a programming course; the
+  underground facility's deep signal (entry 3) is the original
+  contact; and the Bramble curdle was driven by what came through
+  or what keeping it cost. Open questions if promoted: universe
+  topology (how many realities, which one is home — is the game
+  set IN the Bramble universe with our reality as the far end?
+  lean: the far end is a recognizable cousin of ours); the shift's
+  signature (one constant shift, or drifting? baud, bit order,
+  polarity, phase — the choice binds to chapter-3 stimulus design,
+  so the bible session owns it); whether any in-game instrument
+  ever names the shift (a tier labeled for it? lean: never —
+  tiers stay engineering words); and the risk line — how far the
+  bible's science can reach while every leak stays deniable (the
+  mind-races test, restated under load).
