@@ -36,6 +36,10 @@
 //                                 atomically
 //   {cmd:'drive', pin, level}   → a hold-latch pin drive (null releases)
 //   {cmd:'pattern', cfg}        → the pattern generator (off/square/bits)
+//   {cmd:'stimulus', cfgs}      → C39: the level's given — one pattern cfg
+//                                 per driven input pin, armed together
+//                                 (read-only forever; the shell posts it
+//                                 before the level load)
 //   {cmd:'lens', mode, pin}     → the monitor lens (off/square/uart)
 //   {cmd:'wavewin', n}          → the wave window's sample count (C36:
 //                                 level geometry — L5's slow wave judges
@@ -136,6 +140,10 @@ onmessage = (e) => {
         break;
       case 'pattern':
         drv.setPattern(m.cfg || { mode: 'off' });
+        postState();
+        break;
+      case 'stimulus':
+        drv.setStimulus(m.cfgs || []);
         postState();
         break;
       case 'lens':

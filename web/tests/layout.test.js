@@ -1438,3 +1438,121 @@ for (const [width, height] of VIEWPORTS) {
     );
   });
 }
+
+// C39 — the reading slice: the stimulus draws on the wave. The L6 page
+// carries the given as geometry — one trace row per driven input pin,
+// ABOVE the lens row, on the same time axis (the same px/clk — the
+// echo lesson is the two traces side by side), and the reading debut:
+// the ISR panel + the RX half of the fifo row (TX is the feeder's,
+// L9). The predict card is the word face: three 32-bit candidates that
+// must never wrap the predict row. The rx judge has no glyphs — the
+// band face is the verdict word alone.
+const L6_ABSENT = [
+  '#clkdivtag',
+  '#bempty',
+  '#bdemo',
+  '#bexport',
+  '#bimport',
+  '#bcopy',
+  '#speed',
+  '#binsn',
+  '#smsbar',
+  '#pinstrip',
+  '#regs',
+  '#dsalloc',
+  '#progfoot',
+  '#exectitle',
+  '#execslim',
+  '#fifo', // the TX half: absent until the feeder chapter (L9)
+  '#pullconn',
+  '#osr',
+  '#framemap',
+  '.maptag',
+  '#wavewinaux',
+  '#spin-lenspin',
+  '#mon',
+  '#feed',
+  '#pattern',
+];
+const L6_SCAN = `(() => {
+  const bad = [];
+  const box = (sel) => document.querySelector(sel)?.getBoundingClientRect();
+  const gone = (sel) => {
+    const el = document.querySelector(sel);
+    return !el || el.offsetParent === null;
+  };
+  for (const sel of ${JSON.stringify(L6_ABSENT)}) {
+    if (document.querySelectorAll(sel).length && !gone(sel))
+      bad.push(sel + ' is still laid out — a locked panel is absence, not a ghost');
+  }
+  // the reading debut: the ISR panel and the RX half of the fifo row
+  // have real boxes (the row stays; only its TX half is absent)
+  for (const sel of ['#isr', '#rxfifo', '#fiforow']) {
+    const b = box(sel);
+    if (!b || b.width < 80 || b.height < 20) bad.push(sel + ' has no box — the reading leg debuts it');
+  }
+  // the stimulus row: exactly one driven input, drawn INSIDE the wave's
+  // svg in the band ABOVE the lens trace (top half of the panel)
+  const stim = document.querySelectorAll('#wavesvg .stimrow');
+  if (stim.length !== 1) bad.push('the stimulus row is missing — the given draws on the wave');
+  else {
+    const sb = stim[0].getBoundingClientRect();
+    const wv = box('#wavesvg');
+    if (!wv || sb.height < 4) bad.push('the stimulus row has no geometry');
+    else if (sb.bottom > wv.top + wv.height / 2)
+      bad.push('the stimulus row is not above the lens trace');
+  }
+  // the word face: every candidate is one 32-bit word, and the predict
+  // row never wraps under them
+  const words = document.querySelectorAll('#lvcands .lcand-bits');
+  if (words.length !== 3) bad.push('the predict card lost its word candidates');
+  for (const w of words)
+    if (w.querySelectorAll('.bit').length !== 32)
+      bad.push('a predict candidate is not one 32-bit word');
+  const pred = document.getElementById('lvpred');
+  if (pred && pred.scrollHeight > pred.clientHeight + 1)
+    bad.push('the predict row wraps (scrollHeight ' + pred.scrollHeight + ' in ' + pred.clientHeight + ')');
+  // the rx judge has no glyph pair — hidden, never empty boxes (svg
+  // has no offsetParent; a display:none box reads as zero-size)
+  for (const sel of ['#lvtarget', '#lvlive']) {
+    const b = box(sel);
+    if (!b || b.width > 0 || b.height > 0)
+      bad.push(sel + ' shows on an rx level — the value judge has no windows');
+  }
+  // the standing level checks: 32 honest rows, the wave's floor, no
+  // wrap steppers, the head row never wraps
+  if (document.querySelectorAll('#progrows .prow').length !== 32)
+    bad.push('the listing lost rows — 32 rows in every level');
+  if (document.querySelectorAll('.wstep').length) bad.push('the wrap steppers are built');
+  const wave = box('#wavesvg');
+  if (!wave || wave.height < 64) bad.push('the wave lost its 64px floor');
+  if (!wave || wave.width < 420) bad.push('the wave is squeezed under 420px');
+  const head = document.getElementById('lvhead');
+  if (head && head.scrollHeight > head.clientHeight + 1)
+    bad.push('the band head wraps (scrollHeight ' + head.scrollHeight + ' in ' + head.clientHeight + ')');
+  return { bad };
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`the L6 page: the stimulus draws on the wave, the reading leg debuts ${width}×${height}`, async () => {
+    await page.setViewport(width, height);
+    await page.goto(`${pageUrl()}?level=l6`);
+    await page.evaluate('document.fonts.ready.then(() => {})');
+    await page.evaluate("document.getElementById('boot')?.remove()");
+    // the hermetic page never runs (the engine is held open), so the
+    // wave's own renderer is driven with a synthetic window — the
+    // shipped renderWave, the level's own stimulus cfg shape, exactly
+    // the state a real run produces
+    await page.evaluate(
+      `renderWave({...V.state, cycle: 127, wave: {` +
+        `pins: new Array(128).fill(0), tags: new Array(128).fill(""), startCycle: 0,` +
+        `stim: [{pin: 1, bits: (${JSON.stringify('0011'.repeat(32))}).split('').map(Number)}]}})`,
+    );
+    const { bad } = await page.evaluate(L6_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `L6 geometry broken at ${width}×${height} — the given must draw on the wave`,
+    );
+  });
+}

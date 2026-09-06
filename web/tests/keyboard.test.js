@@ -1011,3 +1011,105 @@ test('the L4 walk: the scrambler — mark and trade rows, the editor never opens
     'the row the mark stood on loses it',
   );
 });
+
+// C39 — the L6 walk: the reading slice. The level surface grows the
+// reading leg — the ISR panel and the RX half of the fifo row are now
+// Tab stops (their controls, the drain buttons), while the TX half,
+// the pull connector and the OSR stay absent (absence covers Tab order
+// too). The predict card is the word face — the same C25 radio grammar
+// over bit-word candidates — and predict→run means the editor never
+// opens: letters author nothing, the given program is the whole
+// machine.
+test('the L6 walk: the reading debut is keyboard-reachable, the word face commits, no editor', async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/sm-view.html?level=l6`);
+  await until('V.ready === true', 'the level page engine to boot');
+
+  // ---- no orphan stops: the cycle covers the reading surface ---------
+  const stops = [];
+  for (let i = 0; i < 16; i++) {
+    await press('Tab');
+    stops.push(await value(activeId));
+  }
+  const allowed = new Set([
+    'breset',
+    'lvcands',
+    'progrows',
+    'BODY',
+    'isrviz',
+    'aptg2',
+    'spin-pushthr', // the ISR panel's controls
+    'bdrain',
+    'bdrainall', // the rx half's drains
+  ]);
+  for (const s of stops)
+    assert.ok(
+      allowed.has(s),
+      `orphan stop ${JSON.stringify(s)} — a locked panel left a focusable behind (${stops.join(', ')})`,
+    );
+  for (const need of ['breset', 'lvcands', 'progrows', 'bdrain', 'isrviz'])
+    assert.ok(new Set(stops).has(need), `${need} must be a Tab stop on the L6 page`);
+
+  // ---- the gate: the transport is dead until the prediction commits --
+  await page.evaluate('document.activeElement && document.activeElement.blur()');
+  await press('r');
+  assert.strictEqual(
+    await value("$('brun').classList.contains('on')"),
+    false,
+    'R must not run the machine behind the predict gate',
+  );
+
+  // ---- the word face by keys: ←/→ + Enter (the radio grammar) --------
+  await tabUntil(`${activeId} === 'lvcands'`, 'the predict group');
+  assert.ok(
+    (await value("$('statusline').textContent")).includes('predict'),
+    'the status line narrates the predict group when it takes focus',
+  );
+  assert.strictEqual(
+    await value("document.querySelectorAll('#lvcands .lcand-bits .bit').length"),
+    96,
+    'three candidates of one 32-bit word each (the bits grammar, labeled ISR)',
+  );
+  await press('ArrowRight'); // onto the second candidate
+  assert.ok(
+    await value(`document.querySelectorAll('#lvcands .lcand')[1].classList.contains('kc')`),
+    '←/→ moves the predict cursor over the word candidates',
+  );
+  await press('Enter');
+  await until('PioLevels.gateOpen(LEVEL, lvSession) === true', 'Enter to commit the prediction');
+  await until("$('brun').disabled === false", 'the committed prediction to unlock RUN');
+
+  // ---- the unlocked machine runs; the given draws on the wave --------
+  await page.evaluate('document.activeElement && document.activeElement.blur()');
+  await press('r');
+  await until("$('brun').classList.contains('on') === true", 'R to start the machine');
+  await until(
+    "document.querySelectorAll('#wavesvg .stimrow').length === 1",
+    'the stimulus row to draw',
+  );
+  await press('r'); // pause — the walk leaves a paused page
+  await until("$('brun').classList.contains('on') === false", 'R to pause again');
+
+  // ---- the drain buttons are live stops (keys operate the surface) ---
+  await tabUntil(`${activeId} === 'bdrain'`, 'the drain button');
+  await press('Enter');
+  assert.ok(
+    !(await value("/ERROR/.test(document.querySelector('footer').textContent)")),
+    'the drain on an empty mirror is a no-op, never an engine error',
+  );
+
+  // ---- predict→run: the row editor never opens -----------------------
+  await tabUntil(`${activeId} === 'progrows'`, 'the listing');
+  await press('ArrowDown');
+  await press('Enter');
+  await type('set x, 3');
+  assert.strictEqual(
+    await value('RE.hidden'),
+    true,
+    'the row editor must not open in L6 — the given program is the whole machine',
+  );
+  assert.ok(
+    !(await value("/ERROR/.test(document.querySelector('footer').textContent)")),
+    'the page walked the whole loop without an engine error',
+  );
+});

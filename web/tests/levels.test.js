@@ -680,7 +680,216 @@ test('par dominates the l3/l4/l5 reference solutions on both axes', () => {
   }
 });
 
-// ===== the visual monitor (C38): the tier drawn as a golden wave ========
+// ---- C39: L6 Listen — the reading slice (stimulus + the RX judge) ------
+// Chapter 2 opens: the world arrives on a wire. The level drives gpio1
+// (the stimulus, one pattern cfg mapping 1:1 onto the engine's pattern
+// contract), and the given program is the whole lesson — `in pins, 1`
+// gathers the pin's bit into the ISR (bit 31 under the reset
+// shift-right), `push` hands the word to the RX FIFO; the wrap reads
+// again every 2 clk. The RX FIFO is 4 deep and the fifth push stalls
+// (the honest machine), so acceptance is the FIRST FOUR pushed words
+// against the driven pattern's first four sampled bits — the rx judge,
+// exact by design (a value has no tolerance; the ladder lives on
+// timing judges).
+require('../levels/l6.js');
+const L6 = PioLevels.get('l6');
+const G6 = GOLDEN.levels.l6;
+const { createFake } = require('./fake-engine.js');
+
+test('l6 registers complete: the stimulus, the rx profile, the word face', () => {
+  assert.equal(L6.id, 'l6');
+  assert.equal(L6.name, 'Listen');
+  assert.equal(L6.chapter, 2);
+  assert.ok(L6.goal.length > 8);
+  // the given: one pattern cfg per driven pin, spelled exactly like the
+  // pattern contract the worker's cmd:'pattern' carries
+  assert.deepEqual(L6.stimulus, [{ mode: 'square', pin: 1, period: 4 }]);
+  // the reading debut: the ISR panel + the RX half of the fifo row. TX
+  // is the feeder's (L9, chapter 3) — absence covers the tx half, the
+  // pull connector, the osr, the feed and pattern panels both
+  for (const key of ['transport', 'listing', 'wave', 'isr', 'rxfifo'])
+    assert.ok(L6.panels.includes(key), `${key} is L6's surface`);
+  for (const absent of ['txfifo', 'osr', 'pullconn', 'feed', 'pattern', 'frameMap', 'delayCol'])
+    assert.ok(!L6.panels.includes(absent), `${absent} must stay absent in L6`);
+  // no editor: predict → run only
+  assert.deepEqual(L6.opcodes, []);
+  // the rx judge: versioned, exact words, no ladder
+  assert.equal(L6.profile.kind, 'rx');
+  assert.equal(L6.profile.v, 1);
+  assert.equal(L6.profile.tiers, undefined);
+  assert.deepEqual(L6.profile.words, [0x80000000, 0, 0x80000000, 0]);
+  // the word face: 32-bit candidates (the ISR's bits grammar), one of
+  // them the answer
+  assert.equal(L6.predict.face, 'isr');
+  assert.ok(L6.predict.candidates.every((c) => c.bits.length === 32));
+  assert.ok(L6.predict.candidates.some((c) => c.id === L6.predict.answer));
+  // predict → run: the gate locks the first run of the given program
+  assert.equal(PioLevels.gateOpen(L6, {}), false);
+  assert.equal(PioLevels.gateOpen(L6, { predicted: true }), true);
+  // the given program is the only honest one: par IS it
+  assert.deepEqual(L6.reference.par, { words: 2, period: 2 });
+});
+
+test('the stimulus and word-face validation reject malformed levels', () => {
+  const bad = (mutate, what) => {
+    const d = structuredClone(L6);
+    mutate(d);
+    assert.throws(() => PioLevels.register(`l6-${what}`, d), Error, what);
+  };
+  // the stimulus: a list, one pattern per pin, the pattern contract's
+  // own shape (even square periods, 0/1 bit strings)
+  bad((d) => {
+    d.stimulus = 'square';
+  }, 'not-a-list');
+  bad((d) => {
+    d.stimulus = [];
+  }, 'empty');
+  bad((d) => {
+    d.stimulus = [{ mode: 'nope', pin: 1 }];
+  }, 'bad-mode');
+  bad((d) => {
+    d.stimulus = [{ mode: 'square', pin: 1, period: 5 }];
+  }, 'odd-period');
+  bad((d) => {
+    d.stimulus = [
+      { mode: 'square', pin: 1, period: 4 },
+      { mode: 'square', pin: 1, period: 8 },
+    ];
+  }, 'same-pin-twice');
+  bad((d) => {
+    d.stimulus = [{ mode: 'bits', pin: 1, bits: '01x' }];
+  }, 'bad-bits');
+  // the rx profile: versioned words, 32-bit
+  bad((d) => {
+    d.profile = { ...d.profile, words: [0x100000000] };
+  }, 'word-too-wide');
+  bad((d) => {
+    d.profile = { ...d.profile, words: [] };
+  }, 'no-words');
+  // the word face: a face is wave|isr, and isr candidates are words
+  bad((d) => {
+    d.predict = { ...d.predict, face: 'byte' };
+  }, 'bad-face');
+  bad((d) => {
+    d.predict.candidates[0] = { ...d.predict.candidates[0], bits: '1010' };
+  }, 'short-bits');
+  // a square profile still demands its tiers
+  assert.throws(
+    () => PioLevels.register('l6-notiers', { ...L6, profile: { kind: 'square', v: 1, pin: 0 } }),
+    /tier/,
+  );
+});
+
+test('l6 words are pio_model-equal and canonically spelled; the boot is the reference', () => {
+  const prog = PioAsm.createProgram('c39-l6');
+  prog.sidesetBits = 0;
+  for (const row of L6.program.listing) {
+    const w = PioAsm.assembleInstruction(row, prog, {}, `l6 row ${row}`);
+    assert.equal(PioAsm.disassemble(w, false, 0), row, `${row} is not the canonical spelling`);
+  }
+  const st = PioLevels.programState(L6, PioAsm, VibeDriver);
+  assert.deepEqual(st.words, G6.words);
+  assert.equal(st.sms[0].pinctrl.inBase, 1, 'the IN mapping names the driven pin');
+  // predict→run: the listing IS the reference — no separate boot case
+  assert.equal(G6.boot, undefined);
+  assert.deepEqual(L6.program.listing, ['in pins, 1', 'push block']);
+});
+
+test('the l6 word contract: reference greens, the planted wrongs red legibly', () => {
+  const ref = caseOf(G6, 'reference');
+  // the pushed words decode to the driven pattern's bits — the
+  // committed golden's rx, replayed through the judge
+  assert.deepEqual(ref.rx, [0x80000000, 0, 0x80000000, 0]);
+  const v = PioLevels.judge(ref.rx, L6.profile);
+  assert.equal(v.pass, true, v.verdict);
+  assert.equal(v.code, 'pass');
+  assert.match(v.verdict, /4 words/);
+  // never-push: the gatherer without the hand-off — nothing to judge
+  const np = PioLevels.judge(caseOf(G6, 'never-push').rx, L6.profile);
+  assert.deepEqual(caseOf(G6, 'never-push').rx, []);
+  assert.equal(np.pass, false);
+  assert.equal(np.code, 'nowords');
+  assert.match(np.verdict, /no words/);
+  // in-count-wrong: two bits per word shift the bit one position low —
+  // the verdict names the first divergent bit (the near-miss face)
+  const icw = PioLevels.judge(caseOf(G6, 'in-count-wrong').rx, L6.profile);
+  assert.deepEqual(caseOf(G6, 'in-count-wrong').rx, [0x40000000, 0, 0x40000000, 0]);
+  assert.equal(icw.pass, false);
+  assert.equal(icw.code, 'diverge');
+  assert.equal(icw.verdict, 'word 1 bit 31 — got 0, want 1');
+  // a partial run keeps watching (3 of 4 words in)
+  assert.equal(PioLevels.judge(ref.rx.slice(0, 3), L6.profile).code, 'watching');
+  // the standing defect hook: any pushed words pass — the lens
+  // masquerading as a judge, divergence demonstrated in-process
+  assert.equal(
+    PioLevels.judge(caseOf(G6, 'never-push').rx, L6.profile, { judge: true }).pass,
+    false,
+    'no words at all stay red even defective',
+  );
+  assert.equal(
+    PioLevels.judge(caseOf(G6, 'in-count-wrong').rx, L6.profile, { judge: true }).pass,
+    true,
+  );
+  assert.equal(PioLevels.judge(ref.rx, L6.profile).pass, true, 'clean stays green');
+});
+
+test('the stimulus composes lockstep with the golden series (driver ↔ mirror)', () => {
+  // the golden's stim series is _SandboxMirror's composition over the
+  // level's exact load timeline; the driver — the same client core the
+  // worker runs — must compose the same gpio_in per rendered clk from
+  // the level's own stimulus cfg, armed before the load (the shell's
+  // order). This is the engine-side pin of setStimulus + the input
+  // history, the pattern machinery's own gate.
+  const drv = VibeDriver.create(createFake());
+  drv.setStimulus(L6.stimulus);
+  drv.load(PioLevels.programState(L6, PioAsm, VibeDriver));
+  drv.run(160);
+  const got = drv
+    .allGpioIn()
+    .map((w) => (w >>> 1) & 1)
+    .join('');
+  const golden = caseOf(G6, 'reference').stim['1'];
+  assert.ok(golden.length > got.length, 'the golden replay is at least as long');
+  assert.equal(
+    golden.slice(0, got.length),
+    got,
+    'the driver composed a different stimulus than the mirror',
+  );
+  // the wave window's stimulus row carries the same series (windowed)
+  const st = drv.getState();
+  assert.equal(st.wave.stim.length, 1);
+  assert.equal(st.wave.stim[0].pin, 1);
+  assert.equal(st.wave.stim[0].bits.join(''), got.slice(-128));
+});
+
+test('the pushed-word mirror latches the pre-edge ISR at the push strobe', () => {
+  // rxSeen is the judge's browser-side input: the driver latches the
+  // ISR sample of the completing push clk (SPEC-16-1's start-of-clk
+  // view — exactly the word the push retires), in push order
+  const fake = createFake();
+  const S = fake.S;
+  const drv = VibeDriver.create(fake);
+  drv.load(VibeDriver.EMPTY);
+  assert.deepEqual(drv.getState().sms[0].rxSeen, []);
+  fake.script([
+    { strobes0: S.S_RX_PUSH, isr0: 0x80000000 },
+    { strobes0: S.S_RX_PUSH, isr0: 0 },
+    { strobes0: S.S_RX_PUSH, isr0: 0xa5a5a5a5 },
+  ]);
+  drv.run(3);
+  assert.deepEqual(drv.getState().sms[0].rxSeen, [0x80000000, 0, 0xa5a5a5a5]);
+  // the judge's browser path is this mirror: the same rxJudge that
+  // greens the golden reds a divergent latch (the near-miss face)
+  assert.equal(PioLevels.judge([0x80000000, 0], L6.profile).pass, false);
+  assert.equal(PioLevels.judge(drv.getState().sms[0].rxSeen, L6.profile).code, 'diverge');
+});
+
+test('par dominates the l6 given program (front-trivial, still pinned)', () => {
+  const used = G6.words.filter((w) => w !== 0).length;
+  assert.ok(used <= L6.reference.par.words, `${used} words > par`);
+  assert.equal(used, L6.reference.par.words, 'the given program IS the par — front-trivial');
+});
+
 // targetGlyph is the pure descriptor the band glyphs and the wave-panel
 // gates render: the profile tier itself as geometry — a representative
 // accepted cycle plus the two windows the judge actually checks (the
@@ -729,11 +938,13 @@ test('targetGlyph: l3 spot values and the kind contract', () => {
     nextFrom: 4,
     nextTo: 4,
   });
-  // the glyph shares the judge's receiver contract — square only
+  // the glyph shares the judge's receiver contract — square only (the
+  // rx judge has no windows to draw; C40's byte glyphs are its face)
   assert.throws(
     () => PioLevels.targetGlyph({ kind: 'uart', tier: 'x', tiers: { x: {} } }),
     /no receiver/,
   );
+  assert.throws(() => PioLevels.targetGlyph(L6.profile), /no receiver/);
 });
 
 test('the judge carries a machine-readable code for the band face', () => {

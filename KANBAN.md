@@ -430,7 +430,7 @@ stops), make js 179 green, and the live browser session (L3's boot:
 L4 solved: "square — PASS (exact)" in green, the live glyph redrawn,
 par beside it).
 
-## Game track — level campaign, chapter 2 (C39–C41)
+## Game track — level campaign, chapter 2 (C40–C41)
 
 Scheduled 2026-09-06 by the chapter 2 grilling over
 mockups/LEVELS-NOTES.md (the 2026-09-04 didactics exploration stays
@@ -477,25 +477,56 @@ keyboard only through the two sanctioned headless gates; the levels
 gate stays engine-side. Dependency order: C39 → C40 → C41 (runtime
 unlock order stays numeric regardless: L5 → L6 → L7 → L8).
 
-C39 — the reading slice: stimulus + L6 Listen. The level format grows
+C39 landed 2026-09-06: the reading slice. The level format grows
 `stimulus` — a list of pattern cfgs ({mode:'square'|'bits', pin,
-period|bits}) mapping 1:1 onto the engine's existing pattern contract
-(the worker's `cmd:'pattern'`), validated at registration, applied at
-level load, read-only forever. The wave grows its second row (layout
-gate: the stimulus rows at both 13" viewports, red first). The goldens
-generator replays stimulus through _SandboxMirror's pattern machinery
-(already the driver's lockstep twin) and records per case the driven
-pins' series plus the pushed RX words (pio_model the oracle; the gate
-replays committed series/words through the judge). The RX judge debuts
-(profile kind 'rx', v:1: expected words, exact — no ladder, per the
-decision above; the verdict names the first divergent bit, the
-near-miss face). The predict word face: L6's candidates render as
-bit-word rows (the same bits grammar, labeled ISR). L6 itself:
-prefilled `in pins,1`/`push`, the ISR panel + the RX half of the FIFO
-row debut (TX absent until L9 — SURFACE key granularity follows the
-absence idiom), no editor (predict→run), predict locks the first run,
-par hand-set and front-trivial (the given program is the only honest
-one — the drift gate still pins it).
+period|bits}) mapped 1:1 onto the engine's pattern contract, validated
+at registration (even square periods, 0/1 bit strings, one pattern per
+pin), armed by the shell BEFORE the level load (the pattern phase
+starts at the load's first rendered clk — exactly the _SandboxMirror
+replay order), read-only forever (the pattern panel is absent on level
+pages). The driver's single sandbox pattern became a LIST
+(`setStimulus`; `setPattern` keeps the one-generator sandbox contract)
+composing one pin per pattern, with the composed gpio_in recorded per
+rendered clk (`allGpioIn`/`wave.stim` — op clks hold the last level,
+the shim's sticky discipline) so the wave draws the given: one trace
+row per driven input pin ABOVE the lens row, label `in <pin>`, at the
+shared px/clk on one time axis. The goldens generator replays stimulus
+through the mirror and records per case the driven pins' series plus
+the PUSHED RX words (read out by an honest FLEVEL + drain-exactly-
+the-level, the browser DRAIN's own bus traffic; pio_model the oracle).
+The RX judge debuts (levels.js `rxJudge`, kind 'rx' v:1: expected
+words, exact — no ladder; fewer words keeps watching, the verdict
+names the first divergent bit — and the driver's `rxSeen` mirror
+latches the pre-edge ISR at each push strobe, the judge's browser
+input; exact for instruction pushes, the autopush same-cycle edge is
+its documented limit). The predict word face: `predict.face:'isr'`
+candidates render as bit-word rows (the ISR panel's bits grammar,
+32 cells, stacked so they never wrap the predict row). L6 Listen:
+prefilled `in pins, 1`/`push block` (wrap 0..1, IN_BASE 1), the
+square period-4 given on gpio1, the ISR panel + the RX half of the
+fifo row debuting (SURFACE split `txfifo`/`rxfifo` — #fiforow stays
+while either half is unlocked; TX absent until L9), no editor
+(predict→run), predict locks the first run, the fifth push stalls on
+the full FIFO (the honest machine — acceptance is the first four
+pushed words 0x80000000/0/0x80000000/0), par hand-set 2 words · 2 clk
+(FRONT_CLASS 'given' — the level's own program is the only honest
+one; the drift gate pins it, `_rx_judge` the Python mirror). Gates:
+levels.test.js (7 new legs — the l6 legs ran red first: the level
+file did not exist; the rx-judge divergence demo re-injected any-
+words-pass; the stimulus-lockstep leg ran red on a one-clk phase
+defect in setStimulus and on the pre-C39 driver), the layout gate's
+L6 leg at both 13" viewports (ran red: the stimulus row was missing),
+the keyboard walk's L6 leg (ran red against the sandbox page: orphan
+stops bempty/bdemo/…; green with the reading surface — the ISR/rx
+stops reachable, the word face committed by keys, no editor), pytest
+189 green (a tampered l6 par red-flags), make js 189, make web
+re-verified (the mirror refactor rides the client gate). The live
+session also caught one shell bug before commit: svg carries no
+`hidden` IDL reflection — the rx judge's empty glyph boxes would have
+shown on the band (lvtarget/lvlive now toggleAttribute), and the
+sandbox stayed untouched (no stimulus row, 128 window, pattern panel
+present). make py's five pre-existing ruff findings (C36's note)
+remain — none in this card's files.
 
 C40 — L7 Echo: jmp pin gets its job, the decode judge debuts. Data
 pin (a byte's worth of bits) + enable pin (square) driven by the

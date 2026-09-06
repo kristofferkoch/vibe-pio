@@ -61,6 +61,39 @@
     if (!def?.program || !Array.isArray(def.program.listing))
       throw new Error('level: program.listing missing');
     for (const row of def.program.listing) str(row, 'program.listing row');
+    // C39: the reading levels' given — a list of pattern cfgs, one per
+    // driven input pin, spelled exactly like the engine's pattern
+    // contract ({mode:'square', pin, period} / {mode:'bits', pin, bits})
+    // so applying the stimulus IS one pattern call per entry. The level
+    // owns it forever: the pattern panel stays absent, the rows are the
+    // world's, never the player's to edit.
+    if (def?.stimulus !== undefined) {
+      if (!Array.isArray(def.stimulus) || !def.stimulus.length)
+        throw new Error('level: stimulus must be a non-empty list of pattern cfgs');
+      if (def.stimulus.length > 4)
+        throw new Error('level: at most four stimulus pins (one wave row each)');
+      const pins = new Set();
+      for (const cfg of def.stimulus) {
+        if (cfg?.mode === 'square') {
+          if (
+            !Number.isInteger(cfg.period) ||
+            cfg.period < 2 ||
+            cfg.period > 1024 ||
+            cfg.period & 1
+          )
+            throw new Error('level: stimulus square period must be an even clk count 2..1024');
+        } else if (cfg?.mode === 'bits') {
+          if (!/^[01]{1,256}$/.test(cfg.bits || ''))
+            throw new Error('level: stimulus bits must be a 0/1 string (1..256 clks)');
+        } else {
+          throw new Error('level: stimulus cfg mode must be square|bits');
+        }
+        if (!Number.isInteger(cfg.pin) || cfg.pin < 0 || cfg.pin > 31)
+          throw new Error('level: stimulus pin');
+        if (pins.has(cfg.pin)) throw new Error('level: one pattern per stimulus pin');
+        pins.add(cfg.pin);
+      }
+    }
     // C35: the reference solution is its own field when the boot program
     // is not the answer (the modify/make fade — L1 boots the un-slowed
     // program, L2 boots empty); every level ships one either way
@@ -70,8 +103,22 @@
       for (const row of def.reference.listing) str(row, 'reference.listing row');
     }
     const pr = def.profile;
-    if (pr?.kind !== 'square' || !Number.isInteger(pr?.v))
-      throw new Error('level: profile must be a versioned square receiver');
+    if (!Number.isInteger(pr?.v)) throw new Error('level: profile must be versioned');
+    if (pr.kind === 'rx') {
+      // C39: the RX judge — a pure judge over the pushed RX words, exact
+      // by design (a value has no tolerance; the tier ladder lives on
+      // timing judges — square here, decode at C40 — per the 2026-09-06
+      // grilling). The words are 32-bit values.
+      if (!Array.isArray(pr.words) || !pr.words.length || pr.words.length > 8)
+        throw new Error('level: rx profile needs its expected words (1..8)');
+      for (const w of pr.words)
+        if (!Number.isInteger(w) || w < 0 || w > 0xffffffff)
+          throw new Error('level: rx expected words are 32-bit values');
+    } else if (pr.kind === 'square') {
+      // the tier ladder skeleton (relaxed/exact/strict over one receiver)
+    } else {
+      throw new Error(`level: no receiver for profile kind ${JSON.stringify(pr?.kind)}`);
+    }
     // C36: the wave window is level geometry — a slow wave needs more
     // samples for the judge's stability window (L5's 64 clk/cycle runs a
     // 512-sample window; the default 128 covers every earlier level and
@@ -87,22 +134,31 @@
     }
     if (!Number.isInteger(pr.pin) || pr.pin < 0 || pr.pin > 31)
       throw new Error('level: profile.pin');
-    if (!pr.tiers?.[pr.tier]) throw new Error(`level: tier ${pr.tier} not defined`);
-    for (const [name, t] of Object.entries(pr.tiers)) {
-      for (const f of ['periodLo', 'periodHi', 'dutyLoPct', 'dutyHiPct', 'minPeriods', 'stable'])
-        if (!Number.isInteger(t[f]) || t[f] < 0) throw new Error(`level: tier ${name}.${f}`);
-      if (t.periodLo < 2 || t.periodLo > t.periodHi)
-        throw new Error(`level: tier ${name} period range`);
+    if (pr.kind === 'square') {
+      if (!pr.tiers?.[pr.tier]) throw new Error(`level: tier ${pr.tier} not defined`);
+      for (const [name, t] of Object.entries(pr.tiers)) {
+        for (const f of ['periodLo', 'periodHi', 'dutyLoPct', 'dutyHiPct', 'minPeriods', 'stable'])
+          if (!Number.isInteger(t[f]) || t[f] < 0) throw new Error(`level: tier ${name}.${f}`);
+        if (t.periodLo < 2 || t.periodLo > t.periodHi)
+          throw new Error(`level: tier ${name} period range`);
+      }
     }
     const pd = def?.predict;
     if (pd) {
       str(pd.ask, 'predict.ask', 8);
+      // C39: the word face — reading levels ask about a register's
+      // contents, not a wave shape; the candidates render as bit-word
+      // rows (the view's bits grammar) instead of wave thumbs
+      if (pd.face !== undefined && pd.face !== 'wave' && pd.face !== 'isr')
+        throw new Error('level: predict.face must be wave|isr');
       if (!Array.isArray(pd.candidates) || pd.candidates.length < 2)
         throw new Error('level: predict needs at least two candidates');
       for (const c of pd.candidates) {
         str(c.id, 'predict.candidate id');
         str(c.label, 'predict.candidate label', 4);
         if (!/^[01]+$/.test(c.bits || '')) throw new Error(`level: candidate ${c.id} bits`);
+        if (pd.face === 'isr' && c.bits.length !== 32)
+          throw new Error(`level: candidate ${c.id} bits must be one 32-bit word`);
       }
       if (!pd.candidates.some((c) => c.id === pd.answer)) throw new Error('level: predict.answer');
     }
@@ -216,9 +272,63 @@
     };
   }
 
+  // ================= the RX judge (C39) =================
+  // A pure judge over the PUSHED RX words (in push order): the words are
+  // compared against the profile's expected words exactly — a value has
+  // no tolerance, so no tier ladder (the 2026-09-06 grilling decision;
+  // the ladder lives on timing judges). The near-miss face is the point:
+  // the verdict names the first divergent bit, so "one bit wrong" reads
+  // as one bit, not as a red wall. Pure: the browser feeds it the
+  // driver's pushed-word mirror, the levels gate the committed golden
+  // words — the same verdict both sides.
+  function rxJudge(seen, profile, defects) {
+    const DEFECT = !!defects?.judge; // re-injected: any pushed word passes
+    const want = profile.words;
+    const got = seen || [];
+    if (!got.length)
+      return {
+        pass: false,
+        code: 'nowords',
+        verdict: 'no words yet — the machine has pushed nothing to the RX FIFO',
+      };
+    if (DEFECT)
+      return {
+        pass: true,
+        code: 'defect',
+        verdict: `rx (defect: ${got.length} words, unchecked)`,
+      };
+    for (let i = 0; i < want.length && i < got.length; i++) {
+      const g = got[i] >>> 0,
+        w = want[i] >>> 0;
+      if (g === w) continue;
+      for (let b = 31; b >= 0; b--) {
+        const gb = (g >>> b) & 1,
+          wb = (w >>> b) & 1;
+        if (gb !== wb)
+          return {
+            pass: false,
+            code: 'diverge',
+            verdict: `word ${i + 1} bit ${b} — got ${gb}, want ${wb}`,
+          };
+      }
+    }
+    if (got.length < want.length)
+      return {
+        pass: false,
+        code: 'watching',
+        verdict: `${got.length} of ${want.length} words in — keep watching`,
+      };
+    return {
+      pass: true,
+      code: 'pass',
+      verdict: `rx · ${want.length} words — the pushed bits are the given bits`,
+    };
+  }
+
   function judge(bits, profile, defects) {
-    if (profile.kind !== 'square') throw new Error(`judge: no receiver for ${profile.kind}`);
-    return squareJudge(bits, profile.tiers[profile.tier], defects);
+    if (profile.kind === 'square') return squareJudge(bits, profile.tiers[profile.tier], defects);
+    if (profile.kind === 'rx') return rxJudge(bits, profile, defects);
+    throw new Error(`judge: no receiver for ${profile.kind}`);
   }
 
   // ================= the golden target glyph =================
@@ -307,7 +417,11 @@
     execTitle: ['#exectitle'],
     execHead: ['#execslim'],
     isr: ['#isr'],
-    fifos: ['#fiforow'],
+    // C39: the fifo twins split — the reading leg (L6) unlocks the RX
+    // half alone (TX is the feeder's, chapter 3's L9); the row itself
+    // stays while either half is unlocked (applySurface derives it)
+    txfifo: ['#fifo'],
+    rxfifo: ['#rxfifo'],
     pullConn: ['#pullconn'],
     osr: ['#osr'],
     frameMap: ['#framemap'],
@@ -339,6 +453,12 @@
           el.hidden = true;
         });
     }
+    // C39: the fifo row's own visibility is derived — it stays while
+    // either half is unlocked (L6 ships the RX half alone, TX absent
+    // until the feeder chapter), and leaves layout entirely when both
+    // halves are locked (the whole-row absence every earlier level ships)
+    const fiforow = doc.querySelector('#fiforow');
+    if (fiforow) fiforow.hidden = !(unlocked.has('txfifo') || unlocked.has('rxfifo'));
     // lensPick pins rather than removes: the steppers (a Tab stop) leave
     // the order entirely while the pin NUMBER stays on the wave row's
     // face — the shell rewrites the label's own text node (C29
@@ -369,6 +489,7 @@
     all: () => [...LEVELS.keys()],
     judge,
     squareJudge,
+    rxJudge,
     targetGlyph,
     gateOpen,
     programState,

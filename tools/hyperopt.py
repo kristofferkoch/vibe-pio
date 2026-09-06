@@ -60,6 +60,7 @@ import hyperequiv as HE  # noqa: E402
 from gen_level_goldens import assemble as gg_assemble  # noqa: E402
 from gen_level_goldens import parse_level_file as gg_parse_level_file  # noqa: E402
 from gen_level_goldens import pin_series as gg_pin_series  # noqa: E402
+from gen_level_goldens import run_case as gg_run_case  # noqa: E402
 from pio_model import asm, difftest, stim, tracefmt  # noqa: E402
 from pio_model import encoding as E  # noqa: E402
 from pio_model import model as M  # noqa: E402
@@ -894,8 +895,11 @@ def tamper_delay(ctx: SeedCtx, cand: Candidate) -> list[Candidate]:
 # row — L3's preamble must run once) with a jmp back edge closing a loop
 # over the rows above it; "scramble" = the boot's rows in every order (L4:
 # the Parsons rung — the vocabulary is fixed, the order is the whole task,
-# so the honest space is the permutations). Every level under web/levels/
-# needs an entry.
+# so the honest space is the permutations); "given" = the level's own
+# program is the only honest one (L6: a predict→run level with no editor —
+# nothing else can be authored, so the front is the single given point and
+# the drift gate pins par == it). Every level under web/levels/ needs an
+# entry.
 FRONT_CLASS: dict[str, str] = {
     "l0": "wrap",
     "l1": "wrap",
@@ -903,9 +907,77 @@ FRONT_CLASS: dict[str, str] = {
     "l3": "prefix",
     "l4": "scramble",
     "l5": "wrap",
+    "l6": "given",
 }
 
+
+def _rx_judge(seen: Sequence[int], prof: dict[str, Any]) -> dict[str, Any]:
+    """The Python mirror of web/levels.js rxJudge (C39) — the JS gate
+    stays the authority (it replays the committed goldens); this mirror
+    exists so the front search can judge reading levels without a
+    browser. Same semantics: the pushed words compared against the
+    profile's expected words exactly, the verdict naming the first
+    divergent bit; fewer words than expected keeps watching; a value
+    has no tolerance, so there is no ladder.
+
+    >>> p = {"kind": "rx", "words": [0x80000000, 0]}
+    >>> _rx_judge([0x80000000, 0], p)["pass"]
+    True
+    >>> _rx_judge([0x40000000, 0], p)["verdict"]
+    'word 1 bit 31 — got 0, want 1'
+    >>> _rx_judge([], p)["verdict"]
+    'no words yet — the machine has pushed nothing to the RX FIFO'
+    >>> _rx_judge([0x80000000], p)["verdict"]
+    '1 of 2 words in — keep watching'
+    """
+    want = prof["words"]
+    got = list(seen or [])
+    if not got:
+        return {"pass": False, "verdict": "no words yet — the machine has pushed nothing to the RX FIFO"}
+    for i in range(min(len(want), len(got))):
+        g, w = got[i] & 0xFFFFFFFF, want[i] & 0xFFFFFFFF
+        if g == w:
+            continue
+        for b in range(31, -1, -1):
+            if ((g >> b) & 1) != ((w >> b) & 1):
+                return {
+                    "pass": False,
+                    "verdict": f"word {i + 1} bit {b} — got {(g >> b) & 1}, want {(w >> b) & 1}",
+                }
+    if len(got) < len(want):
+        return {"pass": False, "verdict": f"{len(got)} of {len(want)} words in — keep watching"}
+    return {"pass": True, "verdict": ""}
+
+
 _ROW_MAX = 32  # one row's clks: the instruction plus at most 31 delay (SPEC-4-3)
+
+_ROW_DELAY = re.compile(r"\[(\d+)\]$")
+
+
+def _given_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, list[str]]]:
+    """derive_level_front's given leg (C39's L6): the level's program is
+    the only honest solution — no editor exists, nothing else can be
+    authored — so the front is one point, model-verified through the
+    goldens' own load timeline + stimulus (the rx judge must go green
+    over the pushed words). The period axis is the analytic pre-stall
+    loop period: each row costs 1 + its delay (the given class carries
+    no jmp — the loop is the wrap, and the push-full stall that follows
+    is steady-state, not the loop).
+    """
+    prof = defn["profile"]
+    sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
+    ref = defn.get("reference", {}).get("listing") or defn["program"]["listing"]
+    if any(r.startswith("jmp") for r in ref):
+        raise SystemExit(f"front {lid}: given class assumes a wrap loop (no jmp rows)")
+    stimulus = defn.get("stimulus") or []
+    w32 = gg_assemble(ref, sms[0], f"front:{lid}") + [0] * (32 - len(ref))
+    rc = gg_run_case(w32, sms, stimulus, prof["pin"], True)
+    v = _rx_judge(rc.get("rx", []), prof)
+    if not v["pass"]:
+        raise SystemExit(f"front {lid}: the given program does not pass its own profile — {v['verdict']}")
+    period = sum(1 + (int(m.group(1)) if (m := _ROW_DELAY.search(r)) else 0) for r in ref)
+    used = len([w for w in w32 if w])
+    return [(used, period, ref)]
 
 
 def _js_round_div(num: int, den: int) -> int:
@@ -1159,6 +1231,8 @@ def derive_level_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, l
     kind = FRONT_CLASS[lid]
     if kind == "scramble":
         return _scramble_front(lid, defn)
+    if kind == "given":
+        return _given_front(lid, defn)
     prof = defn["profile"]
     tp = prof["tiers"][prof["tier"]]
     sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
@@ -1223,12 +1297,19 @@ def level_front_checks(repo: Path = REPO) -> list[tuple[str, bool]]:
         champion = (front[0][0], front[0][1]) if front else None
         checks.append((f"front-{lid}-par", champion == (par["words"], par["period"])))
         prof = defn["profile"]
-        tp = prof["tiers"][prof["tier"]]
+        tp = prof.get("tiers", {}).get(prof.get("tier"), {"periodLo": 0, "periodHi": 0})
         sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
         ref = defn.get("reference", {}).get("listing") or defn["program"]["listing"]
         w32 = gg_assemble(ref, sms[0], f"ref:{lid}") + [0] * (32 - len(ref))
-        v = _square_judge(gg_pin_series(w32, sms, prof["pin"]), tp)
         used = len([w for w in w32 if w])
+        if prof["kind"] == "rx":
+            # C39: the reading levels' reference leg — the rx judge over
+            # the model's pushed words (the same replay the gate commits)
+            rc = gg_run_case(w32, sms, defn.get("stimulus") or [], prof["pin"], True)
+            v_rx = _rx_judge(rc.get("rx", []), prof)
+            checks.append((f"front-{lid}-reference", bool(v_rx["pass"]) and used <= par["words"]))
+            continue
+        v = _square_judge(gg_pin_series(w32, sms, prof["pin"]), tp)
         checks.append(
             (
                 f"front-{lid}-reference",

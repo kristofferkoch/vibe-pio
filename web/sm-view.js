@@ -201,7 +201,7 @@ function syncAsmContext() {
 
 // C36: the wave's sample count is level geometry — L5's 64 clk/cycle
 // renders a 512-sample window (the sandbox and the early levels keep 128)
-const WIN = (LEVEL && LEVEL.waveWin) || 128;
+const WIN = LEVEL?.waveWin || 128;
 
 let PROG = BUILT.map((w, i) => ({ w, ...parseRow(wordsToRows(BUILT)[i]) }));
 
@@ -255,10 +255,11 @@ const V = {
     txWords: [],
     rxLevel: 0,
     rxWords: [],
+    rxSeen: [],
     rxMirror: { pushes: 0, drains: 0, ok: true },
     fifoDepths: { tx: 4, rx: 4 },
     monitor: { decoded: '', frameOff: null, square: null },
-    wave: { pins: [], tags: [], startCycle: 0 },
+    wave: { pins: [], tags: [], startCycle: 0, stim: [] },
     flashes: {},
     refused: 0,
     lens: { mode: 'off', pin: 0 },
@@ -290,6 +291,12 @@ worker.onmessage = (e) => {
     // C36: a slow-wave level widens the window BEFORE the first sample —
     // the wave and the judge see the level's own geometry from clk one
     if (LEVEL?.waveWin) post({ cmd: 'wavewin', n: LEVEL.waveWin });
+    // C39: the level's given is armed BEFORE the load, so the stimulus
+    // phase starts at the load's first rendered clk — the same order
+    // _SandboxMirror replays for the goldens (lockstep: the pattern's
+    // startIdx is 0 on both sides). Read-only forever: the pattern
+    // panel is absent on level pages, nothing can re-aim it.
+    if (LEVEL?.stimulus) post({ cmd: 'stimulus', cfgs: LEVEL.stimulus });
     post({ cmd: 'load', state: curState });
     applyUrlParams();
     return;
@@ -363,14 +370,26 @@ function buildLevelBand() {
   if (LEVEL.predict) {
     $('lvask').textContent = LEVEL.predict.ask;
     const host = $('lvcands');
+    // C39: the word face — reading levels ask about a register's
+    // contents, so the candidates render as bit-word rows (the same
+    // bits grammar the ISR panel draws, labeled ISR), not wave thumbs;
+    // the stack is a column so 32 cells never wrap the predict row
+    const word = LEVEL.predict.face === 'isr';
+    host.classList.toggle('words', word);
     host.innerHTML = LEVEL.predict.candidates
-      .map(
-        (c, i) =>
+      .map((c, i) => {
+        const face = word
+          ? `<b class="lctag">ISR</b><span class="bits lcand-bits" aria-hidden="true">${[...c.bits]
+              .map((b) => `<span class="bit${b === '1' ? '' : ' z'}">${b}</span>`)
+              .join('')}</span>`
+          : `<svg viewBox="0 0 ${c.bits.length * 4} 16" width="${c.bits.length * 2}" height="16" preserveAspectRatio="none" aria-hidden="true">` +
+            `<path d="${thumbPath([...c.bits].map(Number))}" stroke="var(--txt)" stroke-width="2" fill="none"/></svg>`;
+        return (
           `<div class="lcand" id="lcv${i}" role="option" aria-selected="false" data-i="${i}" data-tip="${c.label}">` +
-          `<svg viewBox="0 0 ${c.bits.length * 4} 16" width="${c.bits.length * 2}" height="16" preserveAspectRatio="none" aria-hidden="true">` +
-          `<path d="${thumbPath([...c.bits].map(Number))}" stroke="var(--txt)" stroke-width="2" fill="none"/></svg>` +
-          `<span>${c.label}</span></div>`,
-      )
+          face +
+          `<span>${c.label}</span></div>`
+        );
+      })
       .join('');
     lvPick = Math.max(
       0,
@@ -411,6 +430,13 @@ function buildLevelBand() {
   }
   // a solved level opens solved: par on the face, the predict card gone
   if (lvSession.solved) lvRevealSolved();
+  // the rx judge has no glyph pair — hidden from the band's first paint,
+  // not just from the first verdict (no empty glyph boxes ever). svg
+  // carries no `hidden` IDL reflection — the attribute is the contract
+  if (LEVEL.profile.kind === 'rx') {
+    $('lvtarget').toggleAttribute('hidden', true);
+    $('lvlive').toggleAttribute('hidden', true);
+  }
   lvGateApply();
 }
 function lvCommit() {
@@ -458,6 +484,11 @@ const LV_STATUS = {
   duty: ['duty — outside', 'bad'],
   defect: ['square (defect)', 'ok'],
   pass: ['square — PASS', 'ok'],
+  // C39: the rx judge's faces — a value has no tolerance, so the reds
+  // name the word and the bit, and there is no glyph pair (the C38
+  // golden-vs-measured grammar grows bytes at C40, not here)
+  nowords: ['no words', 'dim'],
+  diverge: ['word differs', 'bad'],
 };
 // both glyphs draw at one shared px/clk so the eye compares like for
 // like, quantized so neither exceeds the 64px glyph budget (the head
@@ -501,17 +532,46 @@ function lvDrawLive(v) {
   }
 }
 function lvMonitorFace(v) {
-  const [word, cls] = LV_STATUS[v.code] || [v.verdict, ''];
+  const [word0, cls] = LV_STATUS[v.code] || [v.verdict, ''];
+  const rx = LEVEL.profile.kind === 'rx';
+  // the pass word names its receiver — square's tier rides along, rx's
+  // value verdict has no tier to name
+  const word = v.code === 'pass' ? (rx ? 'rx — PASS' : `${word0} (${LEVEL.profile.tier})`) : word0;
   const b = $('lvverdict');
-  b.textContent = v.code === 'pass' ? `${word} (${LEVEL.profile.tier})` : word;
+  b.textContent = word;
   b.className = cls;
-  const face = v.pass ? `${v.verdict} — PASS (${LEVEL.profile.tier})` : v.verdict;
-  $('lvmon').dataset.tip = `${face} · gold = the tier's acceptance windows`;
+  const face = v.pass ? `${v.verdict} — PASS${rx ? '' : ` (${LEVEL.profile.tier})`}` : v.verdict;
+  const tipTail = rx
+    ? 'the rx judge compares the pushed words, exact'
+    : "gold = the tier's acceptance windows";
+  $('lvmon').dataset.tip = `${face} · ${tipTail}`;
   $('lvmon').setAttribute('aria-label', `monitor: ${face}`);
-  lvDrawTarget();
-  lvDrawLive(v);
+  // the square judge's glyph pair (golden tier template + last measured
+  // cycle) — the rx judge has no windows to draw; the verdict word and
+  // the pushed-word tooltip are its whole face
+  const glyphs = !rx;
+  $('lvtarget').toggleAttribute('hidden', !glyphs);
+  $('lvlive').toggleAttribute('hidden', !glyphs);
+  if (glyphs) {
+    lvDrawTarget();
+    lvDrawLive(v);
+  }
 }
 function levelJudge(st) {
+  if (LEVEL.profile.kind === 'rx') {
+    // the rx judge feeds on the PUSHED words (the driver's pre-edge ISR
+    // latch at each push strobe — SM0, the level's machine), never the
+    // wave: reading is invisible on the pins
+    const seen = st.sms?.[0]?.rxSeen || [];
+    if (!lvRanOnce && !seen.length) {
+      lvMonitorFace({ code: 'awaiting', verdict: 'awaiting run' });
+      return;
+    }
+    const v = PioLevels.judge(seen, LEVEL.profile);
+    lvMonitorFace(v);
+    if (v.pass) levelPass();
+    return;
+  }
   if (!st.wave.pins.length || (!lvRanOnce && st.wave.pins.every((b) => b === 0))) {
     lvMonitorFace({ code: 'awaiting', verdict: 'awaiting run', period: null, dutyPct: null });
     return;
@@ -1585,12 +1645,18 @@ function renderMonitor(st) {
 }
 
 // ---- waveform (svg): true engine pin samples, lens-derived tags --------
+// C39: the reading levels' given draws on the wave — one trace row per
+// driven input pin, ABOVE the lens row, at the same px/clk on the same
+// time axis: the echo lesson (chapter 2) is the two traces side by
+// side, the given and the response, like for like (the C38 grammar
+// extended from golden-vs-measured to stimulus-vs-response).
 const CW = 7,
   HI = 16,
   LO = 62,
   TAGY = 86,
   RULY = 104,
   H = 112;
+const STIM_ROW = 36; // one driven-input row's band (label + trace)
 function classOf(tag) {
   if (tag.startsWith('D')) return 'data';
   if (tag === 'IDLE') return 'idle';
@@ -1605,15 +1671,18 @@ function renderWave(st) {
   const w = st.wave;
   const n = Math.min(w.pins.length, WIN);
   const W = WIN * CW;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const stim = (LEVEL?.stimulus || []).length ? w.stim || [] : [];
+  const off = stim.length * STIM_ROW; // the given's band, above the lens row
+  const Y = (y) => y + off; // the lens row's own geometry shifts down
+  svg.setAttribute('viewBox', `0 0 ${W} ${H + off}`);
   svg.setAttribute('height', '100%');
   let s = '';
   const c0 = w.startCycle; // engine clk of first shown sample
   for (let k = 0; k <= WIN; k += 8) {
     const x = k * CW;
-    s += `<line x1="${x}" y1="8" x2="${x}" y2="${LO + 6}" stroke="var(--line)" stroke-width="1"/>`;
+    s += `<line x1="${x}" y1="4" x2="${x}" y2="${Y(LO) + 6}" stroke="var(--line)" stroke-width="1"/>`;
     if ((c0 + k) % 16 === 0 && k < WIN && Math.abs(x - n * CW) > 56)
-      s += `<text x="${x + 3}" y="${RULY}" fill="var(--dimmer)" font-size="16" font-family="var(--mono)">${c0 + k}</text>`;
+      s += `<text x="${x + 3}" y="${Y(RULY)}" fill="var(--dimmer)" font-size="16" font-family="var(--mono)">${c0 + k}</text>`;
   }
   $('lenspinval').textContent = lensPin;
   $('lensmodetxt').textContent = `· ${st.lens.mode === 'off' ? 'raw' : st.lens.mode} lens`;
@@ -1621,9 +1690,36 @@ function renderWave(st) {
     svg.innerHTML = s;
     return;
   }
+  // the driven inputs: one row each, the composed gpio_in the machine
+  // actually saw (the driver's history, load clks included — the same
+  // series _SandboxMirror replays and the goldens commit). The label
+  // speaks the C29 mapping grammar: `in <pin>` — the wire the world
+  // owns, distinct from the lens row's output view of the same number.
+  for (let r = 0; r < stim.length; r++) {
+    const bits = (stim[r].bits || []).slice(-n);
+    if (!bits.length) continue;
+    const yH = r * STIM_ROW + 17,
+      yL = r * STIM_ROW + 31;
+    let g = `<g class="stimrow" data-pin="${stim[r].pin}">`;
+    g += `<text x="3" y="${r * STIM_ROW + 13}" fill="var(--cfg-dim)" font-size="16" font-family="var(--mono)">in ${stim[r].pin}</text>`;
+    const yOfS = (b) => (b ? yH : yL);
+    let i = 0;
+    while (i < bits.length) {
+      let j = i + 1;
+      while (j < bits.length && bits[j] === bits[i]) j++;
+      const y = yOfS(bits[i]);
+      const x0 = i * CW,
+        x1 = j * CW;
+      if (i > 0)
+        g += `<path d="M${x0} ${yOfS(bits[i - 1])} L${x0} ${y}" stroke="var(--cfg-lit)" stroke-width="2"/>`;
+      g += `<path d="M${x0} ${y} L${x1} ${y}" stroke="var(--cfg-lit)" stroke-width="2"/>`;
+      i = j;
+    }
+    s += `${g}</g>`;
+  }
   const pins = w.pins.slice(-n),
     tags = w.tags.slice(-n);
-  const yOf = (p) => (p ? HI : LO);
+  const yOf = (p) => (p ? Y(HI) : Y(LO));
   let i = 0;
   while (i < n) {
     let j = i + 1;
@@ -1643,7 +1739,7 @@ function renderWave(st) {
     while (j < n && tags[j] === tags[i]) j++;
     if (j - i >= 3 && tags[i]) {
       const col = colOf[classOf(tags[i])];
-      s += `<text x="${((i + j) * CW) / 2}" y="${TAGY}" fill="${col}" font-size="16" font-family="var(--mono)" text-anchor="middle" opacity=".85">${tags[i]}</text>`;
+      s += `<text x="${((i + j) * CW) / 2}" y="${Y(TAGY)}" fill="${col}" font-size="16" font-family="var(--mono)" text-anchor="middle" opacity=".85">${tags[i]}</text>`;
     }
     i = j;
   }
@@ -1653,7 +1749,9 @@ function renderWave(st) {
   // draws as a tick — the exact tiers demand a point). The judge's
   // ruler as geometry; paint only, never layout — the measured cycle
   // comes from the window itself, the same edges the judge counts.
-  if (LEVEL) {
+  // Square profiles only — the rx judge's tolerance is none (a value),
+  // so there is no window to paint.
+  if (LEVEL && LEVEL.profile.kind === 'square') {
     const tp = LEVEL.profile.tiers[LEVEL.profile.tier];
     let r1 = -1,
       r2 = -1; // the last two rising edges in-window
@@ -1667,14 +1765,14 @@ function renderWave(st) {
       const p = r2 >= 0 ? r1 - r2 : tp.periodHi;
       const gate = (x0, x1) =>
         x1 - x0 < 1.5
-          ? `<line x1="${x0}" y1="${HI - 4}" x2="${x0}" y2="${LO + 4}" stroke="var(--gold)" stroke-width="1.5" opacity=".8"/>`
-          : `<rect x="${x0}" y="${HI - 4}" width="${x1 - x0}" height="${LO + 8 - HI}" fill="var(--gold)" opacity=".15"/>`;
+          ? `<line x1="${x0}" y1="${Y(HI) - 4}" x2="${x0}" y2="${Y(LO) + 4}" stroke="var(--gold)" stroke-width="1.5" opacity=".8"/>`
+          : `<rect x="${x0}" y="${Y(HI) - 4}" width="${x1 - x0}" height="${LO + 8 - HI}" fill="var(--gold)" opacity=".15"/>`;
       s += gate(x + ((p * tp.dutyLoPct) / 100) * CW, x + ((p * tp.dutyHiPct) / 100) * CW);
       s += gate(x + tp.periodLo * CW, x + tp.periodHi * CW);
     }
   }
-  s += `<line x1="${n * CW - 1}" y1="6" x2="${n * CW - 1}" y2="${LO + 6}" stroke="var(--amber)" stroke-width="1" opacity=".8"/>`;
-  s += `<text x="${n * CW - 5}" y="${RULY}" fill="var(--amber)" font-size="16" font-family="var(--mono)" text-anchor="end">${st.cycle}</text>`;
+  s += `<line x1="${n * CW - 1}" y1="6" x2="${n * CW - 1}" y2="${Y(LO) + 6}" stroke="var(--amber)" stroke-width="1" opacity=".8"/>`;
+  s += `<text x="${n * CW - 5}" y="${Y(RULY)}" fill="var(--amber)" font-size="16" font-family="var(--mono)" text-anchor="end">${st.cycle}</text>`;
   svg.innerHTML = s;
 }
 

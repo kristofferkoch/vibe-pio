@@ -438,18 +438,18 @@ class _SandboxMirror:
     def __init__(self) -> None:
         self.s = stim.Schedule()
         self.drives: list[int | None] = [None] * 32
-        self.pat_mode = "off"
-        self.pat_pin = 0
-        self.pat_period = 16
-        self.pat_bits: list[int] = [0]
-        self.start_idx = 0
+        # C39: the single pattern became a list — a level's stimulus is
+        # one pattern per driven input pin (set_stimulus); the client
+        # gate's one-generator set_pattern replaces the whole list, the
+        # JS twin's exact contract (engine-driver.js setPattern).
+        self.pats: list[dict[str, Any]] = []
 
     # -- stimulus composition (engine-driver.js composedGpio/patLevel) --
-    def _pattern_level(self, idx: int) -> int:
-        if self.pat_mode == "square":
-            return (idx // (self.pat_period >> 1)) % 2
-        if self.pat_mode == "bits":
-            return self.pat_bits[min(idx, len(self.pat_bits) - 1)]
+    def _pattern_level(self, pat: dict[str, Any], idx: int) -> int:
+        if pat["mode"] == "square":
+            return (idx // (pat["period"] >> 1)) % 2
+        if pat["mode"] == "bits":
+            return pat["bits"][min(idx, len(pat["bits"]) - 1)]
         return 0
 
     def _gpio(self) -> int:
@@ -457,10 +457,9 @@ class _SandboxMirror:
         for p, lvl in enumerate(self.drives):
             if lvl == 1:
                 g |= 1 << p
-        if self.pat_mode != "off":
-            idx = len(self.s.cycles) - self.start_idx
-            lvl = self._pattern_level(idx)
-            g = (g & ~(1 << self.pat_pin)) | (lvl << self.pat_pin)
+        for pat in self.pats:
+            idx = max(0, len(self.s.cycles) - pat["start_idx"])
+            g = (g & ~(1 << pat["pin"])) | (self._pattern_level(pat, idx) << pat["pin"])
         return g & 0xFFFFFFFF
 
     def _step_clk(self) -> None:
@@ -475,12 +474,47 @@ class _SandboxMirror:
         self.drives[pin] = lvl
 
     def set_pattern(self, mode: str = "off", pin: int = 0, period: int = 16, bits: list[int] | None = None) -> None:
-        self.pat_mode = mode
+        """The sandbox's ONE-generator contract (the JS twin's setPattern):
+        replaces every active pattern."""
+        self.pats = []
         if mode != "off":
-            self.pat_pin = pin
-            self.pat_period = period
-            self.pat_bits = bits or [0]
-        self.start_idx = len(self.s.cycles)
+            self.pats = [self._norm_pattern(mode, pin, period, bits)]
+        # re-arming restarts the phase at this clk, whatever the mode
+
+    def set_stimulus(self, cfgs: list[dict[str, Any]]) -> None:
+        """C39: the level's given — one pattern cfg per driven input pin,
+        all armed together at this clk (the JS twin's setStimulus; bits
+        may be a 0/1 string, the level format's spelling)."""
+        self.pats = [self._norm_pattern(c["mode"], c["pin"], c.get("period", 16), c.get("bits")) for c in cfgs]
+
+    def _norm_pattern(self, mode: str, pin: int, period: int, bits: list[int] | str | None) -> dict[str, Any]:
+        start = len(self.s.cycles)
+        if mode == "square":
+            # the JS twin rounds here (its UI cfg may carry a float); this
+            # side's callers are ints by signature — only the even-up and
+            # the floor survive the translation
+            p = max(2, period)
+            if p & 1:
+                p += 1  # even periods only (half low / half high)
+            return {"mode": "square", "pin": pin, "period": p, "bits": [0], "start_idx": start}
+        bl = [int(b) for b in bits] if isinstance(bits, str) else (list(bits) if bits else [])
+        return {"mode": "bits", "pin": pin, "period": 16, "bits": bl or [0], "start_idx": start}
+
+    def gpio_in_series(self) -> list[int]:
+        """The composed gpio_in per appended cycle (the sticky discipline:
+        op clks carry the last composed level) — the JS twin's
+        allGpioIn(), the stimulus rows' and the goldens' driven series."""
+        return [c[0] for c in self.s.cycles]
+
+    def drain_all(self, sm: int = 0) -> int:
+        """Read FLEVEL, then drain exactly the reported RX level — the
+        pushed words in push order, never past the level (RXUNDER is a
+        defect, not an observation). -> the number of words drained."""
+        self.flevel()
+        reads = [r for r in run_model_trace(self.s) if r[0] == "R"]  # the freshest FLEVEL read
+        lvl = (reads[-1][3] >> (4 + 8 * sm)) & 0xF  # SPEC-7-29: RX0 7:4, RX1 15:12, ...
+        self.drain(lvl, sm)
+        return lvl
 
     # -- the load timeline (engine-driver.js load): nonzero imem words,
     #    then per SM PINCTRL, EXECCTRL, SHIFTCTRL, the one SPEC-6-2 settle

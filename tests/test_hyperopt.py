@@ -407,3 +407,35 @@ def test_level_front_flags_a_tampered_scramble_par(tmp_path) -> None:
     checks = dict(H.level_front_checks(tmp_path))
     assert checks["front-l4-par"] is False
     assert checks["front-l4-reference"] is True  # 5 words still fit the lying 6
+
+
+def test_level_front_flags_a_tampered_given_par(tmp_path) -> None:
+    # C39: the given front (the level's own program is the only honest
+    # one) must bite too — a par looser than the given point is drift,
+    # even with no editor in the level. The red side re-injects one word
+    # of slack into l6's par.
+    (tmp_path / "web").mkdir()
+    shutil.copytree(H.REPO / "web" / "levels", tmp_path / "web" / "levels")
+    p = tmp_path / "web" / "levels" / "l6.js"
+    assert '"words": 2' in p.read_text()  # the par line is the only hit
+    p.write_text(p.read_text().replace('"words": 2', '"words": 3'))
+    checks = dict(H.level_front_checks(tmp_path))
+    assert checks["front-l6-par"] is False
+    assert checks["front-l6-reference"] is True  # 2 words still fit the lying 3
+
+
+def test_rx_judge_mirror_names_the_first_divergent_bit() -> None:
+    # C39: the rx mirror's near-miss face — the verdict names the word
+    # and the bit, the whole legibility point of a value judge
+    p = {"kind": "rx", "words": [0x80000000, 0, 0x80000000, 0]}
+    assert H._rx_judge([0x80000000, 0, 0x80000000, 0], p)["pass"] is True
+    # in-count-wrong (the golden's committed red): the bit lands one
+    # position low — the first differing bit from the top is 31
+    # (0x40000000 vs 0x80000000: got 0, want 1)
+    v = H._rx_judge([0x40000000, 0, 0x40000000, 0], p)
+    assert v["pass"] is False
+    assert v["verdict"] == "word 1 bit 31 — got 0, want 1"
+    # never-push: nothing to judge
+    assert "no words" in H._rx_judge([], p)["verdict"]
+    # a partial run keeps watching
+    assert "3 of 4" in H._rx_judge([0x80000000, 0, 0x80000000], p)["verdict"]

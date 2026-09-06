@@ -595,9 +595,17 @@
         shiftctrl: { ...s.shiftctrl },
       };
     });
-    // stimulus wiring: per-pin drive latches + the pattern generator
+    // stimulus wiring: per-pin drive latches + the pattern generators.
+    // C39: the single sandbox pattern became a LIST — a level's stimulus
+    // is one pattern cfg per driven input pin, composed simultaneously
+    // (setStimulus); the sandbox UI's one-generator contract is kept by
+    // setPattern, which replaces the whole list. Each pattern's phase is
+    // a pure function of clks since it was armed (startIdx), so a reset
+    // (load) replays the same series from the load's first clk.
     const drives = new Array(32).fill(null); // null | 0 | 1 (mutated in place)
-    let pattern = { mode: 'off', pin: 0, period: 16, bits: [0], startIdx: 0 }; // reassigned by setPattern
+    let pats = []; // [{mode, pin, period, bits, startIdx}] — empty = off
+    let lastGpioIn = 0; // the composed gpio_in the engine last saw (held on op clks)
+    let gpioInWords = []; // the composed input per rendered clk (the stimulus rows' truth)
     // the monitor lens
     let lens = { mode: 'off', pin: 0 };
     // the per-SM TX/RX mirrors (display bookkeeping; the engine's
@@ -606,6 +614,14 @@
     let rxPushes = [0, 0, 0, 0];
     let rxDrains = [0, 0, 0, 0];
     let rxWords = [[], [], [], []]; // drained words (the only way contents are learned)
+    // C39: the PUSHED words, in push order — the pre-edge ISR sample
+    // latched at the push strobe (SPEC-16-1's start-of-clk view is
+    // exactly the word the push retires). The RX judge's input. Exact
+    // for instruction pushes; autopush's same-cycle push retires the
+    // POST-shift ISR (SPEC-3.3-9), which the pre-edge sample cannot see
+    // — the level campaign never autopushes, and that limit is this
+    // mirror's documented edge.
+    let rxSeen = [[], [], [], []];
     let lastExecPc = [0, 0, 0, 0]; // latched at record time (the C20 lesson)
     let flashes = [{}, {}, {}, {}];
     // pad ownership: the last SM to write each pin (CC-7 scan order)
@@ -739,6 +755,9 @@
         const s = cycle.sms[i];
         if (s.strobes & S_TX_POP && !DEFECT_MIRROR) txWords[i].shift(); // defect: never pops
         if (s.strobes & S_RX_PUSH && !DEFECT_RX) rxPushes[i]++; // defect: never counts
+        // C39: the pushed word — the pre-edge ISR is exactly what this
+        // retiring push hands to the RX FIFO (the rx judge's input)
+        if (s.strobes & S_RX_PUSH) rxSeen[i].push(s.isr >>> 0);
         flashes[i] = {
           pull: !!(s.strobes & S_TX_POP),
           push: !!(s.strobes & S_RX_PUSH),
@@ -760,25 +779,27 @@
     }
 
     // ---- stimulus composition (gpio_in for plain steps) --------------
-    function patLevel() {
-      const idx = pins.length - pattern.startIdx + (DEFECT_PATTERN ? 1 : 0); // defect: 1 clk ahead
-      if (pattern.mode === 'square')
-        return (Math.floor(idx / (pattern.period >> 1)) & 1) === 1 ? 1 : 0;
-      if (pattern.mode === 'bits') {
-        const b = pattern.bits;
-        return b[Math.max(0, Math.min(idx, b.length - 1))];
+    // One pattern's level at clk offset idx from its own arming.
+    function patLevelOf(p, idx) {
+      const i = idx + (DEFECT_PATTERN ? 1 : 0); // defect: 1 clk ahead
+      if (p.mode === 'square') return (Math.floor(i / (p.period >> 1)) & 1) === 1 ? 1 : 0;
+      if (p.mode === 'bits') {
+        const b = p.bits;
+        return b[Math.max(0, Math.min(i, b.length - 1))];
       }
       return 0;
     }
     function composedGpio() {
       let g = 0;
       for (let p = 0; p < 32; p++) if (drives[p] === 1) g |= 1 << p;
-      if (pattern.mode !== 'off') g = (g & ~(1 << pattern.pin)) | (patLevel() << pattern.pin);
+      for (const p of pats)
+        g = (g & ~(1 << p.pin)) | (patLevelOf(p, Math.max(0, pins.length - p.startIdx)) << p.pin);
       return g >>> 0;
     }
 
     function doWrite(addr, data, fjoinFlush) {
       M._pio_reg_write(addr, data | 0);
+      gpioInWords.push(lastGpioIn); // op clks hold the last composed input (the shim's sticky discipline)
       if (fjoinFlush) {
         // SPEC-6-2: the FJOIN change flushes that SM's FIFOs (the
         // engine retires the discard on the following clk) — the
@@ -795,6 +816,7 @@
     }
     function doRead(addr) {
       const v = M._pio_reg_read(addr);
+      gpioInWords.push(lastGpioIn); // op clks hold the last composed input
       record(readCycle());
       readLog.push({ addr, rdata: v >>> 0 });
       if (readLog.length > 16) readLog.shift();
@@ -809,7 +831,10 @@
       // irq_prev/next are the NEIGHBOUR BLOCKS' relay views (pio_top's,
       // CC-38) — inter-SM IRQ inside this block runs on the shared flag
       // register, so the sandbox steps with both idles.
-      M._pio_step(composedGpio(), 0, 0);
+      const gin = composedGpio();
+      lastGpioIn = gin;
+      gpioInWords.push(gin);
+      M._pio_step(gin, 0, 0);
       record(readCycle());
     }
 
@@ -837,6 +862,9 @@
       rxPushes = [0, 0, 0, 0];
       rxDrains = [0, 0, 0, 0];
       rxWords = [[], [], [], []];
+      rxSeen = [[], [], [], []];
+      gpioInWords = [];
+      lastGpioIn = 0;
       lastExecPc = [0, 0, 0, 0];
       flashes = [{}, {}, {}, {}];
       pinOwner = new Array(32).fill(-1);
@@ -1032,28 +1060,44 @@
     // The deterministic pattern generator: square (period clks, even,
     // half low / half high) or a pasted bitstream (plays once per clk,
     // holds its final bit), on one pin — it owns the pin over the drive
-    // latch. Output is a pure function of clks since arming.
+    // latch. Output is a pure function of clks since arming. The
+    // sandbox's ONE-generator contract: replaces every active pattern.
     function setPattern(cfg) {
       const mode = cfg?.mode || 'off';
       if (!['off', 'square', 'bits'].includes(mode)) throw new Error('pattern: bad mode');
-      pattern = {
-        mode,
-        pin: pattern.pin,
-        period: pattern.period,
-        bits: pattern.bits,
-        startIdx: pins.length,
-      };
-      if (mode === 'square') {
+      pats = [];
+      if (mode === 'off') return;
+      pats = [normalizePattern(cfg, pins.length)];
+    }
+    function normalizePattern(cfg, startIdx) {
+      const pin = clampPin(cfg.pin);
+      if (cfg.mode === 'square') {
         let p = Math.max(2, Math.round(Number(cfg.period) || 16));
         if (p & 1) p++; // even periods only (half low / half high)
-        pattern.period = p;
-        pattern.pin = clampPin(cfg.pin);
-      } else if (mode === 'bits') {
-        const bits = (cfg.bits || []).map((b) => (b ? 1 : 0));
-        if (!bits.length) bits.push(0);
-        pattern.bits = bits;
-        pattern.pin = clampPin(cfg.pin);
+        return { mode: 'square', pin, period: p, bits: [0], startIdx };
       }
+      // bits: a 0/1 string (the level format) or the UI's number array
+      const src = typeof cfg.bits === 'string' ? [...cfg.bits].map(Number) : cfg.bits || [];
+      const bits = src.map((b) => (b ? 1 : 0));
+      if (!bits.length) bits.push(0);
+      return { mode: 'bits', pin, period: 16, bits, startIdx };
+    }
+    // C39: the level stimulus — one pattern cfg per driven input pin,
+    // all armed together at this clk (the level applies it at boot,
+    // before the load, so the pattern's phase starts at the load's
+    // first rendered clk — exactly what _SandboxMirror replays). The
+    // pins must be distinct: two generators on one wire is a wiring
+    // error, not a level.
+    function setStimulus(cfgs) {
+      if (!Array.isArray(cfgs)) throw new Error('stimulus: a list of pattern cfgs');
+      const next = cfgs.map((cfg) => normalizePattern(cfg, pins.length));
+      const pinsUsed = new Set();
+      for (const p of next) {
+        if (p.mode === 'off') throw new Error('stimulus: a cfg must drive a pin');
+        if (pinsUsed.has(p.pin)) throw new Error(`stimulus: two patterns on pin ${p.pin}`);
+        pinsUsed.add(p.pin);
+      }
+      pats = next;
     }
     function clampPin(pin) {
       const p = Number(pin);
@@ -1172,6 +1216,7 @@
         txWords: txWords[i].slice(),
         rxLevel: s ? s.rxLevel : 0,
         rxWords: rxWords[i].slice(),
+        rxSeen: rxSeen[i].slice(),
         rxMirror: {
           pushes: rxPushes[i],
           drains: rxDrains[i],
@@ -1246,6 +1291,7 @@
         txWords: sel.txWords,
         rxLevel: sel.rxLevel,
         rxWords: sel.rxWords,
+        rxSeen: sel.rxSeen,
         rxMirror: sel.rxMirror,
         fifoDepths: sel.fifoDepths,
         monitor: {
@@ -1260,13 +1306,23 @@
           pins: pins.slice(-WAVE_WIN),
           tags: tags.slice(-WAVE_WIN),
           startCycle: Math.max(0, pins.length - WAVE_WIN),
+          // C39: the driven input pins — one bit series per stimulus
+          // pattern, the same window the lens row shows, so the wave
+          // draws the given and the response on one time axis
+          stim: pats.map((p) => ({
+            pin: p.pin,
+            mode: p.mode,
+            bits: gpioInWords.slice(-WAVE_WIN).map((w) => (w >>> p.pin) & 1),
+          })),
         },
         flashes: sel.flashes,
         refused,
         lens: { ...lens },
         overlay: sel.overlay,
         drives: drives.slice(),
-        pattern: { ...pattern, bits: pattern.bits.slice() },
+        pattern: pats[0]
+          ? { ...pats[0], bits: pats[0].bits.slice() }
+          : { mode: 'off', pin: 0, period: 16, bits: [0], startIdx: 0 },
         readLog: readLog.slice(),
       };
     }
@@ -1285,6 +1341,7 @@
       applyControl,
       setDrive,
       setPattern,
+      setStimulus, // C39: the level's stimulus — one pattern per driven pin
       setLens,
       setWaveWin, // C36: the wave window (level geometry — L5 judges slowly)
       drainRx,
@@ -1297,6 +1354,8 @@
       readFlevel: () => readRegNow(REG.FLEVEL),
       allPins: () => pins.slice(),
       allGpio: () => gpioWords.slice(),
+      allGpioIn: () => gpioInWords.slice(), // C39: the composed input series
+      stimulusPats: () => pats.map((p) => ({ ...p, bits: p.bits.slice() })),
       REG,
       ST,
     };

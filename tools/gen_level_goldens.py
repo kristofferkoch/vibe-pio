@@ -149,6 +149,16 @@ PERTURBATIONS: dict[str, list[tuple[str, list[str]]]] = {
         ("high-before-jmp", ["set pins, 1 [7]", "set pins, 0 [1]", "set pins, 0 [2]", "set pins, 1 [1]", "jmp 1"]),
         ("dead-rows", ["set pins, 1 [7]", "set pins, 1 [1]", "jmp 1", "set pins, 0 [1]", "set pins, 0 [2]"]),
     ],
+    # C39 L6: the reading slice's wrong answers. never-push: the gatherer
+    # without the hand-off — `in` fills the ISR forever (the counter
+    # saturates at 32) and the RX FIFO stays empty, so the judge has
+    # nothing to judge; in-count-wrong: doubling the IN count shifts TWO
+    # bits per word (bits 31:30), so the first word is 0xA0000000 — the
+    # verdict names the first divergent bit (bit 30), the near-miss face
+    "l6": [
+        ("never-push", ["in pins, 1", "nop"]),
+        ("in-count-wrong", ["in pins, 2", "push block"]),
+    ],
 }
 
 LEVEL_RE = re.compile(
@@ -241,7 +251,35 @@ def pin_series(words: list[int], sms: list[dict[str, Any] | None], pin: int) -> 
     """The driver's load timeline + RUN_CLKS plain clks, replayed on
     pio_model; the profile pin's level per rendered clk (G records —
     load clks included, exactly what allPins()/the wave window carry)."""
+    return run_case(words, sms, [], pin, False)["series"]
+
+
+def run_case(
+    words: list[int],
+    sms: list[dict[str, Any] | None],
+    stimulus: list[dict[str, Any]],
+    pin: int,
+    want_rx: bool,
+) -> dict[str, Any]:
+    """One case's full replay (C39 grew pin_series): the level's
+    stimulus is armed BEFORE the load — the shell's exact order, so the
+    pattern phase starts at the load's first rendered clk — then the
+    load timeline + RUN_CLKS plain clks. Records per case:
+
+      - `series`: the profile pin's OUTPUT level per rendered clk (G
+        records — the wave row's truth);
+      - `stim`: per driven input pin, the composed gpio_in per clk (the
+        mirror's own composition — the driver's allGpioIn() lockstep
+        twin, the stimulus rows' truth; the pattern machinery is
+        driver/mirror-side by construction, the engine enters through
+        what the machine DOES with it);
+      - `rx`: the pushed RX words in push order (want_rx; an rx-judge
+        level's truth) — read out by an honest FLEVEL read + a drain of
+        exactly the reported level, the same bus traffic the browser
+        player's DRAIN rides.
+    """
     m = _SandboxMirror()
+    m.set_stimulus(stimulus)
     m.load(
         words,
         [
@@ -258,8 +296,17 @@ def pin_series(words: list[int], sms: list[dict[str, Any] | None], pin: int) -> 
         ],
     )
     m.run(RUN_CLKS)
-    gpio = [rec[2] for rec in run_model_trace(m.s) if rec[0] == "G"]
-    return "".join(str((g >> pin) & 1) for g in gpio)
+    if want_rx:
+        m.drain_all(0)
+    recs = run_model_trace(m.s)
+    gpio = [rec[2] for rec in recs if rec[0] == "G"]
+    out: dict[str, Any] = {"series": "".join(str((g >> pin) & 1) for g in gpio)}
+    if stimulus:
+        gin = m.gpio_in_series()
+        out["stim"] = {str(cfg["pin"]): "".join(str((g >> cfg["pin"]) & 1) for g in gin) for cfg in stimulus}
+    if want_rx:
+        out["rx"] = [rec[3] for rec in recs if rec[0] == "R" and rec[2] == stim.A_RXF0]
+    return out
 
 
 def compose_all(sms: list[dict[str, Any] | None]) -> list[dict[str, int | None]]:
@@ -280,23 +327,25 @@ def generate() -> dict[str, Any]:
         lid, defn = parse_level_file(path)
         sms: list[dict[str, Any] | None] = defn["program"].get("sms") or [None, None, None, None]
         pin = defn["profile"]["pin"]
+        stimulus = defn.get("stimulus") or []
+        want_rx = defn["profile"]["kind"] == "rx"
         # the reference solution is its own field since C35 (the fade):
         # levels that boot something else (L1's un-slowed program, L2's
         # empty listing) still ship their answer here
         ref_listing = defn.get("reference", {}).get("listing") or defn["program"]["listing"]
         boot_listing = defn["program"]["listing"]
         words = new_words(assemble(ref_listing, sms[0], lid))
-        cases = [{"name": "reference", "listing": ref_listing, "series": pin_series(words, sms, pin)}]
+        cases = [{"name": "reference", "listing": ref_listing, **run_case(words, sms, stimulus, pin, want_rx)}]
         for name, listing in PERTURBATIONS.get(lid, []):
             w = new_words(assemble(listing, sms[0], f"{lid}:{name}"))
-            cases.append({"name": name, "listing": listing, "series": pin_series(w, sms, pin)})
+            cases.append({"name": name, "listing": listing, **run_case(w, sms, stimulus, pin, want_rx)})
         # the boot program, when it is not the reference (L1/L2): the gate
         # asserts it does NOT pass its own profile — the task is real
         # from cycle one
         boot: dict[str, Any] = {}
         if boot_listing != ref_listing:
             bw = new_words(assemble(boot_listing, sms[0], f"{lid}:boot"))
-            boot = {"listing": boot_listing, "words": bw, "series": pin_series(bw, sms, pin)}
+            boot = {"listing": boot_listing, "words": bw, **run_case(bw, sms, stimulus, pin, want_rx)}
         out["levels"][lid] = {
             "words": words,
             **({"boot": boot} if boot else {}),
