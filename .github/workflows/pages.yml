@@ -1,0 +1,74 @@
+# GitHub Pages deploy of the shipped client (web/sm-view.html + the
+# C17 AOT wasm engine). Every asset reference in the client is relative
+# to the page — the engine at ../build/web/pio_engine.js (web/sm-view.js),
+# the wasm beside the engine JS via locateFile (web/engine-worker.js),
+# fonts and levels under web/ — so the artifact simply keeps the repo
+# layout and Pages' project subpath (/vibe-pio/) needs no code changes.
+#
+# The two build tools are pinned exactly like container/Dockerfile:
+# Verilator 5.032 (Debian trixie package) and emsdk 6.0.8 (repo
+# commit-pinned), so the deployed engine is the same build `make web`
+# produces locally. Gates (self-test etc.) stay local/make; this
+# workflow only builds and deploys.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie-slim
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Install toolchain (verilator 5.032 from trixie, as pinned in container/Dockerfile)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            verilator python-is-python3 xz-utils make \
+            git ca-certificates tar libstdc++6
+          rm -rf /var/lib/apt/lists/*
+      - uses: actions/checkout@v4
+      - name: emsdk 6.0.8 (commit-pinned, as pinned in container/Dockerfile)
+        run: |
+          git clone --branch 6.0.8 --depth 1 \
+            https://github.com/emscripten-core/emsdk /opt/emsdk
+          cd /opt/emsdk
+          test "$(git rev-parse HEAD)" = "e5bd3d0874e302a18f13c5b41f5bacf9a40c8e59"
+          ./emsdk install 6.0.8
+          ./emsdk activate 6.0.8
+      - name: Build the wasm engine
+        run: python3 tools/webbuild.py --build
+        env:
+          EMSDK: /opt/emsdk
+          EM_CONFIG: /opt/emsdk/.emscripten
+          PATH: /opt/emsdk/upstream/emscripten:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - name: Assemble the site artifact
+        run: |
+          mkdir -p site/web site/build/web
+          cp -r web/sm-view.html web/sm-view.js web/sm-view.css \
+                web/engine-driver.js web/engine-worker.js \
+                web/pio-asm.js web/row-complete.js web/levels.js \
+                web/levels web/fonts site/web/
+          cp build/web/pio_engine.js build/web/pio_engine.wasm site/build/web/
+          printf '<!doctype html><meta http-equiv="refresh" content="0;url=web/sm-view.html">\n' \
+            > site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
