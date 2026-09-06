@@ -1,24 +1,28 @@
 # CI — the repo's make gates, on GitHub's free public-repo runners.
 #
 # Host-side gates (py, js) run natively on ubuntu-latest: uv is
-# pip-installed at the version pinned below, node/npm and google-chrome
-# (the browser gates' PATH fallback — web/tests/browser.js) are
-# preinstalled on the runner image. Both read the gitignored
-# third_party/pico-examples clone (the C19 golden fixtures and
-# hyperopt's load_seed doctest), so they materialize it at the pinned
-# commit from sim/gen_conf_pioexamples.py's provenance header.
+# pip-installed at the version pinned below, node/npm are preinstalled,
+# and PIO_BROWSER points the browser gates at the runner's real Chrome
+# (the /usr/bin/chromium snap stub prints no DevTools endpoint).
+#
+# Every job that runs make targets first materializes the gitignored
+# third_party/pico-examples clone at the pinned commit from
+# sim/gen_conf_pioexamples.py's provenance header — the conformance
+# corpus (.pio sources) is parsed by the py doctests, the js golden
+# generators, and the model/equiv/web self-tests alike.
 #
 # RTL-facing gates run inside the pinned container (container/Dockerfile,
-# the same image `make`'s tools fall back to on a bare host): the image
-# is built once per run by the `image` job into the GitHub Actions layer
-# cache (~19 min cold — yosys/boolector/emsdk from source; ~2-3 min
-# restored while the Dockerfile is unchanged), and each gate job
-# restores it, then runs its targets the repo's own way —
-# docker run --rm -v $PWD:/work -w /work.
+# the same image `make`'s tools fall back to on a bare host). The image
+# is built once per run by the `image` job and pushed to GHCR (~20 min
+# cold — yosys/boolector/emsdk from source; the GHA layer cache speeds
+# later builds while the Dockerfile is unchanged). Gate jobs pull it —
+# the cache cannot be handed to sibling jobs within one run, so each
+# gate building its own copy would cold-build every time. They run the
+# targets the repo's own way: docker run --rm -v $PWD:/work -w /work.
 #
 # Measured budgets (in-container, 2026-09-06): sim+syn+audit+model
 # ~15 min, equiv+hyperopt ~7 min, synth ~15 min, web ~10 min (the
-# Makefile's own numbers for the latter two); py ~2 min and js ~15 s
+# Makefile's own numbers for the latter two); py ~1 min and js ~30 s
 # host-side. `formal` is the exception — hours-class (the sby notes
 # record a 1:15 h single prove) and lives in its own workflow
 # (formal.yml) so this fast lane's cancel-in-progress concurrency never
@@ -39,6 +43,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PINNED_PICO_EXAMPLES: c81c855ffdedc825975a40ba357723a71358ddf0
+
 jobs:
   py:
     runs-on: ubuntu-latest
@@ -49,7 +56,7 @@ jobs:
       # hyperopt's load_seed doctest assembles the pico-examples sources
       - run: |
           git clone https://github.com/raspberrypi/pico-examples third_party/pico-examples
-          git -C third_party/pico-examples checkout c81c855ffdedc825975a40ba357723a71358ddf0
+          git -C third_party/pico-examples checkout $PINNED_PICO_EXAMPLES
       - run: make py
 
   js:
@@ -60,7 +67,7 @@ jobs:
       # the C19/C34 golden generators parse the upstream .pio sources
       - run: |
           git clone https://github.com/raspberrypi/pico-examples third_party/pico-examples
-          git -C third_party/pico-examples checkout c81c855ffdedc825975a40ba357723a71358ddf0
+          git -C third_party/pico-examples checkout $PINNED_PICO_EXAMPLES
       - run: make js
         env:
           # the runner's /usr/bin/chromium is Ubuntu's snap stub — it
@@ -70,68 +77,87 @@ jobs:
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
       - run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker buildx create --use
           docker buildx build \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
-            --tag vibe-pio:ci \
-            container/
+            --tag ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-${{ github.sha }} \
+            --tag ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-main \
+            --push container/
 
   sim:
     needs: image
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
+      # make model's asm-check parses the conformance .pio sources
       - run: |
-          docker buildx create --use
-          docker buildx build \
-            --cache-from type=gha \
-            --tag vibe-pio:ci \
-            --load container/
-      - run: docker run --rm -v "$PWD:/work" -w /work vibe-pio:ci make sim syn audit model
+          git clone https://github.com/raspberrypi/pico-examples third_party/pico-examples
+          git -C third_party/pico-examples checkout $PINNED_PICO_EXAMPLES
+      - run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker run --rm -v "$PWD:/work" -w /work ${{ needs.image.outputs.image }} make sim syn audit model
 
   equiv:
     needs: image
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
+      # the hyperopt self-test reaches difftest's asm corpus
       - run: |
-          docker buildx create --use
-          docker buildx build \
-            --cache-from type=gha \
-            --tag vibe-pio:ci \
-            --load container/
-      - run: docker run --rm -v "$PWD:/work" -w /work vibe-pio:ci make equiv hyperopt
+          git clone https://github.com/raspberrypi/pico-examples third_party/pico-examples
+          git -C third_party/pico-examples checkout $PINNED_PICO_EXAMPLES
+      - run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker run --rm -v "$PWD:/work" -w /work ${{ needs.image.outputs.image }} make equiv hyperopt
 
   synth:
     needs: image
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
+      # the witness replay legs run the model over the corpus programs
       - run: |
-          docker buildx create --use
-          docker buildx build \
-            --cache-from type=gha \
-            --tag vibe-pio:ci \
-            --load container/
-      - run: docker run --rm -v "$PWD:/work" -w /work vibe-pio:ci make synth
+          git clone https://github.com/raspberrypi/pico-examples third_party/pico-examples
+          git -C third_party/pico-examples checkout $PINNED_PICO_EXAMPLES
+      - run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker run --rm -v "$PWD:/work" -w /work ${{ needs.image.outputs.image }} make synth
 
   web:
     needs: image
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
+      # the three-way gate's model leg parses the .pio sources
       - run: |
-          docker buildx create --use
-          docker buildx build \
-            --cache-from type=gha \
-            --tag vibe-pio:ci \
-            --load container/
-      - run: docker run --rm -v "$PWD:/work" -w /work vibe-pio:ci make web
+          git clone https://github.com/raspberrypi/pico-examples third_party/pico-examples
+          git -C third_party/pico-examples checkout $PINNED_PICO_EXAMPLES
+      - run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker run --rm -v "$PWD:/work" -w /work ${{ needs.image.outputs.image }} make web

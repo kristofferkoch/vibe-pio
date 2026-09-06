@@ -7,6 +7,11 @@
 # for the same reason (flip the `if:` for a PR that touches formal/ or
 # rtl/ invariant sets); the weekly run keeps main honest and refreshes
 # the image layer cache GHA evicts after 7 days untouched.
+#
+# The container comes from GHCR (:ci-main, pushed by ci.yml's image
+# job; it is pure toolchain — the proofs read the checked-out tree via
+# the bind mount). A dispatch before any ci run on main builds it here
+# instead: cache-from pulls whatever layers still live.
 name: formal
 
 on:
@@ -26,6 +31,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: formal-${{ github.ref }}
@@ -38,11 +44,16 @@ jobs:
     timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          docker buildx create --use
-          docker buildx build \
-            --cache-from type=gha \
-            --cache-to type=gha,mode=max \
-            --tag vibe-pio:ci \
-            --load container/
+      - name: Pull the toolchain image (or build it if none pushed yet)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          if ! docker pull ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-main; then
+            docker buildx create --use
+            docker buildx build \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              --tag ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-main \
+              --load container/
+          fi
+          docker tag ghcr.io/${{ github.repository_owner }}/vibe-pio:ci-main vibe-pio:ci
       - run: docker run --rm -v "$PWD:/work" -w /work vibe-pio:ci make formal
