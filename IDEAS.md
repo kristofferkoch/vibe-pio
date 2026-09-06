@@ -75,9 +75,11 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   chrome + a bitmap mono for code, final pick at mockup); and a
   standing headless keyboard-walk as the second sanctioned DOM-glue
   exception (after page geometry). Still open here, for later
-  rounds: whether the level shell inherits the skin verbatim or gets
-  its own dressing; zoom policy beyond 100%; transition effects once
-  levels exist. Era canon for whoever picks this up: IBM SAA
+  rounds: zoom policy beyond 100% — the rest has since resolved (the
+  level shell inherits the skin verbatim, C34; transition effects
+  resolved 2026-09-06 at the front-door grilling — none stands, the
+  era-true content swap stays parked on the much-later pile). Era
+  canon for whoever picks this up: IBM SAA
   **CUA '89/'91**; MS Press **"The Windows Interface: An Application
   Design Guide" (1992)** — archive.org scan; **"The Windows
   Interface Guidelines for Software Design" (1995)**; the Win95 UI
@@ -139,61 +141,20 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   and whether later chapters keep the 1-tick-1-cycle
   clkdiv-abstracted rendering.
 - The campaign's front door — a landing page + the level-to-level
-  transition (doodled 2026-09-06, input for the level/menu-shell
-  grilling the game-track cards keep deferring here). What exists:
-  sm-view.html is the only page — the sandbox bare, a level by
-  `?level=<id>` (the document.write loader), and the two never link;
-  per-level state is the localStorage session {predicted, pick,
-  solved} with no aggregate; a pass reveals par and freezes the payoff
-  frame (C40's decode lesson), and the only way to the next level is
-  the URL bar. Two threads already touch this — the C26 entry reserves
-  "at most sparing game-transition effects much later" with
-  "transition effects once levels exist" left open, and LEVELS-NOTES
-  parks the breathers as "where the sandbox gets advertised". The
-  doodle, in leans: the landing is the era master window wearing a CUA
-  listbox — chapter group frames (First light / Time and loops /
-  Reading the world; titles become registry data, they live only in
-  LEVELS-NOTES prose today), one row per level (number, name, status:
-  ✓ solved · ▸ the frontier · dim ahead), par shown on solved rows
-  only — the expertise-reversal rule projected onto the map, par as
-  the collectible the map tracks; the sandbox rides the same list as a
-  standing row ("everything always", the contrast-is-the-motivator
-  line), advertised harder as chapters complete. Keyboard is the
-  listing-as-listbox grammar verbatim (C25: arrows walk, Enter opens).
-  It should be its OWN page, not a sandbox mode — the landing needs no
-  engine boot (sm-view.html pulls worker+wasm to show what would be a
-  static list), and the C34 own-geometry precedent says a page is its
-  own geometry, not an absence-table hack hiding an entire app to draw
-  a menu; a small index.html sharing sm-view.css, with serve.py/README
-  repointed so the campaign is the front door and the sandbox keeps
-  its URL for tool users. The transition out of a level is one missing
-  affordance, not a system: on pass, beside the chip and par, a NEXT
-  pushbutton (Alt+N) joins the band — a plain location hop, no SPA
-  routing in a dependency-free classic-script app, and no
-  auto-advance: the payoff frame holds until the player acts (C40's
-  freeze lesson generalized). Exit-to-map is a toolbar button
-  (Alt+M) — today the URL bar is the only way out. Effects: none
-  proposed, the C26 decision stands; one candidate on the much-later
-  pile, the era-true content swap itself (caption change + a brief
-  fixed-palette wipe), never more. Unlock semantics: numeric (the
-  C34/C39 decision) but SOFT — `?level=<id>` always deep-links (the
-  ?row=31 demo spirit: levels stay shareable), the landing links only
-  the frontier; campaign state derives from the existing per-level
-  keys (furthest = max contiguous solved — no new storage shape), and
-  the one new datum worth its salt is lvSession keeping the player's
-  solved listing, so a solved reload replays YOUR solution (today it
-  re-boots the level's boot program) and the landing can badge
-  par-matched / par-beaten. Open questions if promoted: locked rows
-  absent (the C34 absence doctrine) vs dim-but-named (lean dim — the
-  doctrine was about level-page panels, and a campaign map naming its
-  future is content, with --dimmer the era's "visible not hidden");
-  does the landing show your words·clk beside par (needs the
-  solved-listing datum); the slice — post-C41 so the first map is
-  three complete chapters, vs earlier; the landing's own keyboard-walk
-  and layout-gate legs (the two sanctioned DOM-glue gates —
-  card-shaping, presumably yes); chapter-complete marks on the map
-  (the C38 glyph grammar as badges?) or a pure era tool; and whether
-  an "in progress" status earns a cell between ▸ and ✓.
+  transition — **promoted to KANBAN C42–C43** by the 2026-09-06
+  grilling (owner decisions on the cards; the dated "The campaign's
+  front door" section in mockups/DESIGN-NOTES.md is the standing
+  spec). Every open question of the doodle resolved that day: locked
+  rows dim-but-named (the C34 absence doctrine stays a level-page
+  doctrine), no in-progress cell (three states), the solved-listing
+  datum adopted (a solved reload replays YOUR solution; the map
+  badges par-matched/beaten), chapter-complete as an era caption ✓,
+  both sanctioned DOM-glue gates growing landing legs, the door
+  shipping clean of lore (the bible session's first deadline moves to
+  chapter 3's grilling), and serve.py/README repointed so the campaign
+  is the front door at the URL. The lore surfacing the doodle guessed
+  at (where fragments land on the map) stays parked with the lore
+  entries below, gated on the bible session.
 - The campaign's lore — hidden, TIS-100-style (owner one-liner
   2026-09-06, doodled as grilling input; pairs with the front-door
   entry above — the landing is where most of it would surface).
@@ -226,9 +187,11 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   and never gates a run (the predict/payoff-freeze lessons stand —
   it lands on the map's chapter frames, in files, at most one line
   in a pass moment's tooltip). Open questions if promoted: the slice
-  — the front-door grilling decides vehicle + voice, then each
-  chapter's own grilling lands its fragments (writing them all now
-  would fence chapters 3+ that are not grilled yet); the author's
+  (resolved 2026-09-06: the door shipped clean — zero lore, per its
+  grilling — so the bible session, before chapter 3's grilling, owns
+  vehicle + voice, and each chapter's own grilling lands its
+  fragments; writing them all now would fence chapters 3+ that are
+  not grilled yet); the author's
   identity and the arc's end (named, with a one-line fate,
   TIS-100-minimal, vs anonymous — and does the endgame answer it or
   leave it); where fragments surface (desktop icons beside the
@@ -407,11 +370,13 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   This refines entry 4's voice-not-facts rule: AUTHORED static
   prose may carry facts as slips (deliberate, invisible, in plain
   sight — datamining them is just reading); the generated model's
-  corpus stays register-only. Placement: shippable now — the first
-  slip can ride the front-door card itself (one "civilian" in the
-  About box), and each chapter's grilling lands its slips alongside
-  that chapter's fragments; landed goal prose is never retrofitted
-  (the standing no-retrofits lean). Open questions if promoted: the
+  corpus stays register-only. Placement: superseded 2026-09-06 — the
+  front-door grilling shipped the door clean, so the "first slip
+  rides the front-door card" lean died there; first slips land only
+  after the bible session, each chapter's grilling landing its slips
+  alongside that chapter's fragments; landed goal prose is never
+  retrofitted (the standing no-retrofits lean). Open questions if
+  promoted: the
   sinister direction itself — WHAT do the slips foreshadow (military
   procurement of the board? a facility? the other voice's origin?)
   — the fiction decision the slips are breadcrumbs toward; density
@@ -506,10 +471,11 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   the slice its chapter needs (lean: NOT committed; a repo-resident
   bible datamines the whole doctrine away, and the slips already
   pinned by tests are the public leaks by design); sequencing — the
-  bible must exist before the first leak-bearing card, so a bible
-  session comes before the front-door/chapter-3 grillings pick
-  their leaks (the front door itself carries at most a masthead and
-  one "civilian"); the taste line — how much Cold War facility
+  bible must exist before the first leak-bearing card (resolved for
+  the front door 2026-09-06: it shipped clean, zero leaks — the
+  masthead-and-one-"civilian" cap governs whatever lands later, not
+  the door), so the bible session's first deadline is chapter 3's
+  grilling; the taste line — how much Cold War facility
   trope the deniable register can hold before slips stop being
   deniable (lean: the fear lives in procurement language, never in
   threat language); and whether the performed optimism has one

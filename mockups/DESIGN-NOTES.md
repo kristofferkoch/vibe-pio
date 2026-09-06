@@ -192,6 +192,74 @@ where the decoded readout is.
   The C28 walk pins the picker as the wave row's *first* stop, which is
   what exposed them; the pairs are single stops again.
 
+## The campaign's front door (C42–C43, 2026-09-06): the landing + the transition
+
+The 2026-09-06 grilling over the IDEAS front-door doodle (the entry is
+pruned by promotion; this section is its durable home, and C42's
+mock-up round in mockups/landing.html extends it with rendered
+decisions the way the C26/C27 rounds did theirs).
+
+The landing is its own page — `web/index.html` sharing sm-view.css, a
+classic-script dependency-free static list with **no engine boot** (no
+worker, no wasm; the C34 own-geometry precedent — a page is its own
+geometry, not an absence-table hack hiding an entire app to draw a
+menu). The face is the era master window wearing a CUA listbox:
+chapter group frames (titles become registry data in levels.js —
+"First light / Time and loops / Reading the world" live only in
+LEVELS-NOTES prose today), one row per level (number, name, status),
+and the sandbox as a standing row ("everything always" — the
+contrast-is-the-motivator line, advertised harder as chapters
+complete). Keyboard is the listing-as-listbox grammar verbatim (C25:
+arrows walk, Enter opens).
+
+Grilling decisions, on the record:
+
+- **Dim but named.** Every registered level row is visible and named;
+  rows past the frontier dim (`--dimmer`, the era's visible-not-hidden).
+  The C34 absence doctrine is a level-page doctrine — a campaign map
+  naming its future is content. Chapters with no shipped levels stay
+  off the map entirely (the registry is the source; LEVELS-NOTES prose
+  does not ship ahead of its own grilling).
+- **Three states, no in-progress cell.** ✓ solved (par shown on
+  solved rows only — the expertise-reversal rule projected onto the
+  map), ▸ the frontier, dim ahead. Unlocks numeric but soft:
+  `?level=` always deep-links (the ?row=31 spirit); the map links
+  solved + frontier rows only. Campaign state derives from the
+  existing per-level keys — furthest = max contiguous solved; no new
+  storage shape on the landing card.
+- **The solved listing is the one new storage datum.** lvSession grows
+  the solved listing at pass; a solved reload boots YOUR program
+  (today it re-boots the level's boot listing), and the map shows your
+  words·clk beside par with par-matched / par-beaten badges (the badge
+  compares the judge's measured axis values — a clk/bit level compares
+  clk/bit, C41's named-clock rule).
+- **Chapter-complete is an era caption mark.** A ✓ in the chapter
+  group-frame's caption — pure C25/C26 chrome, no new glyph grammar
+  (the C38 monitor glyphs stay the monitor's).
+- **The transition is one affordance, not a system.** On pass, beside
+  the chip and par, a NEXT pushbutton joins the band — a plain
+  location hop (no SPA routing), no auto-advance (the payoff frame
+  holds until the player acts — C40's freeze lesson generalized; from
+  the campaign's last registered solved level it hops to the map).
+  The doodle's Alt+N is taken (`n` = binsn); the letter lands at
+  implementation under C33's unique-letters rule. Exit-to-map is a
+  toolbar button (Alt+M, free) — today the URL bar is the only way
+  out. Effects: none; the C26 decision stands.
+- **The door ships clean — zero lore.** Era furniture only, no
+  sinister content, no fictional names. The bible session (the IDEAS
+  lore thread's doctrine) gets its first deadline at chapter 3's
+  grilling; whatever it permits lands later under its own cap (at most
+  a masthead and one "civilian").
+- **The campaign is the front door at the URL.** serve.py serves
+  web/index.html at `/` (redirect or direct serve — implementation
+  pick), its docstring repointed; README gains a try-it line;
+  sm-view.html keeps its URL unchanged for tool users.
+
+Two cards, C42 → C43 (the landing is shippable alone — its rows link
+to `?level=`). Both sanctioned DOM-glue gates grow landing legs (a
+keyboard-walk leg and a layout-gate leg), each shown red against the
+pre-card page first.
+
 ## Layout
 
 - **Not 80×25.** One SM wants ~1440px in three columns: program listing

@@ -645,3 +645,99 @@ settles before feeding the judge (a page-side sleep was a no-op —
 Runtime.evaluate does not await promises; a Node-side settle is the
 honest wait). No cards remain; chapter 3 (the feeder, L9+) starts
 from IDEAS/LEVELS-NOTES at its own grilling.
+
+## Game track — the campaign's front door (C42–C43)
+
+Scheduled 2026-09-06 by the front-door grilling over the 2026-09-06
+IDEAS doodle (the entry is pruned by this grilling; the dated "The
+campaign's front door" section in mockups/DESIGN-NOTES.md is the
+standing spec, and C42's mock-up round in mockups/landing.html
+extends it with rendered decisions). The doodle's own slice bar is
+met: chapters 0–2 complete (C34–C41), so the first map is three whole
+chapters. Owner decisions on the record:
+
+- **The map names its future — dim but named.** Every registered
+  level row is visible and named; rows past the frontier dim
+  (`--dimmer`). The C34 absence doctrine stays a level-page doctrine —
+  a campaign map naming its future is content. Chapters with no
+  shipped levels stay off the map (the registry is the source;
+  LEVELS-NOTES prose does not ship ahead of its own grilling).
+- **Three states, no in-progress cell.** ✓ solved (par on solved rows
+  only — the expertise-reversal rule projected onto the map), ▸ the
+  frontier, dim ahead. Unlocks numeric but soft: `?level=` always
+  deep-links; the map links solved + frontier rows only. Campaign
+  state derives from the existing per-level keys (furthest = max
+  contiguous solved) — no new storage shape on the landing card.
+- **The solved listing is the one new storage datum — adopted.**
+  lvSession grows the solved listing at pass: a solved reload boots
+  YOUR program (today it re-boots the level's boot listing), and the
+  map shows your words·clk beside par with par-matched / par-beaten
+  badges (the badge compares the judge's measured axis values — a
+  clk/bit level compares clk/bit, C41's named-clock rule). The level
+  page writes the datum (C43); the map reads it.
+- **Chapter-complete is an era caption mark.** A ✓ in the chapter
+  group-frame's caption — pure C25/C26 chrome, no new glyph grammar.
+- **Two cards, C42 → C43.** The landing is shippable alone (its rows
+  link to `?level=`); the transitions edit the level page — the NEXT
+  button joins the C38/C40 band on pass, and solved reloads change
+  what they boot.
+- **Both sanctioned gates grow landing legs** — a keyboard-walk leg
+  (the C25 listing-as-listbox grammar verbatim: arrows walk, Enter
+  opens, the sandbox row reachable) and a layout-gate leg
+  (master-window + listbox geometry at both 13" viewports), each red
+  against the pre-card page first.
+- **The door ships clean — zero lore.** Era furniture only: no
+  sinister content, no fictional names, no About-box slip. The bible
+  session (the IDEAS lore doctrine) gets its first deadline at
+  chapter 3's grilling; whatever it permits lands later under its own
+  cap (at most a masthead and one "civilian").
+- **The campaign is the front door at the URL too.** serve.py serves
+  web/index.html at `/` (redirect or direct serve — implementation
+  pick), its docstring repointed; README gains a try-it line (it
+  carries no URL today); sm-view.html keeps its URL unchanged for
+  tool users.
+
+Settled with the doodle (its leans, unopposed): the landing is its own
+page — web/index.html sharing sm-view.css, classic-script,
+dependency-free, NO engine boot (no worker, no wasm); chapter titles
+become registry data in levels.js; the sandbox rides the map as a
+standing row ("everything always"), advertised harder as chapters
+complete; the transition is one affordance, not a system — NEXT on
+pass is a plain location hop with no auto-advance (the payoff frame
+holds until the player acts — C40's freeze lesson generalized; from
+the last registered solved level it hops to the map), the doodle's
+Alt+N is taken (`n` = binsn) so the letter lands at implementation
+under C33's unique-letters rule, and exit-to-map is a toolbar button
+(Alt+M, free); effects none (the C26 decision stands). Web cards: the
+JS discipline (docs/js-tooling.md), red/green TDD, DOM glue verified
+by the browser session and `make web` — geometry and keyboard only
+through the two sanctioned headless gates. No engine work rides these
+cards; the levels gate stays engine-side and untouched. Dependency
+order: C42 → C43.
+
+C42 — the landing. web/index.html (own page, era master window, CUA
+listbox, no engine boot) + the chapter registry table in levels.js
+(titles, ordered); campaign state derivation over the existing
+per-level keys; the map face per the decisions above (three states,
+dim-but-named, par on solved rows, era caption ✓, the sandbox standing
+row); the C25 listbox keyboard; serve.py's `/` front door + docstring
+repoint; README's try-it line. A mock-up round in mockups/landing.html
+precedes implementation (the DESIGN-NOTES section is the standing
+spec). Gates: the keyboard walk's landing leg + the layout gate's
+landing leg (both red first — the page does not exist), the browser
+session, `make js` / `make web`.
+
+C43 — the transitions. The NEXT pushbutton joins the level band on
+pass (beside the chip and par; the letter per the unique-letters rule;
+a location hop to the next level, or to the map from the campaign's
+last registered solved level); exit-to-map (Alt+M) joins the toolbar
+on level pages; the solved-listing datum — lvSession keeps the passing
+program at pass, solved reloads boot it (the predict gate's
+authored-programs rule stands — your own solution never re-locks),
+and the map's solved rows gain your words·clk beside par + the
+par-matched/beaten badges. No engine changes. Gates: the walk's
+NEXT/exit legs (red first — the buttons do not exist), the layout
+gate's band/toolbar legs (the new steady chrome and the pass-time band
+posture pinned — the C33 never-reflow discipline extends to the band
+gaining its pass-time member), the browser session (the payoff flow:
+pass → NEXT → map → replay your own solution), `make js` / `make web`.
