@@ -85,6 +85,18 @@
         <span class="cyc">CYCLE <b id="cyc">0</b></span>
       </div>
       <header>
+        <!-- C43: exit-to-map — level-page chrome only (the sandbox keeps
+             its URL for tool users, no door it does not offer); Alt+M,
+             the free letter. sm-view.js unhides it under ?level= -->
+        <button
+          type="button"
+          id="bmap"
+          class="mini"
+          hidden
+          data-tip="back to the campaign map (Alt+M)"
+        >
+          ◂ <u>M</u>AP
+        </button>
         <span
           class="cfgtag"
           id="clkdivtag"
@@ -159,7 +171,11 @@
            solve — the par line (expertise reversal: par pressure on a
            novice is extraneous load). The predict card rides the second
            row until the prediction is committed; once solved it leaves
-           (never punish re-runs). -->
+           (never punish re-runs). C43: the pass-time members (chip, par,
+           NEXT) ride the C33 possible-max rule as a row — visibility, not
+           display, their boxes reserved from clk one (see sm-view.css) —
+           and NEXT (Alt+X; N belongs to INSN) hops to the campaign-order
+           successor, the map from the last registered level. -->
       <div id="lvband" hidden>
         <div class="lvrow" id="lvhead">
           <span class="lvname" id="lvname"></span>
@@ -175,13 +191,15 @@
             ><svg id="lvlive" width="8" height="16" aria-hidden="true"></svg>
             <b id="lvverdict">awaiting run</b></span
           >
-          <span class="lvpass" id="lvpass" hidden>✓ passed</span>
+          <span class="lvpass passtime" id="lvpass">✓ passed</span>
           <span
-            class="lvpar"
+            class="lvpar passtime"
             id="lvpar"
-            hidden
-            data-tip="par — the committed reference cost (words · clk/cycle); visible after the first solve"
+            data-tip="par — the committed reference cost (words · its named clock); visible after the first solve"
           ></span>
+          <button type="button" id="lvnext" class="passtime" data-tip="the next level">
+            ▸ NE<u>X</u>T
+          </button>
         </div>
         <div class="lvrow" id="lvpred">
           <span class="lvask" id="lvask"></span>
@@ -909,12 +927,14 @@
     // BEFORE sm-view.js evaluates. document.write from a parser-run
     // script inserts into the stream, so the level file (a classic
     // script calling PIO_LEVEL) executes first and the registry is
-    // populated by the time the view boots.
-    {
-      const id = new URLSearchParams(location.search).get('level');
-      if (id && /^[a-z0-9]+$/.test(id))
-        document.write('<script src="levels/' + id + '.js"><' + '/script>');
-    }
+    // populated by the time the view boots. C43: ALL the level files
+    // load, exactly like the landing page — NEXT's hop target comes
+    // from the registry's own campaign order (PioLevels.next), and the
+    // last-registered check needs every registered level on the page,
+    // not just this one; the definitions are inert data, only
+    // PioLevels.active(?level=) picks the page's own.
+    for (let n = 0; n <= 8; n++)
+      document.write('<script src="levels/l' + n + '.js"><' + '/script>');
     </script>
     <script src="sm-view.js"></script>
   </body>

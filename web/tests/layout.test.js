@@ -1958,6 +1958,9 @@ const LANDING_SCAN = `(() => {
     boxes: { win: pin('#win'), map: pin('#map'), titlebar: pin('#titlebar') },
     states: [...document.querySelectorAll('#map .mrow')].map((r) => r.id + ':' + r.className),
     tips: [...document.querySelectorAll('#map .mrow')].map((r) => r.dataset.tip),
+    sts: Object.fromEntries(
+      [...document.querySelectorAll('#map .mrow')].map((r) => [r.id, r.querySelector('.st').textContent]),
+    ),
   };
 })()`;
 
@@ -1978,13 +1981,26 @@ for (const [width, height] of VIEWPORTS) {
     try {
       await page.evaluate(`(() => {
         localStorage.clear();
-        for (const id of ['l0', 'l1', 'l2', 'l3', 'l4', 'l5'])
+        for (const id of ['l1', 'l2', 'l3', 'l4'])
           localStorage.setItem('vibe-pio-level-' + id, JSON.stringify({ solved: true }));
+        // C43: two of the solved sessions carry the solve datum the
+        // level page writes at pass — the map's you-face renders theirs
+        localStorage.setItem('vibe-pio-level-l0', JSON.stringify({
+          solved: true,
+          solve: { listing: ['set pins, 1', 'set pins, 0'], words: 2, axis: 2 },
+        }));
+        localStorage.setItem('vibe-pio-level-l5', JSON.stringify({
+          solved: true,
+          solve: {
+            listing: ['set pins, 1 [15]', 'set pins, 0 [31]', 'set pins, 0 [15]'],
+            words: 3, axis: 64,
+          },
+        }));
         return true;
       })()`);
       await page.goto(`${baseUrl}/web/index.html`);
       await page.evaluate('document.fonts.ready.then(() => {})');
-      const { bad, boxes, states, tips } = await page.evaluate(LANDING_SCAN);
+      const { bad, boxes, states, tips, sts } = await page.evaluate(LANDING_SCAN);
       assert.deepStrictEqual(
         bad,
         [],
@@ -2007,6 +2023,16 @@ for (const [width, height] of VIEWPORTS) {
         /deep-links/,
         'an ahead row narrates the soft unlock',
       );
+      // C43: the datum's face — your axes beside par with the badge,
+      // single-line like every status word (the row-wrap check above
+      // already gates it); datum-less solved rows keep par alone
+      assert.match(
+        sts['row-l5'],
+        /✓ par 3 words · 64 clk\/cycle · you 3·64 \(= par\)/,
+        'a matched solve wears your axes and the = par badge',
+      );
+      assert.match(sts['row-l0'], /you 2·2 \(= par\)/, 'the l0 datum renders too');
+      assert.ok(!sts['row-l1'].includes('you '), 'a datum-less solved row shows par alone');
       // the window keeps menu proportions, not app proportions
       assert.ok(
         boxes.win && boxes.win[2] >= 500 && boxes.win[2] <= 660,
@@ -2051,5 +2077,139 @@ for (const [width, height] of VIEWPORTS) {
         for (const [k, v] of Object.entries(snap)) localStorage.setItem(k, v);
       })(${JSON.stringify(snapshot)})`);
     }
+  });
+}
+
+// C43 — the transitions: the level page grows its exits, and the band
+// gains its pass-time member without moving anything. The toolbar
+// carries the MAP button (Alt+M — level-page chrome only; the sandbox
+// keeps its URL, no door it does not offer). The band's pass-time
+// members (the chip, par, NEXT) ride C33's possible-max rule as a ROW:
+// visibility, not display — their boxes are reserved from clk one, so
+// the reveal at pass is a class flip that moves neither the steady
+// members (name, goal, monitor) nor anything below the band. Ran red
+// first: neither button existed and the pass-time members laid out
+// only after the solve.
+const C43_TOOLBAR_SCAN = `(() => {
+  const bad = [];
+  const hdr = document.querySelector('header');
+  if (hdr.scrollHeight > hdr.clientHeight + 1) bad.push('the toolbar wraps');
+  const m = document.getElementById('bmap');
+  if (!m) bad.push('#bmap does not exist');
+  else {
+    const laidOut = m.offsetParent !== null;
+    if (!LEVEL) {
+      if (laidOut) bad.push('the sandbox shows a MAP exit it does not offer');
+    } else if (!laidOut) bad.push('the MAP exit is missing on a level page');
+    else {
+      const b = m.getBoundingClientRect();
+      if (b.width < 24 || b.height < 12) bad.push('the MAP exit has no box');
+      const ctrl = document.querySelector('header .ctrl');
+      if (ctrl && b.right > ctrl.getBoundingClientRect().left + 0.5)
+        bad.push('the MAP exit is not left of the run controls');
+    }
+  }
+  return { bad };
+})()`;
+
+const C43_BAND_SCAN = `(() => {
+  const bad = [];
+  const box = (e) => {
+    const b = e.getBoundingClientRect();
+    return [b.left, b.top, b.width, b.height].map((v) => +v.toFixed(1));
+  };
+  const head = document.getElementById('lvhead');
+  if (!head) {
+    bad.push('the head row is missing');
+    return { bad };
+  }
+  if (head.scrollHeight > head.clientHeight + 1) bad.push('the head row wraps');
+  if (head.scrollWidth > head.clientWidth + 1) bad.push('the head row overflows');
+  const band = document.getElementById('lvband');
+  if (band.scrollHeight > band.clientHeight + 1) bad.push('the band scrolls');
+  // the pass-time members hold RESERVED boxes from clk one, invisible
+  // until the solve — the reveal is a visibility flip, never a reflow
+  const vis = {};
+  for (const id of ['lvpass', 'lvpar', 'lvnext']) {
+    const el = document.getElementById(id);
+    if (!el) {
+      bad.push(id + ' does not exist');
+      continue;
+    }
+    const b = el.getBoundingClientRect();
+    if (b.width < 4 || b.height < 8) bad.push(id + ' reserves no box');
+    vis[id] = getComputedStyle(el).visibility;
+  }
+  return {
+    bad,
+    vis,
+    steady: {
+      lvname: box(document.getElementById('lvname')),
+      lvgoal: box(document.getElementById('lvgoal')),
+      lvmon: box(document.getElementById('lvmon')),
+      head: box(head),
+      band: box(band),
+      main: box(document.querySelector('main')),
+    },
+  };
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`the C43 toolbar: the MAP exit is level-page chrome, absent in the sandbox ${width}×${height}`, async () => {
+    await page.setViewport(width, height);
+    await page.goto(`${pageUrl()}?level=l0`);
+    await page.evaluate('document.fonts.ready.then(() => {})');
+    await page.evaluate("document.getElementById('boot')?.remove()");
+    assert.deepStrictEqual(
+      await page.evaluate(C43_TOOLBAR_SCAN),
+      { bad: [] },
+      `the toolbar broke at ${width}×${height} on a level page`,
+    );
+    // the sandbox: absence — out of layout and the Tab order both
+    await page.goto(pageUrl());
+    await page.evaluate('document.fonts.ready.then(() => {})');
+    await page.evaluate("document.getElementById('boot')?.remove()");
+    assert.deepStrictEqual(
+      await page.evaluate(C43_TOOLBAR_SCAN),
+      { bad: [] },
+      `the toolbar broke at ${width}×${height} on the sandbox page`,
+    );
+  });
+
+  test(`the C43 band: the pass-time members reveal without a reflow ${width}×${height}`, async () => {
+    await page.setViewport(width, height);
+    // L3 carries no predict row, so the reveal cannot change the band's
+    // height at all — the purest posture for the never-reflow check
+    await page.goto(`${pageUrl()}?level=l3`);
+    await page.evaluate('document.fonts.ready.then(() => {})');
+    await page.evaluate("document.getElementById('boot')?.remove()");
+    const fresh = await page.evaluate(C43_BAND_SCAN);
+    assert.deepStrictEqual(fresh.bad, [], `the band broke at ${width}×${height} (fresh)`);
+    assert.deepStrictEqual(
+      fresh.vis,
+      { lvpass: 'hidden', lvpar: 'hidden', lvnext: 'hidden' },
+      'pre-pass the pass-time members are invisible (reserved, not shown)',
+    );
+    // the page's own reveal path — the exact moment the band gains its
+    // pass-time member: every steady box must be bit-identical after
+    await page.evaluate('lvRevealSolved()');
+    const solved = await page.evaluate(C43_BAND_SCAN);
+    assert.deepStrictEqual(solved.bad, [], `the band broke at ${width}×${height} (solved)`);
+    assert.deepStrictEqual(
+      solved.vis,
+      { lvpass: 'visible', lvpar: 'visible', lvnext: 'visible' },
+      'the reveal shows all three pass-time members',
+    );
+    assert.deepStrictEqual(
+      solved.steady,
+      fresh.steady,
+      `the band re-flowed when it gained its pass-time member at ${width}×${height}`,
+    );
+    assert.ok(
+      await page.evaluate(
+        'document.activeElement === document.body || document.activeElement === null',
+      ),
+      'the reveal must not steal or drop focus',
+    );
   });
 }

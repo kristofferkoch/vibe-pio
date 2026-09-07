@@ -77,6 +77,23 @@ function lvSave() {
   }
 }
 
+// C43: a solved session boots YOUR passing program — the solve datum's
+// listing through the level's own assembly path (context, overlay,
+// words — programState's listing param). The datum is storage, not a
+// level file: a listing that no longer assembles falls back to the
+// level's own boot rather than killing the page.
+function lvBootState() {
+  const rows = lvLoad(LEVEL.id)?.solve?.listing;
+  if (Array.isArray(rows)) {
+    try {
+      return PioLevels.programState(LEVEL, undefined, undefined, rows);
+    } catch {
+      /* a corrupted datum is not the level's problem */
+    }
+  }
+  return PioLevels.programState(LEVEL);
+}
+
 function savedState() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
@@ -91,7 +108,9 @@ function savedState() {
 // A level boots from its own definition — words assembled from the
 // canonical listing under the level's own side-set context, overlay
 // merged over the hardware reset (parseState does the validating).
-let curState = LEVEL ? PioLevels.programState(LEVEL) : savedState() || VD.newState(); // the view's stored-program copy
+// C43: a SOLVED session boots the solve datum's listing instead (your
+// own solution — the predict gate's authored-programs rule made whole).
+let curState = LEVEL ? lvBootState() : savedState() || VD.newState(); // the view's stored-program copy
 
 // C41: a level run after an edit starts from the level's own load. The
 // engine live-patches edited rows (the C19 discipline — the sandbox's
@@ -139,6 +158,20 @@ if (LEVEL) {
   // the lens is pinned by the profile: the pin NUMBER stays on the wave
   // row's face (C29 legibility), the steppers leave with the Tab stop
   $('wavelabel').childNodes[0].nodeValue = `gpio ${LEVEL.profile.pin} `;
+  // C43: the exits. The toolbar's MAP button (Alt+M — the free letter)
+  // is level-page chrome; the sandbox keeps its URL, no door it does
+  // not offer. NEXT (Alt+X — the doodle's N belongs to INSN, C33's
+  // unique-letters rule) is a plain location hop, no auto-advance: the
+  // payoff frame holds until the player acts (C40's freeze lesson
+  // generalized); from the last registered solved level it hops to the
+  // map (PioLevels.next runs out of campaign order there).
+  $('bmap').hidden = false;
+  $('bmap').onclick = () => (location.href = 'index.html');
+  const lvNx = PioLevels.next(LEVEL.id);
+  $('lvnext').onclick = () => (location.href = lvNx ? `sm-view.html?level=${lvNx}` : 'index.html');
+  $('lvnext').dataset.tip = lvNx
+    ? `${lvNx.replace(/^l/, 'L').toUpperCase()} · ${esc(PioLevels.get(lvNx).name)} — the next level`
+    : 'the campaign map — every shipped level is cleared';
 }
 
 // The selected machine: the detail panes' SM. curSm/1..3 switch it; the
@@ -387,6 +420,12 @@ function buildLevelBand() {
   lvSession = lvLoad(LEVEL.id);
   $('lvname').textContent = `${LEVEL.id.replace(/^l/, 'L').toUpperCase()} · ${LEVEL.name}`;
   $('lvgoal').textContent = LEVEL.goal;
+  // C43: the par label is authored at BOOT, before the band shows —
+  // the possible-max content that sizes the reserved box (C33's rule:
+  // an empty span reserves nothing, and a reveal that grows it would
+  // re-flow the row). Invisible until the solve (the passtime class);
+  // lvRevealSolved only flips the class.
+  $('lvpar').textContent = PioLevels.parText(LEVEL);
   $('lvband').hidden = false;
   if (LEVEL.predict) {
     $('lvask').textContent = LEVEL.predict.ask;
@@ -627,7 +666,7 @@ function levelJudge(st) {
     }
     const v = PioLevels.judge(seen, LEVEL.profile);
     lvMonitorFace(v);
-    if (v.pass) levelPass();
+    if (v.pass) levelPass(v);
     return;
   }
   if (!st.wave.pins.length || (!lvRanOnce && st.wave.pins.every((b) => b === 0))) {
@@ -636,23 +675,40 @@ function levelJudge(st) {
   }
   const v = PioLevels.judge(st.wave.pins, LEVEL.profile);
   lvMonitorFace(v);
-  if (v.pass) levelPass();
+  if (v.pass) levelPass(v);
 }
 function lvRevealSolved() {
-  $('lvpass').hidden = false;
-  // C42: the par label (words + its named clock) is PioLevels.parText —
-  // the same string the campaign map shows on solved rows
-  $('lvpar').textContent = PioLevels.parText(LEVEL);
-  $('lvpar').hidden = false;
+  // C43: the reveal is one class flip — the pass-time members (chip,
+  // par, NEXT) are visibility-reserved from clk one with their
+  // possible-max content authored at boot (C33's rule on the band), so
+  // this moves nothing, ever
+  $('lvhead').classList.add('solved');
   $('lvpred').hidden = true; // the gate's job is done — never punish re-runs
 }
-function levelPass() {
+function levelPass(v) {
   const first = !lvSession.solved;
-  if (first) {
-    lvSession.solved = true;
-    lvSave();
-    lvRevealSolved();
-  }
+  // C43: the solve datum — the passing program itself (a solved reload
+  // boots it; the map reads the same key) with your axes beside par:
+  // the judge's measured clock (square: the verdict's clk/cycle; uart:
+  // the decoded frame over its ten bit-times, one decimal) and the word
+  // count. The rx judge measures no clock (a value has no tolerance) —
+  // its datum is words alone. Every pass overwrites: the session always
+  // holds the latest PASSING program.
+  lvSession.solve = {
+    listing: ROWS.slice(),
+    words: ROWS.filter(Boolean).length,
+    axis:
+      LEVEL.profile.kind === 'square'
+        ? (v?.period ?? null)
+        : LEVEL.profile.kind === 'uart'
+          ? v?.frames?.[0]
+            ? Math.round((v.frames[0].length / 10) * 10) / 10
+            : null
+          : null,
+  };
+  lvSession.solved = true;
+  lvSave();
+  if (first) lvRevealSolved();
   // freeze on the payoff frame. A square level's payoff is a steady
   // state (the wave keeps cycling — a re-run stays live, watching it
   // blink), but a decode level's payoff is a MOMENT: the frame is
@@ -758,7 +814,9 @@ function textSurface(el) {
 // reset button has none (its keyboard path is the 0 accelerator).
 // brun carries one per face (C33's twin labels): R on RUN, P on PAUSE —
 // both live whatever the button currently shows, so the underline never
-// names a dead key.
+// names a dead key. C43 adds the exits: M (the toolbar's MAP button,
+// level pages) and X (the band's NEXT — the doodle's N belongs to
+// INSN, so NEXT's letter lands one seat in).
 const MNEMONICS = {
   e: 'bempty',
   d: 'bdemo',
@@ -769,13 +827,21 @@ const MNEMONICS = {
   p: 'brun',
   c: 'bstep',
   n: 'binsn',
+  m: 'bmap',
+  x: 'lvnext',
 };
 document.addEventListener('keydown', (e) => {
   if (!e.altKey || e.ctrlKey || e.metaKey || !e.key || e.key.length !== 1) return;
   const id = MNEMONICS[e.key.toLowerCase()];
   if (!id || textSurface(e.target)) return;
+  // a button that is not on the page RIGHT NOW (the sandbox's MAP exit,
+  // the band's NEXT before the pass) must not fire from its key — a
+  // hidden or visibility-reserved button still dispatches .click()
+  const el = $(id);
+  if (!el || el.hidden || el.closest('[hidden]') || getComputedStyle(el).visibility === 'hidden')
+    return;
   e.preventDefault();
-  $(id).click();
+  el.click();
 });
 
 // every stepper pair ([data-spin]) is one spinbox stop: −/← dec,

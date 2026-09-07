@@ -646,7 +646,7 @@ Runtime.evaluate does not await promises; a Node-side settle is the
 honest wait). No cards remain; chapter 3 (the feeder, L9+) starts
 from IDEAS/LEVELS-NOTES at its own grilling.
 
-## Game track — the campaign's front door (C42–C43)
+## Game track — the campaign's front door (C42–C43) — COMPLETE
 
 Scheduled 2026-09-06 by the front-door grilling over the 2026-09-06
 IDEAS doodle (the entry is pruned by this grilling; the dated "The
@@ -764,17 +764,46 @@ one's), make js 218 green, make web re-verified (32 client checks +
 the three mutation demos), the era tooltip verified live (hover
 narrates the dim row's soft unlock).
 
-C43 — the transitions. The NEXT pushbutton joins the level band on
-pass (beside the chip and par; the letter per the unique-letters rule;
-a location hop to the next level, or to the map from the campaign's
-last registered solved level); exit-to-map (Alt+M) joins the toolbar
-on level pages; the solved-listing datum — lvSession keeps the passing
-program at pass, solved reloads boot it (the predict gate's
-authored-programs rule stands — your own solution never re-locks),
-and the map's solved rows gain your words·clk beside par + the
-par-matched/beaten badges. No engine changes. Gates: the walk's
-NEXT/exit legs (red first — the buttons do not exist), the layout
-gate's band/toolbar legs (the new steady chrome and the pass-time band
-posture pinned — the C33 never-reflow discipline extends to the band
-gaining its pass-time member), the browser session (the payoff flow:
-pass → NEXT → map → replay your own solution), `make js` / `make web`.
+C43 landed 2026-09-07: the transitions. The NEXT pushbutton (Alt+X —
+the doodle's N belongs to INSN, C33's unique-letters rule) joins the
+band's pass-time members beside the chip and par, a plain location hop
+to the campaign-order successor (PioLevels.next — the level pages now
+load every level file like the landing, the registry is where the hop
+target lives); from the last registered level it hops to the map. The
+pass-time members ride C33's possible-max rule as a row — visibility,
+not display, their boxes (and par's own text) reserved from clk one —
+so the reveal at pass is one class flip on the head row that moves
+nothing. Exit-to-map is the toolbar's ◂ MAP (Alt+M), level-page chrome
+only; the MNEMONICS dispatcher now refuses targets that are not on the
+page right now (a visibility-reserved button still dispatches .click()).
+The solved-listing datum: levelPass stores lvSession.solve on every
+pass — the passing listing (ROWS.slice()), the word count, and the
+judge's measured clock (square: the verdict's clk/cycle; uart: the
+decoded frame over its ten bit-times; rx: none — a value has no
+tolerance, words alone) — a solved reload boots YOUR program through
+programState's new listing param, the gate never re-locks a solved
+session, and the map's solved rows wear `you W·P` beside par with the
+`(= par)` / `beats par` badges (module faces youText/solveBadge;
+Pareto-better-or-equal with one strict beats, worse-on-an-axis wears
+your numbers badge-less). No engine changes. Gates: the walk's two
+transitions legs (red first: timed out waiting for the solved class
+and #lvnext; the walks' Enter now rides a text-bearing keyDown — a
+bare rawKeyDown fires page handlers but never a button's default
+press), the layout gate's toolbar + band legs at both 13" viewports
+(red first: `#bmap does not exist` / `lvpar reserves no box`) and the
+landing leg's you-face posture, the levels gate's four C43 legs (red
+first: `PioLevels.next is not a function`), make js 228, make web
+re-verified. The live session (real CDP mouse events over the real
+wasm engine: map → L0 predict-by-click → PASS → datum 2w/2c → NEXT →
+L1 both delay cells edited by mouse → PASS exact → datum 2w/8c → MAP
+→ the map's `you 2·2 (= par)` / `you 2·8 (= par)` rows, frontier on
+L2 → the L1 replay boots YOUR [3] rows with RUN unlocked → the
+sandbox carries no MAP and no band) caught one real defect before
+commit: levelPass stores ROWS.slice() — 32 rows with '' tails — and
+programState's listing path threw on the '' tail, so the solved
+reload silently fell back to the boot listing (the seeded walk legs
+had used compact listings and missed it). Fixed with the empty-row
+skip, shown red first (`Cannot read properties of null (reading
+'id')`), pinned in the levels gate as the page's own write shape, and
+the walk seeds now carry 32-row listings. No cards remain; the next
+web-track work starts from IDEAS.md after its own grilling.

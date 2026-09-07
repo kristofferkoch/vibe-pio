@@ -2575,6 +2575,25 @@ main.level #program:not(.col-side) #edside {
   color: var(--dim);
   white-space: nowrap;
 }
+/* C43 — the band's pass-time members (the chip, par, NEXT) ride C33's
+   possible-max rule as a ROW: visibility, not display — their boxes are
+   reserved from clk one, so the reveal at pass moves neither the steady
+   members beside them nor the page below the band. Pre-pass they are
+   invisible to the eye, the Tab order, and the a11y tree, the same
+   absence every locked panel ships; the reveal is one class flip on
+   the head row (lvRevealSolved). */
+#lvhead .passtime {
+  visibility: hidden;
+}
+#lvhead.solved .passtime {
+  visibility: visible;
+}
+/* NEXT is the band's one push button — a text row's tenant, not a
+   toolbar tenant: the era chrome at the row's own scale */
+#lvnext {
+  padding: 1px 10px;
+  font-size: 11px;
+}
 .lvask {
   color: var(--amber);
   white-space: nowrap;

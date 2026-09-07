@@ -1525,3 +1525,82 @@ test('parText names its clock per judge kind — the band and the map agree', ()
   assert.equal(PioLevels.parText(PioLevels.get('l7')), 'par 3 words · 8 clk/bit');
   assert.equal(PioLevels.parText(PioLevels.get('l8')), 'par 4 words · 2 clk/bit');
 });
+
+// ============ C43: the transitions — the datum and the hop ============
+// The solve datum (lvSession.solve: the passing listing + your axes)
+// and the NEXT hop are module logic like the campaign derivation: the
+// level page writes/reads them through these functions, the map reads
+// them, and this gate pins the classification. Ran red first against
+// the pre-C43 module: PioLevels.next was not a function.
+
+test('next: the campaign-order successor, null at the last registered level', () => {
+  assert.equal(PioLevels.next('l0'), 'l1');
+  assert.equal(PioLevels.next('l5'), 'l6');
+  assert.equal(PioLevels.next('l8'), null); // the last registered level hops to the map
+  assert.equal(PioLevels.next('nope'), null); // unknown ids have no successor
+});
+
+test("programState assembles a given listing under the level's own context", () => {
+  // the solved reload's boot: a session listing goes through the SAME
+  // assembly path as a level file's (context, overlay, words)
+  const ref = PioLevels.programState(L1, PioAsm, VibeDriver, L1.reference.listing);
+  const yours = PioLevels.programState(L1, PioAsm, VibeDriver, [
+    'set pins, 1 [3]',
+    'set pins, 0 [3]',
+  ]);
+  assert.deepEqual(yours.words, ref.words); // the reference rows, bit-equal
+  assert.deepEqual(yours.sms, ref.sms); // the config overlay is the level's, never the datum's
+  // the default stays the BOOT listing — the datum is load-bearing, not
+  // decorative (L1 boots un-slowed; the solve carries the [3] delays)
+  const boot = PioLevels.programState(L1, PioAsm, VibeDriver);
+  assert.notDeepEqual(boot.words, yours.words);
+  // THE PAGE'S OWN SHAPE: levelPass stores ROWS.slice() — 32 rows with
+  // '' tails. An '' row is untouched memory (word 0), never an assembly
+  // error; the live session caught the first cut throwing on the tail
+  // and the solved reload silently falling back to the boot listing.
+  const asWritten = PioLevels.programState(L1, PioAsm, VibeDriver, [
+    'set pins, 1 [3]',
+    'set pins, 0 [3]',
+    ...new Array(30).fill(''),
+  ]);
+  assert.deepEqual(asWritten.words, yours.words);
+});
+
+test('the solved session never re-locks the predict gate', () => {
+  assert.equal(PioLevels.gateOpen(L0, {}), false); // the lock itself stands
+  assert.equal(PioLevels.gateOpen(L0, { predicted: true }), true);
+  // your own solution never re-locks: a solved session is past its
+  // first run by construction (the C43 authored-programs rule whole)
+  assert.equal(PioLevels.gateOpen(L0, { solved: true }), true);
+});
+
+test('youText/solveBadge: your axes beside par — matched, beaten, worse, the rx value axis', () => {
+  // square: L1 par 2 words · 8 clk/cycle — the judge's period is the axis
+  assert.equal(PioLevels.youText(L1, { words: 2, axis: 8 }), 'you 2·8');
+  assert.equal(PioLevels.solveBadge(L1, { words: 2, axis: 8 }), 'matched');
+  assert.equal(PioLevels.solveBadge(L1, { words: 1, axis: 8 }), 'beaten'); // cheaper at par time
+  assert.equal(PioLevels.solveBadge(L1, { words: 2, axis: 9 }), null); // slower at par cost: honest no-badge
+  assert.equal(PioLevels.solveBadge(L1, { words: 1, axis: 9 }), null); // cheaper AND slower: not Pareto-better
+  assert.equal(PioLevels.solveBadge(L1, { words: 3, axis: 8 }), null); // dead rows cost words
+  // uart: L7 par 3 words · 8 clk/bit — the measured frame/10 admits fractions
+  assert.equal(PioLevels.youText(L7, { words: 3, axis: 8 }), 'you 3·8');
+  assert.equal(PioLevels.youText(L7, { words: 3, axis: 8.4 }), 'you 3·8.4');
+  assert.equal(PioLevels.solveBadge(L7, { words: 3, axis: 8 }), 'matched');
+  assert.equal(PioLevels.solveBadge(L7, { words: 3, axis: 8.4 }), null); // relaxed-tier skew runs long
+  assert.equal(PioLevels.solveBadge(L7, { words: 3, axis: 7.5 }), 'beaten');
+  // rx: the value judge measures no clock (a value has no tolerance) —
+  // words alone, the axis cell reads 'words' and never a bare number
+  assert.equal(PioLevels.youText(L8, { words: 4, axis: null }), 'you 4 words');
+  assert.equal(PioLevels.solveBadge(L8, { words: 4, axis: null }), 'matched');
+  assert.equal(PioLevels.solveBadge(L8, { words: 3, axis: null }), 'beaten');
+  assert.equal(PioLevels.solveBadge(L8, { words: 5, axis: null }), null);
+  // no datum or garbage storage: nothing shows anywhere
+  assert.equal(PioLevels.youText(L1, null), null);
+  assert.equal(PioLevels.youText(L1, undefined), null);
+  assert.equal(PioLevels.youText(L1, {}), null);
+  assert.equal(PioLevels.youText(L1, { words: 'x', axis: 8 }), null);
+  assert.equal(PioLevels.youText(L1, { words: 2 }), null); // a timing level without its measured clock is no datum
+  assert.equal(PioLevels.solveBadge(L1, null), null);
+  assert.equal(PioLevels.solveBadge(L1, { words: 2 }), null); // same rule on the badge
+  assert.equal(PioLevels.solveBadge(L1, { words: 2, axis: 'x' }), null);
+});

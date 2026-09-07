@@ -25,6 +25,12 @@
   Keyboard is the C25 listing-as-listbox grammar verbatim: one Tab stop,
   ↑/↓ clamp-walk, Enter opens, the cursor boots on the frontier row.
 
+  C43: a solved session carries the solve datum the level page wrote at
+  pass (the passing listing + your axes) — solved rows wear YOUR
+  words·clk beside par with the par-matched / par-beaten badge (module
+  faces: PioLevels.youText / solveBadge, pinned by the levels gate). A
+  datum-less solved row (a pre-C43 session) keeps par alone.
+
   The door ships clean — era furniture only, zero lore.
 -->
     <link rel="stylesheet" href="sm-view.css">
@@ -97,6 +103,19 @@
       const elId = (row) => (row.sandbox ? 'row-sandbox' : `row-${row.id}`);
       const rowEl = (i) => document.getElementById(elId(ROWS[i]));
 
+      // C43: the solve datum's tail — your axes beside par with the
+      // badge (one string on the face and the narration both; the
+      // classification is module logic, levels gate-pinned). A solved
+      // row with no datum (a pre-C43 session) keeps par alone
+      const solvedTail = (id) => {
+        const def = P.get(id);
+        const solve = read(id)?.solve;
+        const you = P.youText(def, solve);
+        if (!you) return '';
+        const badge = P.solveBadge(def, solve);
+        return ` · ${you}${badge ? ` (${badge === 'matched' ? '= par' : 'beats par'})` : ''}`;
+      };
+
       // one narration store, two mouths: every row's data-tip IS the
       // status line's text for that row
       const narrate = (row) => {
@@ -105,13 +124,15 @@
         const def = P.get(row.id);
         const label = `${row.id.replace(/^l/, 'L').toUpperCase()} · ${def.name}`;
         const st = stateOf(row.id);
-        if (st === 'solved') return `${label} — solved (${P.parText(def)}) · Enter replays`;
+        if (st === 'solved')
+          return `${label} — solved (${P.parText(def)}${solvedTail(row.id)}) · Enter replays`;
         if (st === 'frontier') return `${label} — the next level · Enter opens`;
         return `${label} — ahead of the frontier · a ?level=${row.id} URL always deep-links`;
       };
 
-      // the face: solved rows carry par, the frontier the ▸, ahead
-      // rows only their dimmed name
+      // the face: solved rows carry par (your axes beside it when the
+      // datum is there), the frontier the ▸, ahead rows only their
+      // dimmed name
       const face = (row) => {
         if (row.sandbox)
           return (
@@ -120,7 +141,12 @@
           );
         const def = P.get(row.id);
         const st = stateOf(row.id);
-        const mark = st === 'solved' ? `✓ ${P.parText(def)}` : st === 'frontier' ? '▸' : '';
+        const mark =
+          st === 'solved'
+            ? `✓ ${P.parText(def)}${solvedTail(row.id)}`
+            : st === 'frontier'
+              ? '▸'
+              : '';
         return (
           `<span class="num">${row.id.replace(/^l/, 'L').toUpperCase()}</span>` +
           `<span class="name">${def.name}</span><span class="st">${mark}</span>`

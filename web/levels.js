@@ -33,6 +33,11 @@
 // state derivation (order/solved/frontier/chapters over the existing
 // localStorage keys), and the shared par label — the landing page
 // (web/index.html) is a second consumer of exactly this data.
+// C43 adds the transitions' module half: next (the campaign-order hop
+// NEXT carries), the solve-datum faces (youText/solveBadge — your axes
+// beside par on the map), programState's optional listing (a solved
+// reload boots YOUR passing program through the level's own context),
+// and the gate's solved-unlock (your own solution never re-locks).
 
 ((global) => {
   'use strict';
@@ -288,6 +293,64 @@
   function parText(def) {
     const unit = def.profile.kind === 'uart' || def.profile.kind === 'rx' ? 'clk/bit' : 'clk/cycle';
     return `par ${def.reference.par.words} words · ${def.reference.par.period} ${unit}`;
+  }
+
+  // C43: the NEXT hop — the campaign-order successor (numeric level
+  // order, the runtime unlock order). The LAST registered level has no
+  // successor: NEXT hops to the map there (the affordance stands, the
+  // target changes — the level page's glue owns the map URL).
+  function next(id) {
+    const order = campaign().order;
+    const i = order.indexOf(id);
+    return i >= 0 && i + 1 < order.length ? order[i + 1] : null;
+  }
+
+  // ================= the solve datum (C43) =================
+  // The session datum the pass handler writes: the passing listing (a
+  // solved reload boots it, through programState's listing param), the
+  // word count, and the judge's MEASURED clock axis — square: the
+  // verdict's clk/cycle; uart: the decoded frame over its ten
+  // bit-times (a fractional bit-time honestly lands there, one
+  // decimal); rx: null — a value has no tolerance and the rx judge
+  // measures no clock, so the rx face is words alone. Storage is
+  // untrusted: a datum that is not whole (words an integer in 1..32,
+  // the axis finite where the level's judge names one) reads as no
+  // datum anywhere.
+  function datumOk(def, solve) {
+    if (!solve || !Number.isInteger(solve.words) || solve.words < 1 || solve.words > 32)
+      return false;
+    if (def.profile.kind === 'rx') return solve.axis == null;
+    return Number.isFinite(solve.axis) && solve.axis > 0;
+  }
+
+  // Your axes beside par — the compact map face. The named clock rides
+  // the adjacent parText (you 2·8 reads "your 2 words at 8 clk/cycle");
+  // the rx face spells its one axis (words) and never an invented clock.
+  function youText(def, solve) {
+    if (!datumOk(def, solve)) return null;
+    if (def.profile.kind === 'rx') return `you ${solve.words} words`;
+    const axis = Math.round(solve.axis * 10) / 10;
+    return `you ${solve.words}·${axis % 1 ? axis.toFixed(1) : String(axis)}`;
+  }
+
+  // matched: your axes equal par's. beaten: Pareto-better-or-equal with
+  // at least one strict — cheaper words at par time, or a faster clock
+  // at par cost. Worse on an axis wears your numbers with NO badge (an
+  // honest pass is still a pass). The rx clock axis is structurally
+  // par's among passing programs (the exact judge pins the rate), so
+  // its badge compares words alone.
+  function solveBadge(def, solve) {
+    if (!datumOk(def, solve)) return null;
+    const par = def.reference.par;
+    const axis = def.profile.kind === 'rx' ? par.period : solve.axis;
+    if (solve.words === par.words && axis === par.period) return 'matched';
+    if (
+      solve.words <= par.words &&
+      axis <= par.period &&
+      (solve.words < par.words || axis < par.period)
+    )
+      return 'beaten';
+    return null;
   }
 
   // ================= the monitor judge =================
@@ -626,18 +689,29 @@
   // ================= the predict gate =================
   // Locked until a prediction is committed; open forever after. Levels
   // without a predict prompt (the player authored the program, or the
-  // level predates the gate) never lock.
+  // level predates the gate) never lock. C43: a solved session never
+  // re-locks either — your own solution is past its first run by
+  // construction (the authored-programs rule made whole).
   function gateOpen(def, session, defects) {
     if (defects?.gate) return true; // re-injected: the gate never locks
     if (!def?.predict) return true;
-    return !!session?.predicted;
+    return !!session?.predicted || !!session?.solved;
   }
 
   // ================= the program state =================
   // The level's listing + overlay → a stored-program state the driver
   // loads verbatim (parseState validates the sms shape; absent fields
   // read their hardware-reset value, the same merge the inspector edits).
-  function programState(def, Asm, Driver) {
+  // C43: the optional listing param runs a GIVEN listing through the
+  // same assembly path — the solved reload's boot (lvSession.solve's
+  // listing); an empty array is a real (empty) program, only a missing
+  // param falls back to the level's own boot listing. The overlay stays
+  // the level's — the datum never carries config, only words. The
+  // session listing is the listing's own 32-row shape (ROWS.slice()):
+  // an '' row is untouched memory (word 0), never an assembly error —
+  // the live session caught the first cut throwing on the '' tail and
+  // the boot silently falling back to the level's own listing.
+  function programState(def, Asm, Driver, listing) {
     const A = Asm || global.PioAsm;
     const D = Driver || global.VibeDriver;
     const prog = A.createProgram(def.id);
@@ -647,7 +721,8 @@
     prog.sidesetBits = Math.max(0, ssCnt - (sideEn ? 1 : 0));
     prog.sidesetOpt = sideEn && ssCnt > 0;
     const words = new Array(32).fill(0);
-    def.program.listing.forEach((row, i) => {
+    (listing || def.program.listing).forEach((row, i) => {
+      if (row === '') return;
       words[i] = A.assembleInstruction(row, prog, {}, `level ${def.id} row ${i}`);
     });
     const lens =
@@ -779,6 +854,9 @@
     sessionKey,
     campaign,
     parText,
+    next,
+    youText,
+    solveBadge,
   };
   global.PioLevels = api;
   global.PIO_LEVEL = register; // the classic-script registration hook

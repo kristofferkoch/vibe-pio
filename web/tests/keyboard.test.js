@@ -125,9 +125,16 @@ async function press(name, mods = {}) {
   // meta 4, shift 8) — the boolean params alone do not set e.altKey
   const mask =
     (mods.alt ? 1 : 0) | (mods.ctrl ? 2 : 0) | (mods.meta ? 4 : 0) | (mods.shift ? 8 : 0);
+  // C43: Enter rides a text-bearing keyDown, the way a real Enter
+  // arrives ('\r') — a bare rawKeyDown fires the page's own keydown
+  // handlers but never the DEFAULT action, so a focused push button
+  // (the band's NEXT) would not press. Page handlers read e.key and
+  // cannot tell the two apart; only the default action differs.
+  const enter = d.key === 'Enter' && !mask;
   await page.send('Input.dispatchKeyEvent', {
-    type: 'rawKeyDown',
+    type: enter ? 'keyDown' : 'rawKeyDown',
     ...d,
+    ...(enter ? { text: '\r', unmodifiedText: '\r' } : {}),
     windowsVirtualKeyCode: d.keyCode,
     nativeVirtualKeyCode: d.keyCode,
     ...mods,
@@ -540,7 +547,7 @@ test('the L0 walk: absence covers Tab order, predict unlocks Run by keys', async
     stops.push(await value(activeId));
   }
   const seen = new Set(stops);
-  const allowed = new Set(['breset', 'lvcands', 'progrows', 'BODY']);
+  const allowed = new Set(['bmap', 'breset', 'lvcands', 'progrows', 'BODY']);
   for (const s of stops)
     assert.ok(
       allowed.has(s),
@@ -620,7 +627,7 @@ test('the L1 walk: the delay cell is the whole editor, Tab crosses rows', async 
     await press('Tab');
     stops.push(await value(activeId));
   }
-  const allowed = new Set(['brun', 'bstep', 'breset', 'progrows', 'BODY']);
+  const allowed = new Set(['bmap', 'brun', 'bstep', 'breset', 'progrows', 'BODY']);
   for (const s of stops)
     assert.ok(
       allowed.has(s),
@@ -764,7 +771,7 @@ test('the L3 walk: jmp debuts — the back edge authored under keys alone', asyn
     await press('Tab');
     stops.push(await value(activeId));
   }
-  const allowed = new Set(['brun', 'bstep', 'breset', 'progrows', 'BODY']);
+  const allowed = new Set(['bmap', 'brun', 'bstep', 'breset', 'progrows', 'BODY']);
   for (const s of stops)
     assert.ok(
       allowed.has(s),
@@ -918,7 +925,7 @@ test('the L4 walk: the scrambler — mark and trade rows, the editor never opens
     await press('Tab');
     stops.push(await value(activeId));
   }
-  const allowed = new Set(['brun', 'bstep', 'breset', 'progrows', 'BODY']);
+  const allowed = new Set(['bmap', 'brun', 'bstep', 'breset', 'progrows', 'BODY']);
   for (const s of stops)
     assert.ok(
       allowed.has(s),
@@ -1032,6 +1039,7 @@ test('the L6 walk: the reading debut is keyboard-reachable, the word face commit
     stops.push(await value(activeId));
   }
   const allowed = new Set([
+    'bmap', // C43: the toolbar's MAP exit is level-page chrome
     'breset',
     'lvcands',
     'progrows',
@@ -1134,6 +1142,7 @@ test('the L7 walk: jmp pin debuts in the menu, the 3-word echo solves', async ()
     stops.push(await value(activeId));
   }
   const allowed = new Set([
+    'bmap', // C43: the toolbar's MAP exit is level-page chrome
     'brun',
     'bstep',
     'breset',
@@ -1250,7 +1259,10 @@ test('the L7 walk: jmp pin debuts in the menu, the 3-word echo solves', async ()
       `pins: (${JSON.stringify(series)}).split('').map(Number),` +
       `tags: [], startCycle: 0, stim: []}})`,
   );
-  await until("$('lvpass').hidden === false", 'the decode judge to pass the golden echo');
+  await until(
+    "$('lvhead').classList.contains('solved')",
+    'the decode judge to pass the golden echo — the reveal is the solved class',
+  );
   assert.match(
     await value("$('lvverdict').textContent"),
     /frame — PASS/,
@@ -1287,6 +1299,7 @@ test('the L8 walk: jmp x-- debuts in the menu, the 4-word gather solves', async 
     stops.push(await value(activeId));
   }
   const allowed = new Set([
+    'bmap', // C43: the toolbar's MAP exit is level-page chrome
     'brun',
     'bstep',
     'breset',
@@ -1401,7 +1414,10 @@ test('the L8 walk: jmp x-- debuts in the menu, the 4-word gather solves', async 
   await page.evaluate(
     `levelJudge({...V.state, sms: [{...V.state.sms[0], rxSeen: (${JSON.stringify(rx)})}]})`,
   );
-  await until("$('lvpass').hidden === false", 'the rx judge to pass the golden gather');
+  await until(
+    "$('lvhead').classList.contains('solved')",
+    'the rx judge to pass the golden gather — the reveal is the solved class',
+  );
   assert.match(
     await value("$('lvverdict').textContent"),
     /rx — PASS/,
@@ -1415,6 +1431,170 @@ test('the L8 walk: jmp x-- debuts in the menu, the 4-word gather solves', async 
     !(await value("/ERROR/.test(document.querySelector('footer').textContent)")),
     'the page walked the whole loop without an engine error',
   );
+});
+
+// ---- the C43 transitions legs ---------------------------------------------
+// The payoff flow end to end under keys: a solved level carries NEXT
+// in the band (the campaign-order hop — a plain location jump, the
+// payoff frame holds until the player acts), the toolbar carries the
+// MAP exit (Alt+M, level pages only), a solved reload boots YOUR
+// passing program (the solve datum — never the boot listing again),
+// and the map's solved rows wear your axes beside par. The sessions
+// are seeded EXACTLY as the page writes them (solved + the solve
+// datum the pass handler stores), snapshot/restore around the seed
+// like the landing leg. Ran red first: none of the three surfaces
+// existed — #bmap, #lvnext, and the solved-class reveal were all
+// absent from the shipped page.
+test('the C43 walk: NEXT hops, Alt+M exits to the map, a solved reload boots your program', async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/index.html`);
+  const snapshot = await page.evaluate(`(() => {
+    const out = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k.startsWith('vibe-pio-level-')) out[k] = localStorage.getItem(k);
+    }
+    localStorage.clear();
+    return out;
+  })()`);
+  // the seed is the page's own shape: l0 solved with its datum (the
+  // reference solve — predicted first, the card's order), l1 solved
+  // with the [3]-delayed answer the boot listing does NOT carry (the
+  // reload-proof datum: booting the boot would show bare rows)
+  await page.evaluate(`(() => {
+    localStorage.setItem('vibe-pio-level-l0', JSON.stringify({
+      solved: true, predicted: true, pick: 'wrap',
+      // the page's own write shape: ROWS.slice() is 32 rows with '' tails
+      solve: { listing: ['set pins, 1', 'set pins, 0', ...new Array(30).fill('')], words: 2, axis: 2 },
+    }));
+    localStorage.setItem('vibe-pio-level-l1', JSON.stringify({
+      solved: true,
+      solve: { listing: ['set pins, 1 [3]', 'set pins, 0 [3]', ...new Array(30).fill('')], words: 2, axis: 8 },
+    }));
+    return true;
+  })()`);
+  try {
+    // ---- L0 solved: the band wears the pass face, NEXT is a stop ------
+    await page.goto(`${baseUrl}/web/sm-view.html?level=l0`);
+    // the goto may resolve inside the new document's pre-script window
+    // (a cross-document hop from the landing) — the typeof guard carries
+    await until(
+      "typeof V !== 'undefined' && V.ready === true",
+      'the solved level page engine to boot',
+    );
+    await until(
+      "$('lvhead').classList.contains('solved')",
+      'a solved reload opens on the pass face',
+    );
+    await tabUntil(`${activeId} === 'lvnext'`, 'the NEXT button in the band');
+    await press('Enter');
+    await until(
+      "location.pathname.endsWith('sm-view.html') && location.search === '?level=l1'",
+      'Enter on NEXT to hop to the campaign-order successor',
+    );
+
+    // ---- L1: YOUR program boots — the [3] delays, not the boot rows ---
+    // the URL wait above already committed the navigation; this poll can
+    // still land inside the new document's pre-script window, so the
+    // typeof guard carries it to the view's own boot
+    await until("typeof V !== 'undefined' && V.ready === true", 'the successor level to boot');
+    assert.strictEqual(
+      await value("document.querySelectorAll('#progrows .prow:not(.empty)').length"),
+      2,
+      'the solved reload boots your two rows',
+    );
+    assert.ok(
+      (await value("document.querySelector('#pr0 .cdly').textContent")).includes('[3]'),
+      'row 0 carries your [3] delay — the boot listing (no delay) must not come back',
+    );
+    assert.ok(
+      (await value("document.querySelector('#pr1 .cdly').textContent")).includes('[3]'),
+      'row 1 carries your [3] delay too',
+    );
+
+    // ---- the exit: Alt+M from body focus lands on the map -------------
+    await page.evaluate('document.activeElement && document.activeElement.blur()');
+    await press('m', { alt: true });
+    await until('location.pathname.endsWith("index.html")', 'Alt+M to reach the campaign map');
+    await until("document.getElementById('map')?.children.length > 0", 'the map to build');
+
+    // ---- the map's solved rows wear your axes beside par --------------
+    assert.match(
+      await value("document.getElementById('row-l0').querySelector('.st').textContent"),
+      /✓ par 2 words · 2 clk\/cycle · you 2·2 \(= par\)/,
+      'a matched solve shows your axes and the = par badge',
+    );
+    assert.match(
+      await value("document.getElementById('row-l1').querySelector('.st').textContent"),
+      /you 2·8/,
+      'every solved row with a datum carries yours',
+    );
+    assert.match(
+      await value("document.getElementById('row-l0').dataset.tip"),
+      /you 2·2/,
+      'the narration carries the same axes (one store, two mouths)',
+    );
+  } finally {
+    await page.evaluate(`((snap) => {
+      const keep = Object.keys(localStorage).filter((k) => k.startsWith('vibe-pio-level-'));
+      for (const k of keep) localStorage.removeItem(k);
+      for (const [k, v] of Object.entries(snap)) localStorage.setItem(k, v);
+    })(${JSON.stringify(snapshot)})`);
+  }
+});
+
+// the last registered level's NEXT is the map (the campaign-order
+// successor list ends there — the hop target changes, the affordance
+// does not). Ran red first: #lvnext did not exist.
+test("the C43 walk: the last registered level's NEXT hops to the map", async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/index.html`);
+  const snapshot = await page.evaluate(`(() => {
+    const out = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k.startsWith('vibe-pio-level-')) out[k] = localStorage.getItem(k);
+    }
+    localStorage.clear();
+    return out;
+  })()`);
+  await page.evaluate(`(() => {
+    localStorage.setItem('vibe-pio-level-l8', JSON.stringify({
+      solved: true,
+      solve: {
+        listing: ['set x, 7', 'in pins, 1', 'jmp x--, 1', 'push block', ...new Array(28).fill('')],
+        words: 4, axis: null,
+      },
+    }));
+    return true;
+  })()`);
+  try {
+    await page.goto(`${baseUrl}/web/sm-view.html?level=l8`);
+    await until(
+      "typeof V !== 'undefined' && V.ready === true",
+      'the last level page engine to boot',
+    );
+    await until("$('lvhead').classList.contains('solved')", 'the solved face');
+    await tabUntil(`${activeId} === 'lvnext'`, 'the NEXT button');
+    await press('Enter');
+    await until(
+      'location.pathname.endsWith("index.html")',
+      'NEXT from the last level to reach the map',
+    );
+    await until("document.getElementById('map')?.children.length > 0", 'the map to build');
+    // the rx datum shows words only — the value judge measures no clock
+    assert.match(
+      await value("document.getElementById('row-l8').querySelector('.st').textContent"),
+      /you 4 words \(= par\)/,
+      'the rx solve carries its words, never an invented clock',
+    );
+  } finally {
+    await page.evaluate(`((snap) => {
+      const keep = Object.keys(localStorage).filter((k) => k.startsWith('vibe-pio-level-'));
+      for (const k of keep) localStorage.removeItem(k);
+      for (const [k, v] of Object.entries(snap)) localStorage.setItem(k, v);
+    })(${JSON.stringify(snapshot)})`);
+  }
 });
 
 // ---- the C42 landing leg ------------------------------------------------
