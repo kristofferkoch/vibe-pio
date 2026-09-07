@@ -21,6 +21,12 @@
 // while the gather runs. The delay column stays SHUT — structure, not
 // delay, is the lesson.
 //
+// The goal NUDGES, never tells (owner review 2026-09-07): it states
+// the task (8 sampled bits to one pushed word) and points at the new
+// surface (registers exist; set and jmp reach them), but names no
+// recipe and no decrement semantics — the fencepost lesson is the
+// DECODED NEAR-MISS's to teach, not the brief's to spoil.
+//
 // Classic script, dependency-free, pure data: it registers through
 // PIO_LEVEL (levels.js defines the hook and loads first; the loader in
 // sm-view.html writes this tag for ?level=l8 before sm-view.js runs).
@@ -33,7 +39,7 @@ globalThis.PIO_LEVEL?.('l8', {
   "id": "l8",
   "name": "Fencepost",
   "chapter": 2,
-  "goal": "count the gather: the world ticks its bits on gpio1 — arm the stepper with set x, close the loop with jmp x--, and exactly 8 sampled bits make the word push hands to the RX FIFO (the test sees the value BEFORE it decrements)",
+  "goal": "count the gather: the world ticks its bits on gpio1 — exactly 8 sampled bits make the word push hands to the RX FIFO; the machine has registers now, and set and jmp can reach them",
   "program": {
     "listing": [],
     "sms": [
