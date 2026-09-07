@@ -39,7 +39,7 @@ globalThis.PIO_LEVEL?.('l8', {
   "id": "l8",
   "name": "Fencepost",
   "chapter": 2,
-  "goal": "count the gather: the world ticks its bits on gpio1 — exactly 8 sampled bits make the word push hands to the RX FIFO; the machine has registers now, and set and jmp can reach them",
+  "goal": "the world ticks its bits on gpio1 — read exactly 8 of them into the ISR as one word, then push it to the RX FIFO; the machine has registers now, and set and jmp can reach them",
   "program": {
     "listing": [],
     "sms": [
