@@ -2213,3 +2213,54 @@ for (const [width, height] of VIEWPORTS) {
     );
   });
 }
+
+// the goal line — the level's instruction is the page's most important
+// text, and it shipped nearly hidden: dim gray on the silver band
+// (5a5a5a on c0c0c0 ≈ 3.8:1, under the 4.5:1 AA text bar) and clamped
+// to one ellipsized line, which cut L8's 240-char brief mid-sentence.
+// The gate walks every level at the reference viewports and holds two
+// properties of #lvgoal: the brief lays out in full (scrollWidth within
+// the box — both the nowrap overflow and the ellipsis clip report the
+// untruncated width) and the goal's computed color reads at ≥ 4.5:1
+// against the band's computed background (WCAG relative luminance, on
+// computed styles so a palette tweak cannot silently undo it). The band
+// is an auto grid row: a wrapping brief grows it, and the growth comes
+// out of main (the listing scrolls), never out of the brief.
+const GOAL_SCAN = `(() => {
+  const bad = [];
+  const goal = document.getElementById('lvgoal');
+  if (!goal) return { bad: ['a level page shows no goal'] };
+  if (goal.scrollWidth > goal.clientWidth + 1)
+    bad.push(
+      'the goal is clipped (scrollWidth ' + goal.scrollWidth + ' in ' + goal.clientWidth +
+      ') — the lesson must lay out in full',
+    );
+  const nums = (s) => (s.match(/\\d+(?:\\.\\d+)?/g) || []).slice(0, 3).map(Number);
+  const lin = (v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  const lum = (rgb) => 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+  const fg = lum(nums(getComputedStyle(goal).color));
+  const bg = lum(
+    nums(getComputedStyle(document.getElementById('lvband')).backgroundColor),
+  );
+  const ratio = (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+  if (ratio < 4.5)
+    bad.push('the goal reads at ' + ratio.toFixed(2) + ':1 on the band — under the 4.5:1 text bar');
+  return { bad, ratio: +ratio.toFixed(2) };
+})()`;
+
+const GOAL_LEVELS = ['l0', 'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8'];
+for (const [width, height] of VIEWPORTS) {
+  for (const id of GOAL_LEVELS) {
+    test(`the goal line: the whole lesson, legible — ${id} ${width}×${height}`, async () => {
+      await page.setViewport(width, height);
+      await page.goto(`${pageUrl()}?level=${id}`);
+      await page.evaluate('document.fonts.ready.then(() => {})');
+      await page.evaluate("document.getElementById('boot')?.remove()");
+      const { bad } = await page.evaluate(GOAL_SCAN);
+      assert.deepStrictEqual(bad, [], `the goal line broke on ${id} at ${width}×${height}`);
+    });
+  }
+}

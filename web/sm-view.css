@@ -2531,13 +2531,17 @@ main.level #program:not(.col-side) #edside {
   color: var(--navy);
   white-space: nowrap;
 }
+/* the goal is the page's most important text: black on the silver band
+   (the old dim gray read 3.8:1) and it wraps — a brief is never cut to
+   fit the chrome (L8's 240-char lesson ellipsized mid-sentence). The
+   band is an auto grid row, so a taller brief comes out of main (whose
+   listing scrolls), never out of the brief */
 .lvgoal {
   flex: 1;
   min-width: 0;
-  color: var(--dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--txt);
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 .lvmon {
   color: var(--dim);
