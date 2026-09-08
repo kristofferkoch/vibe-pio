@@ -1913,6 +1913,100 @@ for (const [width, height] of VIEWPORTS) {
   });
 }
 
+// C44 — the L9 leg: the feeder debuts. The TX half of the fifo row, the
+// pull connector and the OSR panel arrive (the reading leg leaves — the
+// page is its own geometry), the OSR's autopull furniture sub-gates the
+// #xy way (L11 teaches it), and the investigate card is ABSENT at boot —
+// it surfaces at the stall, never before (absence covers the Tab order).
+// The band's value-judge posture is L6's: no glyph pair, no empty boxes.
+const L9_ABSENT = [
+  '#clkdivtag',
+  '#bempty',
+  '#bdemo',
+  '#bexport',
+  '#bimport',
+  '#bcopy',
+  '#speed',
+  '#binsn',
+  '#smsbar',
+  '#pinstrip',
+  '#regs', // no scratch on a predict→run level (xy is L8's, regs is later)
+  '#irqpanel',
+  '#inspector',
+  '#dsalloc',
+  '#progfoot',
+  '#exectitle',
+  '#execslim',
+  '#isr', // the reading leg is not the feeder's face
+  '#rxfifo', // the RX half: the row stays, the half leaves
+  '#aptgl', // the OSR's autopull furniture sub-gates (L11's teaching)
+  '#spin-pullthr',
+  '#osrnotch',
+  '#framemap',
+  '.maptag',
+  '#wavewinaux',
+  '#spin-lenspin',
+  '#mon',
+  '#feed', // the feed is the level's own, read-only — the panel never ships
+  '#pattern',
+  '#lvwhy', // the investigate card is post-stall, absent at boot
+];
+const L9_SCAN = `(() => {
+  const bad = [];
+  const box = (sel) => document.querySelector(sel)?.getBoundingClientRect();
+  const gone = (sel) => {
+    const el = document.querySelector(sel);
+    return !el || el.offsetParent === null;
+  };
+  for (const sel of ${JSON.stringify(L9_ABSENT)}) {
+    if (document.querySelectorAll(sel).length && !gone(sel))
+      bad.push(sel + ' is still laid out — a locked panel is absence, not a ghost');
+  }
+  // the feeder's debut: the TX half, the connector, the OSR panel — all
+  // with real boxes (the OSR shows the arriving word while the machine
+  // eats; the connector is a thin row by design — 16px, the .flowconn
+  // grammar — so its floor is its own)
+  for (const sel of ['#fifo', '#osr', '#fiforow']) {
+    const b = box(sel);
+    if (!b || b.width < 80 || b.height < 18) bad.push(sel + ' has no box — the feeder debuts');
+  }
+  const pc = box('#pullconn');
+  if (!pc || pc.width < 40 || pc.height < 12) bad.push('#pullconn has no box — the feeder debuts');
+  // the tx judge is a value judge: no glyph pair, never empty boxes
+  for (const sel of ['#lvtarget', '#lvlive']) {
+    const b = box(sel);
+    if (!b || b.width > 0 || b.height > 0)
+      bad.push(sel + ' shows on a tx level — the value judge has no windows');
+  }
+  // the standing level checks: 32 honest rows, the wave's floor, no
+  // wrap steppers, the head row never wraps
+  if (document.querySelectorAll('#progrows .prow').length !== 32)
+    bad.push('the listing lost rows — 32 rows in every level');
+  if (document.querySelectorAll('.wstep').length) bad.push('the wrap steppers are built');
+  const wave = box('#wavesvg');
+  if (!wave || wave.height < 64) bad.push('the wave lost its 64px floor');
+  if (!wave || wave.width < 420) bad.push('the wave is squeezed under 420px');
+  const head = document.getElementById('lvhead');
+  if (head && head.scrollHeight > head.clientHeight + 1)
+    bad.push('the band head wraps (scrollHeight ' + head.scrollHeight + ' in ' + head.clientHeight + ')');
+  return { bad };
+})()`;
+
+for (const [width, height] of VIEWPORTS) {
+  test(`the L9 page: the feeder debuts, the autopull furniture waits, the investigate card is absent ${width}×${height}`, async () => {
+    await page.setViewport(width, height);
+    await page.goto(`${pageUrl()}?level=l9`);
+    await page.evaluate('document.fonts.ready.then(() => {})');
+    await page.evaluate("document.getElementById('boot')?.remove()");
+    const { bad } = await page.evaluate(L9_SCAN);
+    assert.deepStrictEqual(
+      bad,
+      [],
+      `L9 geometry broken at ${width}×${height} — the feeder's debut must fit`,
+    );
+  });
+}
+
 // C42 — the landing leg: the campaign map (web/index.html) is its own
 // page — a content-hugging menu window (mockups/landing.html picked
 // these: no toolbar, no engine boot, max-width 640) sharing the era
@@ -1936,10 +2030,10 @@ const LANDING_SCAN = `(() => {
   const map = document.getElementById('map');
   if (!map || map.scrollHeight > map.clientHeight + 1)
     bad.push('the map scrolls internally — 10 rows fit a menu at 13"');
-  if (document.querySelectorAll('#map .mrow').length !== 10)
-    bad.push('the map lost rows (9 levels + the sandbox standing row)');
-  if (document.querySelectorAll('#map .chgroup').length !== 3)
-    bad.push('a chapter frame is missing (three shipped chapters)');
+  if (document.querySelectorAll('#map .mrow').length !== 11)
+    bad.push('the map lost rows (10 levels + the sandbox standing row)');
+  if (document.querySelectorAll('#map .chgroup').length !== 4)
+    bad.push('a chapter frame is missing (four shipped chapters)');
   for (const cap of document.querySelectorAll('.chcap'))
     if (cap.scrollHeight > cap.clientHeight + 1) bad.push('a chapter caption wraps');
   for (const row of document.querySelectorAll('#map .mrow')) {
@@ -2251,7 +2345,7 @@ const GOAL_SCAN = `(() => {
   return { bad, ratio: +ratio.toFixed(2) };
 })()`;
 
-const GOAL_LEVELS = ['l0', 'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8'];
+const GOAL_LEVELS = ['l0', 'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'l9'];
 for (const [width, height] of VIEWPORTS) {
   for (const id of GOAL_LEVELS) {
     test(`the goal line: the whole lesson, legible — ${id} ${width}×${height}`, async () => {

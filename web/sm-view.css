@@ -2696,6 +2696,26 @@ main.level #program:not(.col-side) #edside {
 #lvpred.deny .lvask {
   color: var(--red);
 }
+/* C44: the investigate card — the predict grammar's prose twin (no
+   thumbs: the machine's behavior is the answer, and the evidence is on
+   the page), one row further down the band; the same deny flash for a
+   wrong commit */
+#lvwhycands {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+#lvwhycands:focus {
+  outline: 1px dotted var(--txt);
+  outline-offset: -1px;
+}
+#lvwhy.deny {
+  animation: blink 0.24s steps(2) 1;
+}
+#lvwhy.deny .lvask {
+  color: var(--red);
+}
 
 /* ========== C42: the campaign landing (web/index.html) ==========
    The front door is its own page sharing this stylesheet: the era

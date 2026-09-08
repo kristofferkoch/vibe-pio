@@ -873,9 +873,9 @@ decisions on the record:
   already rejects an untitled chapter).
 
 Web cards: the JS discipline (docs/js-tooling.md), red/green TDD,
-DOM glue verified by the browser session and `make web` — geometry
-and keyboard only through the two sanctioned headless gates; the
-levels gate stays engine-side. Par: the standing rule — every
+DOM glue verified by the browser session and `make web` — geometry and
+keyboard only through the two sanctioned headless gates; the levels
+gate stays engine-side. Par: the standing rule — every
 level ships a hyperopt-derived front (FRONT_CLASS grows the feeder
 classes; L9 rides the 'given' precedent, L6's), the champion must
 equal the committed par. Full perturbation sets per level. The
@@ -883,3 +883,62 @@ goal prose follows the C41 doctrine — task verbs, the nudge never
 the recipe. Dependency order: C44 → C45 → C46 → C47 (C44 = L9,
 C45 = L10, C46 = L11, C47 = L12; runtime unlock order stays
 numeric regardless: L8 → L9 → … → L12).
+
+C44 landed 2026-09-08: L9 Words — the feeder opens. The feed is the
+demo's own static feeds machinery riding the level format
+(program.sms[0].feeds, validated 1..4 words — the honest 4-deep
+unjoined TX), the given program is the reading slice's TX twin
+(`pull block` / `out pins, 1`, wrap 0..1), and the fed bytes carry
+the fiction's first payload fragment per the bible round's ch3
+slice: 'hey!' (0x68 0x65 0x79 0x21) — plain ASCII, mundane-warm,
+anonymous, deniable-as-demo-data; the FIFO panel's own hex/ASCII
+slots render it (a person's wave hello riding four practice words).
+The monitor is the tx judge (levels.js `txJudge`, kind 'tx' v:1 —
+the rx twin over the PULLED words, exact, no ladder; its expected
+words ARE the feed by validation), fed by the driver's `txSeen`
+mirror (the TX queue head latched at each accepted pop strobe —
+the rxSeen precedent; the goldens record the pulled words per case
+via the model's own tx_level decrement, `_pulled_words`). The dry-out
+is terminal by construction, so the judge's pass ("tx · 4 words") IS
+the feed running dry — one lap later the fifth pull stalls forever
+and the INVESTIGATE card debuts: the PRIMM verb's own face, a hidden
+band row (#lvwhy) surfaced by render() at SM0's STALL, riding the
+predict card's radio grammar (prose candidates; one commit — a wrong
+commit denies and stays armed, re-picking free; the right commit IS
+the level's pass — the tx judge never fires levelPass, it only
+narrates). The OSR panel's autopull furniture sub-gates the #xy way:
+SURFACE key `autopull` (#aptgl/#spin-pullthr/#osrnotch) absent at L9,
+arriving with L11; the fifo-join segmented control stays (the panel's
+own C22 chrome, the L6 isrviz precedent). Chapter 3 registers as "The
+feeder" (CHAPTERS row 4; the map grows to 11 rows — index.html's
+script list and the loader's `n <= 9` bound grow with it). Gates:
+levels.test.js (7 new legs — red first: MODULE_NOT_FOUND, the level
+file did not exist; the txSeen-mirror leg ran red against the
+pre-C44 engine-driver as its own demo; the investigate-validation leg
+ran red with `const iv = null` re-injected after its bad() helper was
+fixed to re-register under the clone's own id — a mismatched id
+throws in register for the wrong reason and the leg passes vacuously;
+the judge defect hook diverges in-process: a partial feed greens
+defective, reds clean), the par drift gate (red first: "l9: no
+FRONT_CLASS entry"; a tampered l9 par red-flags; the 'given' front
+now dispatches its judge by kind — rx over pushed words, tx over
+pulled — with the `_tx_judge` Python mirror, doctests included), the
+layout gate's L9 leg at both 13" viewports (red: the pre-C44 page
+boots the sandbox at ?level=l9) + the landing leg's 11-row/4-chapter
+update (red: the map lost rows), the keyboard walk's L9 leg (red:
+orphan sandbox stops; green: predict by keys, the wrong-then-right
+investigate commits, the judge-pass-not-level-pass assertion — the
+face feeds ride the L7 discipline, judge golden words + a stalled sms
+snapshot through the page's own levelJudge/render), make js 258,
+make py 196, make web re-verified, make hyperopt. The live session
+(real CDP mouse events over the real wasm engine) walked the whole
+payoff: map → frontier L9 → predict by click unlocks RUN → the four
+words pulled (txSeen 68 65 79 21), the wire low for 'h' then stuck
+high, 'tx — PASS' a lap before the stall, the chip 'stall · tx
+empty' + 'EMPTY · SM STALLED' as the card's evidence, wrong answer
+denied, right answer passes, par 2 words · 2 clk/bit + NEXT, the map
+row '✓ par … · you 2 words (= par)', the solved reload boots YOUR
+'pull block' listing with the gate open and the card never re-asking
+at a re-run stall, the sandbox untouched (pattern panel + autopull
+toggle + OSR all present, no band). No cards remain in this chapter's
+front — C45 (L10) is next.

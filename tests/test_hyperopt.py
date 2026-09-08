@@ -455,6 +455,21 @@ def test_level_front_flags_a_tampered_gather_par(tmp_path) -> None:
     assert checks["front-l8-reference"] is True  # 4 words still fit the lying 5
 
 
+def test_level_front_flags_a_tampered_given_tx_par(tmp_path) -> None:
+    # C44: the given front's tx leg (L9 — the level's own program is the
+    # only honest one, no editor exists) must bite too: the champion is
+    # the given 2-word pull/out loop, so a par with one word of slack is
+    # drift. The red side re-injects it into l9's par.
+    (tmp_path / "web").mkdir()
+    shutil.copytree(H.REPO / "web" / "levels", tmp_path / "web" / "levels")
+    p = tmp_path / "web" / "levels" / "l9.js"
+    assert '"words": 2' in p.read_text()  # the par line is the only hit
+    p.write_text(p.read_text().replace('"words": 2', '"words": 3'))
+    checks = dict(H.level_front_checks(tmp_path))
+    assert checks["front-l9-par"] is False
+    assert checks["front-l9-reference"] is True  # 2 words still fit the lying 3
+
+
 def test_uart_judge_mirror_names_the_first_divergent_bit() -> None:
     # C40: the uart mirror's near-miss faces — a bad run names its frame
     # position (the bit-time red), a wrong byte names the bit (the value
@@ -492,3 +507,20 @@ def test_rx_judge_mirror_names_the_first_divergent_bit() -> None:
     assert "no words" in H._rx_judge([], p)["verdict"]
     # a partial run keeps watching
     assert "3 of 4" in H._rx_judge([0x80000000, 0, 0x80000000], p)["verdict"]
+
+
+def test_tx_judge_mirror_reads_the_pulled_words() -> None:
+    # C44: the tx mirror — the rx judge's TX twin over the PULLED words
+    # (the feed's dry-out as a value: exact, no ladder, the verdict
+    # naming the first divergent bit when a word differs)
+    p = {"kind": "tx", "words": [0x68, 0x65, 0x79, 0x21]}  # 'hey!'
+    assert H._tx_judge([0x68, 0x65, 0x79, 0x21], p)["pass"] is True
+    # a divergent word names the word and the bit (0x64 vs 0x65: bit 0 —
+    # got 0, want 1; the first divergent bit from the top, the rx rule)
+    v = H._tx_judge([0x68, 0x64, 0x79, 0x21], p)
+    assert v["pass"] is False
+    assert v["verdict"] == "word 2 bit 0 — got 0, want 1"
+    # never-pull: nothing to judge
+    assert "no words" in H._tx_judge([], p)["verdict"]
+    # a partial feed keeps watching
+    assert "3 of 4" in H._tx_judge([0x68, 0x65, 0x79], p)["verdict"]

@@ -896,9 +896,9 @@ def tamper_delay(ctx: SeedCtx, cand: Candidate) -> list[Candidate]:
 # over the rows above it; "scramble" = the boot's rows in every order (L4:
 # the Parsons rung — the vocabulary is fixed, the order is the whole task,
 # so the honest space is the permutations); "given" = the level's own
-# program is the only honest one (L6: a predict→run level with no editor —
-# nothing else can be authored, so the front is the single given point and
-# the drift gate pins par == it); "echo" = the gated echo loops (L7: the
+# program is the only honest one (L6, and L9's feeder slice — no editor,
+# nothing else can be authored, so the front is the single given point
+# and the drift gate pins par == it); "echo" = the gated echo loops (L7: the
 # branchy `jmp pin`+`set` pair at a steady bit-time — the test row, the
 # two level-holding set rows, the return by wrap or the `·` row's free
 # jmp 0; the analytic period is the bit-time r); "gather" = the counting
@@ -916,6 +916,7 @@ FRONT_CLASS: dict[str, str] = {
     "l6": "given",
     "l7": "echo",
     "l8": "gather",
+    "l9": "given",
 }
 
 
@@ -942,6 +943,42 @@ def _rx_judge(seen: Sequence[int], prof: dict[str, Any]) -> dict[str, Any]:
     got = list(seen or [])
     if not got:
         return {"pass": False, "verdict": "no words yet — the machine has pushed nothing to the RX FIFO"}
+    for i in range(min(len(want), len(got))):
+        g, w = got[i] & 0xFFFFFFFF, want[i] & 0xFFFFFFFF
+        if g == w:
+            continue
+        for b in range(31, -1, -1):
+            if ((g >> b) & 1) != ((w >> b) & 1):
+                return {
+                    "pass": False,
+                    "verdict": f"word {i + 1} bit {b} — got {(g >> b) & 1}, want {(w >> b) & 1}",
+                }
+    if len(got) < len(want):
+        return {"pass": False, "verdict": f"{len(got)} of {len(want)} words in — keep watching"}
+    return {"pass": True, "verdict": ""}
+
+
+def _tx_judge(seen: Sequence[int], prof: dict[str, Any]) -> dict[str, Any]:
+    """The Python mirror of web/levels.js txJudge (C44) — the rx mirror's
+    TX twin over the PULLED words (the feed's dry-out as a value). Same
+    semantics: the pulled words compared against the profile's expected
+    words (= the feed) exactly, the verdict naming the first divergent
+    bit; fewer words than expected keeps watching; no ladder.
+
+    >>> p = {"kind": "tx", "words": [0x68, 0x65]}
+    >>> _tx_judge([0x68, 0x65], p)["pass"]
+    True
+    >>> _tx_judge([0x68, 0x64], p)["verdict"]
+    'word 2 bit 0 — got 0, want 1'
+    >>> _tx_judge([], p)["verdict"]
+    'no words yet — the machine has pulled nothing from the TX FIFO'
+    >>> _tx_judge([0x68], p)["verdict"]
+    '1 of 2 words in — keep watching'
+    """
+    want = prof["words"]
+    got = list(seen or [])
+    if not got:
+        return {"pass": False, "verdict": "no words yet — the machine has pulled nothing from the TX FIFO"}
     for i in range(min(len(want), len(got))):
         g, w = got[i] & 0xFFFFFFFF, want[i] & 0xFFFFFFFF
         if g == w:
@@ -1070,8 +1107,14 @@ def _given_front(lid: str, defn: dict[str, Any]) -> list[tuple[int, int, list[st
         raise SystemExit(f"front {lid}: given class assumes a wrap loop (no jmp rows)")
     stimulus = defn.get("stimulus") or []
     w32 = gg_assemble(ref, sms[0], f"front:{lid}") + [0] * (32 - len(ref))
-    rc = gg_run_case(w32, sms, stimulus, prof["pin"], True)
-    v = _rx_judge(rc.get("rx", []), prof)
+    rc = gg_run_case(w32, sms, stimulus, prof["pin"], prof["kind"] == "rx", prof["kind"] == "tx")
+    v: dict[str, Any]
+    if prof["kind"] == "rx":
+        v = _rx_judge(rc.get("rx", []), prof)
+    elif prof["kind"] == "tx":
+        v = _tx_judge(rc.get("tx", []), prof)
+    else:
+        raise SystemExit(f"front {lid}: the given class judges value levels (rx/tx), not {prof['kind']}")
     if not v["pass"]:
         raise SystemExit(f"front {lid}: the given program does not pass its own profile — {v['verdict']}")
     period = sum(1 + (int(m.group(1)) if (m := _ROW_DELAY.search(r)) else 0) for r in ref)
@@ -1566,6 +1609,14 @@ def level_front_checks(repo: Path = REPO) -> list[tuple[str, bool]]:
             rc = gg_run_case(w32, sms, defn.get("stimulus") or [], prof["pin"], True)
             v_rx = _rx_judge(rc.get("rx", []), prof)
             checks.append((f"front-{lid}-reference", bool(v_rx["pass"]) and used <= par["words"]))
+            continue
+        if prof["kind"] == "tx":
+            # C44: the feeder levels' reference leg — the tx judge over
+            # the model's pulled words (the same replay the gate commits;
+            # the feed rides the sms cfgs the mirror loads)
+            rc = gg_run_case(w32, sms, defn.get("stimulus") or [], prof["pin"], False, True)
+            v_tx = _tx_judge(rc.get("tx", []), prof)
+            checks.append((f"front-{lid}-reference", bool(v_tx["pass"]) and used <= par["words"]))
             continue
         if prof["kind"] == "uart":
             # C40: the echo levels' reference leg — the decode judge over

@@ -212,6 +212,24 @@
             data-status="predict: ←/→ pick the wave you expect · Enter commits it"
           ></div>
         </div>
+        <!-- C44: the investigate card — the PRIMM Investigate verb's debut
+             (the "why did it stop?" moment): a post-stall commit riding
+             the predict card's grammar (candidates, one commit). Absent
+             from layout and Tab order until the machine stalls; done
+             after the committed answer passes. The stall narration on
+             the page (the chip, the banner, the tooltips) is the
+             evidence it points at — never replaced by it. -->
+        <div class="lvrow" id="lvwhy" hidden>
+          <span class="lvask" id="lvwhyask"></span>
+          <div
+            id="lvwhycands"
+            tabindex="0"
+            role="listbox"
+            aria-label="investigate candidates"
+            data-rovi
+            data-status="investigate: ←/→ pick your answer · Enter commits it"
+          ></div>
+        </div>
       </div>
 
       <!-- ============ the four machines: cursors, per-SM FIFO columns === -->
@@ -933,7 +951,7 @@
     // last-registered check needs every registered level on the page,
     // not just this one; the definitions are inert data, only
     // PioLevels.active(?level=) picks the page's own.
-    for (let n = 0; n <= 8; n++)
+    for (let n = 0; n <= 9; n++)
       document.write('<script src="levels/l' + n + '.js"><' + '/script>');
     </script>
     <script src="sm-view.js"></script>

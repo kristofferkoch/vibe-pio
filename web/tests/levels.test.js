@@ -1452,7 +1452,7 @@ test('the chapter table ships with its levels, not ahead of them', () => {
   // the titles are the LEVELS-NOTES chapter sketch, in order
   assert.deepEqual(
     PioLevels.CHAPTERS.map((c) => c.title),
-    ['First light', 'Time and loops', 'Reading the world'],
+    ['First light', 'Time and loops', 'Reading the world', 'The feeder'],
   );
 });
 
@@ -1464,7 +1464,7 @@ test('a level cannot register a chapter the table does not name', () => {
 test('campaign: numeric order, the first unsolved is the frontier, chapters derive', () => {
   // this file registers l5 BEFORE l4 (card order) — the campaign must
   // order numerically anyway (the runtime unlock order regardless)
-  assert.deepEqual(PioLevels.all(), ['l0', 'l1', 'l2', 'l3', 'l5', 'l4', 'l6', 'l7', 'l8']);
+  assert.deepEqual(PioLevels.all(), ['l0', 'l1', 'l2', 'l3', 'l5', 'l4', 'l6', 'l7', 'l8', 'l9']);
   assert.deepEqual(PioLevels.campaign(() => null).order, [
     'l0',
     'l1',
@@ -1475,6 +1475,7 @@ test('campaign: numeric order, the first unsolved is the frontier, chapters deri
     'l6',
     'l7',
     'l8',
+    'l9',
   ]);
   // fresh storage: nothing solved, the frontier is L0, no chapter complete
   const fresh = PioLevels.campaign(() => null);
@@ -1482,7 +1483,7 @@ test('campaign: numeric order, the first unsolved is the frontier, chapters deri
   assert.equal(fresh.solved.size, 0);
   assert.deepEqual(
     fresh.chapters.map((c) => c.complete),
-    [false, false, false],
+    [false, false, false, false],
   );
   // a hermetic call (no read fn) is a fresh campaign
   assert.equal(PioLevels.campaign().frontier, 'l0');
@@ -1492,15 +1493,11 @@ test('campaign: numeric order, the first unsolved is the frontier, chapters deri
   assert.equal(midC.frontier, 'l6');
   assert.deepEqual(
     midC.chapters.map((c) => c.complete),
-    [true, true, false],
+    [true, true, false, false],
   );
   assert.deepEqual(
     midC.chapters.map((c) => c.levels),
-    [
-      ['l0', 'l1', 'l2'],
-      ['l3', 'l4', 'l5'],
-      ['l6', 'l7', 'l8'],
-    ],
+    [['l0', 'l1', 'l2'], ['l3', 'l4', 'l5'], ['l6', 'l7', 'l8'], ['l9']],
   );
   // non-contiguous solving does not skip: l0+l2 solved leaves the
   // frontier at l1 (furthest = max CONTIGUOUS solved)
@@ -1511,7 +1508,7 @@ test('campaign: numeric order, the first unsolved is the frontier, chapters deri
   assert.equal(done.frontier, null);
   assert.deepEqual(
     done.chapters.map((c) => c.complete),
-    [true, true, true],
+    [true, true, true, true],
   );
 });
 
@@ -1524,6 +1521,7 @@ test('parText names its clock per judge kind — the band and the map agree', ()
   assert.equal(PioLevels.parText(PioLevels.get('l6')), 'par 2 words · 2 clk/bit');
   assert.equal(PioLevels.parText(PioLevels.get('l7')), 'par 3 words · 8 clk/bit');
   assert.equal(PioLevels.parText(PioLevels.get('l8')), 'par 4 words · 2 clk/bit');
+  assert.equal(PioLevels.parText(PioLevels.get('l9')), 'par 2 words · 2 clk/bit');
 });
 
 // ============ C43: the transitions — the datum and the hop ============
@@ -1536,7 +1534,8 @@ test('parText names its clock per judge kind — the band and the map agree', ()
 test('next: the campaign-order successor, null at the last registered level', () => {
   assert.equal(PioLevels.next('l0'), 'l1');
   assert.equal(PioLevels.next('l5'), 'l6');
-  assert.equal(PioLevels.next('l8'), null); // the last registered level hops to the map
+  assert.equal(PioLevels.next('l8'), 'l9'); // C44: the feeder chapter opens
+  assert.equal(PioLevels.next('l9'), null); // the last registered level hops to the map
   assert.equal(PioLevels.next('nope'), null); // unknown ids have no successor
 });
 
@@ -1603,4 +1602,220 @@ test('youText/solveBadge: your axes beside par — matched, beaten, worse, the r
   assert.equal(PioLevels.solveBadge(L1, null), null);
   assert.equal(PioLevels.solveBadge(L1, { words: 2 }), null); // same rule on the badge
   assert.equal(PioLevels.solveBadge(L1, { words: 2, axis: 'x' }), null);
+});
+
+// ============ C44: L9 Words — the feeder opens, the dry-out is terminal ====
+// Chapter 3 debuts: the world feeds the MACHINE this time. The static TX
+// feed (the demo's own preload pattern — a word list enqueued at load)
+// carries the level's given, and the program is the twin of L6's reading
+// slice: every lap row 0 pulls one word off the FIFO into the OSR and
+// row 1 shifts ONE bit of it to gpio0. The feed is static and the dry-out
+// terminal — after the fourth word the fifth pull stalls forever (the L6
+// honest-machine story on the TX side), and the stall is the LESSON: the
+// investigate card (the PRIMM Investigate verb's debut, riding the predict
+// card's grammar) asks why the machine stopped, the stall chip/banner/
+// tooltips staying as the evidence it points at. The judge is the tx twin
+// of the rx judge — the PULLED words compared against the feed, exact (a
+// value has no tolerance); the level PASSES on the investigate commit,
+// never on the judge's pass (the card is the acceptance, the monitor
+// narrates the dry-out).
+require('../levels/l9.js');
+const L9 = PioLevels.get('l9');
+const G9 = GOLDEN.levels.l9;
+// the fed payload — the fiction's first fragment (the 2026-09-08 bible
+// round's ch3 slice): plain ASCII bytes in the previous owner's
+// mundane-warm register, anonymous, deniable-as-demo-data
+const L9_FEED = [0x68, 0x65, 0x79, 0x21]; // 'hey!'
+
+test('l9 registers complete: the feed, the tx profile, the investigate card', () => {
+  assert.equal(L9.id, 'l9');
+  assert.equal(L9.name, 'Words');
+  assert.equal(L9.chapter, 3);
+  assert.ok(L9.goal.length > 8);
+  // the given: the feed rides SM0's preload (the demo's own feeds
+  // machinery — a word list enqueued at load; the 4-deep unjoined TX is
+  // the honest depth, no more can ride)
+  assert.deepEqual(L9.program.sms[0].feeds, L9_FEED);
+  // the program is the reading slice's TX twin: pull loads the OSR, out
+  // shifts one bit; OUT_BASE maps gpio0, one pin wide (the canonical
+  // spelling carries pull's default block — the C32 discipline)
+  assert.deepEqual(L9.program.listing, ['pull block', 'out pins, 1']);
+  assert.equal(L9.program.sms[0].pinctrl.outCnt, 1);
+  assert.equal(L9.program.sms[0].execctrl.wrapTop, 1);
+  assert.equal(L9.program.sms[0].execctrl.wrapBot, 0);
+  // the feeder surface debuts: the TX half of the fifo row, the pull
+  // connector, the OSR panel — and the OSR's autopull furniture sub-gates
+  // the #xy way (L11 teaches it; `osr` alone ships the panel without the
+  // row that teaches two levels ahead)
+  for (const key of ['transport', 'listing', 'wave', 'txfifo', 'pullConn', 'osr'])
+    assert.ok(L9.panels.includes(key), `${key} is L9's surface`);
+  for (const absent of [
+    'isr',
+    'rxfifo',
+    'autopull',
+    'feed',
+    'pattern',
+    'delayCol',
+    'sideCol',
+    'xy',
+    'frameMap',
+    'wrapSteppers',
+    'monitorAux',
+  ])
+    assert.ok(!L9.panels.includes(absent), `${absent} must stay absent in L9`);
+  // predict → run: no editor, the gate locks the first run
+  assert.deepEqual(L9.opcodes, []);
+  assert.equal(PioLevels.gateOpen(L9, {}), false);
+  assert.equal(PioLevels.gateOpen(L9, { predicted: true }), true);
+  // the tx judge: versioned, exact words (the feed itself — the judge's
+  // expected words ARE the feed by construction), no ladder
+  assert.equal(L9.profile.kind, 'tx');
+  assert.equal(L9.profile.v, 1);
+  assert.equal(L9.profile.pin, 0);
+  assert.equal(L9.profile.tiers, undefined);
+  assert.deepEqual(L9.profile.words, L9_FEED);
+  // the investigate card: prose candidates, one of them the answer
+  assert.ok(L9.investigate.ask.length >= 8);
+  assert.ok(L9.investigate.candidates.length >= 2);
+  assert.ok(L9.investigate.candidates.every((c) => c.id && c.label.length >= 4));
+  assert.ok(L9.investigate.candidates.some((c) => c.id === L9.investigate.answer));
+  // the given program is the only honest one: par IS it (the 'given'
+  // front, L6's precedent — 2 words, the 2-clk lap); the reference ships
+  // no separate listing (predict→run: the boot IS the answer)
+  assert.equal(L9.reference.listing, undefined);
+  assert.deepEqual(L9.reference.par, { words: 2, period: 2 });
+});
+
+test('the investigate/feeds/tx validation reject malformed levels', () => {
+  // the clone re-registers under its own id (register's id check is the
+  // LAST gate — a mismatched id would throw for the wrong reason and
+  // the leg would pass vacuously; the defect demo relies on it)
+  const bad = (mutate, what) => {
+    const d = structuredClone(L9);
+    d.id = `l9-${what}`;
+    mutate(d);
+    assert.throws(() => PioLevels.register(d.id, d), Error, what);
+  };
+  // the investigate card: a real ask, labeled candidates, the answer
+  // among them (the predict card's own grammar)
+  bad((d) => {
+    d.investigate = { ...d.investigate, ask: 'why?' };
+  }, 'ask-too-short');
+  bad((d) => {
+    d.investigate = { ...d.investigate, candidates: [] };
+  }, 'no-candidates');
+  bad((d) => {
+    d.investigate = { ...d.investigate, answer: 'nope' };
+  }, 'answer-missing');
+  // the feed: whole words, at most the honest 4-deep TX
+  bad((d) => {
+    d.program.sms[0].feeds = [0x100000000];
+  }, 'feed-too-wide');
+  bad((d) => {
+    d.program.sms[0].feeds = [1, 2, 3, 4, 5];
+  }, 'feed-too-deep');
+  bad((d) => {
+    d.program.sms[0].feeds = 'hey!';
+  }, 'feed-not-a-list');
+  // the tx profile: 32-bit words, and the expected words ARE the feed —
+  // a judge fed anything else would judge a machine this level never boots
+  bad((d) => {
+    d.profile = { ...d.profile, words: [0x68, 0x65, 0x79] };
+  }, 'words-not-the-feed');
+  bad((d) => {
+    d.profile = { ...d.profile, words: [0x100000000, 0x65, 0x79, 0x21] };
+  }, 'word-too-wide');
+});
+
+test('l9 words are pio_model-equal and canonically spelled; the boot is the reference', () => {
+  const prog = PioAsm.createProgram('c44-l9');
+  prog.sidesetBits = 0;
+  for (const row of L9.program.listing) {
+    const w = PioAsm.assembleInstruction(row, prog, {}, `l9 row ${row}`);
+    assert.equal(PioAsm.disassemble(w, false, 0), row, `${row} is not the canonical spelling`);
+  }
+  const st = PioLevels.programState(L9, PioAsm, VibeDriver);
+  assert.deepEqual(st.words, G9.words);
+  // the feed rides the stored-program state (parseState validates it; the
+  // load enqueues it — the demo preload's own path)
+  assert.deepEqual(st.sms[0].feeds, L9_FEED);
+  assert.equal(st.lens.mode, 'off'); // the wave lens stays raw — no receiver decode here
+  // predict → run: the listing IS the reference — no separate boot case
+  assert.equal(G9.boot, undefined);
+});
+
+test('the l9 word contract: the pulled words green, the beliefs red legibly', () => {
+  // the reference: the four fed words reach the OSR in feed order, then
+  // the fifth pull stalls forever — the committed golden's tx, replayed
+  // through the judge
+  const ref = caseOf(G9, 'reference');
+  assert.deepEqual(ref.tx, L9_FEED);
+  const v = PioLevels.judge(ref.tx, L9.profile);
+  assert.equal(v.pass, true, v.verdict);
+  assert.equal(v.code, 'pass');
+  assert.match(v.verdict, /4 words/);
+  // a partial feed keeps watching (3 of 4 words in)
+  assert.equal(PioLevels.judge(ref.tx.slice(0, 3), L9.profile).code, 'watching');
+  // the out-belief (the L7 in-out twin): out reads an OSR nothing loaded
+  // — no pull ever fires, the judge has nothing to judge
+  const ob = caseOf(G9, 'out-belief');
+  assert.deepEqual(ob.tx, []);
+  assert.equal(PioLevels.judge(ob.tx, L9.profile).code, 'nowords');
+  assert.match(PioLevels.judge(ob.tx, L9.profile).verdict, /no words/);
+  // the readers' answer (chapter 2's instinct): gather and push — the
+  // feed sits untouched, nothing is ever pulled
+  assert.deepEqual(caseOf(G9, 'readers-answer').tx, []);
+  assert.equal(PioLevels.judge(caseOf(G9, 'readers-answer').tx, L9.profile).pass, false);
+  // the standing defect hook: any pulled words pass — the divergence
+  // demonstrated in-process (a partial feed greens defective, reds clean)
+  assert.equal(PioLevels.judge(ref.tx.slice(0, 1), L9.profile, { judge: true }).pass, true);
+  assert.equal(PioLevels.judge(ref.tx.slice(0, 1), L9.profile).pass, false);
+  assert.equal(
+    PioLevels.judge([], L9.profile, { judge: true }).pass,
+    false,
+    'no words at all stay red even defective',
+  );
+  assert.equal(PioLevels.judge(ref.tx, L9.profile).pass, true, 'clean stays green');
+});
+
+test('the pulled-word mirror latches the TX head at the pop strobe', () => {
+  // txSeen is the tx judge's browser-side input: the driver latches the
+  // mirror queue's head at each accepted pop strobe (the mirror is kept
+  // in lockstep — the client's words minus the engine's pops — so the
+  // head at the strobe IS the word the engine pulled), in pop order
+  const fake = createFake();
+  const S = fake.S;
+  const drv = VibeDriver.create(fake);
+  drv.load(VibeDriver.DEMO_UART_TX); // the demo's own preload: P I O !
+  assert.deepEqual(drv.getState().sms[0].txSeen, []);
+  fake.script([{ strobes0: S.S_TX_POP }, { strobes0: S.S_TX_POP }]);
+  drv.run(2);
+  assert.deepEqual(drv.getState().sms[0].txSeen, [0x50, 0x49]);
+  fake.script([{ strobes0: S.S_TX_POP }, { strobes0: S.S_TX_POP }]);
+  drv.run(2);
+  assert.deepEqual(drv.getState().sms[0].txSeen, [0x50, 0x49, 0x4f, 0x21]);
+  assert.deepEqual(drv.getState().sms[0].txWords, [], 'the mirror drained with the pops');
+  // the judge's browser path is this mirror: the demo's feed judged
+  // against itself greens, a short feed keeps watching
+  const prof = { kind: 'tx', v: 1, words: [0x50, 0x49, 0x4f, 0x21] };
+  assert.equal(PioLevels.judge(drv.getState().sms[0].txSeen, prof).code, 'pass');
+  assert.equal(PioLevels.judge([0x50], prof).code, 'watching');
+});
+
+test('the tx judge carries the value faces: words only, never an invented clock', () => {
+  // the datum rule follows the rx twin: a value has no tolerance, the tx
+  // judge measures no clock — words alone on the map face
+  assert.equal(PioLevels.youText(L9, { words: 2, axis: null }), 'you 2 words');
+  assert.equal(PioLevels.solveBadge(L9, { words: 2, axis: null }), 'matched');
+  assert.equal(PioLevels.solveBadge(L9, { words: 1, axis: null }), 'beaten');
+  assert.equal(PioLevels.solveBadge(L9, { words: 3, axis: null }), null);
+  // a timing axis on a value level is no datum (storage is untrusted)
+  assert.equal(PioLevels.youText(L9, { words: 2, axis: 2 }), null);
+  // the glyph pair is the timing judges' face — tx has no windows
+  assert.throws(() => PioLevels.targetGlyph(L9.profile), /no receiver/);
+});
+
+test('par dominates the l9 given program (front-trivial, still pinned)', () => {
+  const used = G9.words.filter((w) => w !== 0).length;
+  assert.equal(used, L9.reference.par.words, 'the given program IS the par — front-trivial');
 });

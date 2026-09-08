@@ -82,6 +82,20 @@
     if (!def?.program || !Array.isArray(def.program.listing))
       throw new Error('level: program.listing missing');
     for (const row of def.program.listing) str(row, 'program.listing row');
+    // C44: the static TX feed — a word list enqueued at load (the demo's
+    // own preload pattern, riding the program SM's feeds field the driver
+    // already validates). The unjoined TX FIFO is 4 deep and the load
+    // refuses nothing: a deeper feed would silently overflow (TXOVER), so
+    // the level format caps it where the honest machine does.
+    for (const [i, sm] of (def.program.sms || []).entries()) {
+      const feeds = sm?.feeds;
+      if (feeds === undefined) continue;
+      if (!Array.isArray(feeds) || !feeds.length || feeds.length > 4)
+        throw new Error(`level: sms[${i}].feeds must be a list of 1..4 words (the TX depth)`);
+      for (const w of feeds)
+        if (!Number.isInteger(w) || w < 0 || w > 0xffffffff)
+          throw new Error(`level: sms[${i}].feeds words are 32-bit values`);
+    }
     // C39: the reading levels' given — a list of pattern cfgs, one per
     // driven input pin, spelled exactly like the engine's pattern
     // contract ({mode:'square', pin, period} / {mode:'bits', pin, bits})
@@ -135,6 +149,24 @@
       for (const w of pr.words)
         if (!Number.isInteger(w) || w < 0 || w > 0xffffffff)
           throw new Error('level: rx expected words are 32-bit values');
+    } else if (pr.kind === 'tx') {
+      // C44: the TX judge — the rx twin over the PULLED words (the feed's
+      // dry-out as a value: exact, no ladder). The expected words ARE the
+      // feed by construction (the judge watches the machine eat what the
+      // level loads), so a tx profile whose words are not SM0's feed
+      // would judge a machine this level never boots.
+      if (!Array.isArray(pr.words) || !pr.words.length || pr.words.length > 8)
+        throw new Error('level: tx profile needs its expected words (1..8)');
+      for (const w of pr.words)
+        if (!Number.isInteger(w) || w < 0 || w > 0xffffffff)
+          throw new Error('level: tx expected words are 32-bit values');
+      const feeds = def.program.sms?.[0]?.feeds;
+      if (
+        !Array.isArray(feeds) ||
+        feeds.length !== pr.words.length ||
+        feeds.some((w, i) => w !== pr.words[i])
+      )
+        throw new Error('level: tx expected words must be the program feed (sms[0].feeds)');
     } else if (pr.kind === 'square') {
       // the tier ladder skeleton (relaxed/exact/strict over one receiver)
     } else if (pr.kind === 'uart') {
@@ -215,6 +247,24 @@
       }
       if (!pd.candidates.some((c) => c.id === pd.answer)) throw new Error('level: predict.answer');
     }
+    // C44: the investigate card — the PRIMM Investigate verb's debut, a
+    // post-stall commit riding the predict card's grammar (candidates,
+    // one commit). The candidates are prose explanations (no bits face —
+    // the wave is not the answer, the machine's behavior is); the stall
+    // narration on the page is the evidence the card points at, so the
+    // ask never needs to restate it.
+    const iv = def?.investigate;
+    if (iv) {
+      str(iv.ask, 'investigate.ask', 8);
+      if (!Array.isArray(iv.candidates) || iv.candidates.length < 2)
+        throw new Error('level: investigate needs at least two candidates');
+      for (const c of iv.candidates) {
+        str(c.id, 'investigate.candidate id');
+        str(c.label, 'investigate.candidate label', 4);
+      }
+      if (!iv.candidates.some((c) => c.id === iv.answer))
+        throw new Error('level: investigate.answer');
+    }
     if (
       !def?.reference?.par ||
       !Number.isInteger(def.reference.par.words) ||
@@ -248,6 +298,7 @@
     { n: 0, title: 'First light' },
     { n: 1, title: 'Time and loops' },
     { n: 2, title: 'Reading the world' },
+    { n: 3, title: 'The feeder' },
   ];
 
   // The per-level session key (the lvSession store sm-view.js reads and
@@ -291,7 +342,10 @@
   // cycles for the square judge, bit-times for the decode and reading
   // judges (C41's named-clock rule: a clk/bit level compares clk/bit).
   function parText(def) {
-    const unit = def.profile.kind === 'uart' || def.profile.kind === 'rx' ? 'clk/bit' : 'clk/cycle';
+    const unit =
+      def.profile.kind === 'uart' || def.profile.kind === 'rx' || def.profile.kind === 'tx'
+        ? 'clk/bit'
+        : 'clk/cycle';
     return `par ${def.reference.par.words} words · ${def.reference.par.period} ${unit}`;
   }
 
@@ -319,7 +373,7 @@
   function datumOk(def, solve) {
     if (!solve || !Number.isInteger(solve.words) || solve.words < 1 || solve.words > 32)
       return false;
-    if (def.profile.kind === 'rx') return solve.axis == null;
+    if (def.profile.kind === 'rx' || def.profile.kind === 'tx') return solve.axis == null;
     return Number.isFinite(solve.axis) && solve.axis > 0;
   }
 
@@ -328,7 +382,7 @@
   // the rx face spells its one axis (words) and never an invented clock.
   function youText(def, solve) {
     if (!datumOk(def, solve)) return null;
-    if (def.profile.kind === 'rx') return `you ${solve.words} words`;
+    if (def.profile.kind === 'rx' || def.profile.kind === 'tx') return `you ${solve.words} words`;
     const axis = Math.round(solve.axis * 10) / 10;
     return `you ${solve.words}·${axis % 1 ? axis.toFixed(1) : String(axis)}`;
   }
@@ -336,13 +390,14 @@
   // matched: your axes equal par's. beaten: Pareto-better-or-equal with
   // at least one strict — cheaper words at par time, or a faster clock
   // at par cost. Worse on an axis wears your numbers with NO badge (an
-  // honest pass is still a pass). The rx clock axis is structurally
+  // honest pass is still a pass). The rx/tx clock axis is structurally
   // par's among passing programs (the exact judge pins the rate), so
   // its badge compares words alone.
   function solveBadge(def, solve) {
     if (!datumOk(def, solve)) return null;
     const par = def.reference.par;
-    const axis = def.profile.kind === 'rx' ? par.period : solve.axis;
+    const value = def.profile.kind === 'rx' || def.profile.kind === 'tx';
+    const axis = value ? par.period : solve.axis;
     if (solve.words === par.words && axis === par.period) return 'matched';
     if (
       solve.words <= par.words &&
@@ -493,6 +548,61 @@
     };
   }
 
+  // ================= the TX judge (C44) =================
+  // The rx judge's TX twin: a pure judge over the PULLED words (in pop
+  // order — the driver's txSeen mirror, the head of the TX queue latched
+  // at each accepted pop strobe), compared against the profile's expected
+  // words (= the feed) exactly. The monitor face for the feeder levels:
+  // it narrates the dry-out — "3 of 4 words in" while the machine eats,
+  // pass when the last word lands in the OSR (the stall that follows is
+  // terminal by construction: nothing else can ever come down the feed,
+  // so "all words pulled" IS "the feed ran dry"). It never fires the
+  // level's PASS on its own — the investigate card owns the acceptance
+  // (the shell's rule); this is the monitor's voice.
+  function txJudge(seen, profile, defects) {
+    const DEFECT = !!defects?.judge; // re-injected: any pulled word passes
+    const want = profile.words;
+    const got = seen || [];
+    if (!got.length)
+      return {
+        pass: false,
+        code: 'nowords',
+        verdict: 'no words yet — the machine has pulled nothing from the TX FIFO',
+      };
+    if (DEFECT)
+      return {
+        pass: true,
+        code: 'defect',
+        verdict: `tx (defect: ${got.length} words, unchecked)`,
+      };
+    for (let i = 0; i < want.length && i < got.length; i++) {
+      const g = got[i] >>> 0,
+        w = want[i] >>> 0;
+      if (g === w) continue;
+      for (let b = 31; b >= 0; b--) {
+        const gb = (g >>> b) & 1,
+          wb = (w >>> b) & 1;
+        if (gb !== wb)
+          return {
+            pass: false,
+            code: 'diverge',
+            verdict: `word ${i + 1} bit ${b} — got ${gb}, want ${wb}`,
+          };
+      }
+    }
+    if (got.length < want.length)
+      return {
+        pass: false,
+        code: 'watching',
+        verdict: `${got.length} of ${want.length} words in — keep watching`,
+      };
+    return {
+      pass: true,
+      code: 'pass',
+      verdict: `tx · ${want.length} words — the fed words reached the OSR`,
+    };
+  }
+
   // ================= the decode judge (C40) =================
   // A pure judge over the OUTPUT wave (SPEC-16-9 run semantics, the
   // uart_tx monitor's receiver): the line is read as maximal
@@ -625,6 +735,7 @@
   function judge(bits, profile, defects) {
     if (profile.kind === 'square') return squareJudge(bits, profile.tiers[profile.tier], defects);
     if (profile.kind === 'rx') return rxJudge(bits, profile, defects);
+    if (profile.kind === 'tx') return txJudge(bits, profile, defects);
     if (profile.kind === 'uart') return uartJudge(bits, profile, defects);
     throw new Error(`judge: no receiver for ${profile.kind}`);
   }
@@ -758,6 +869,12 @@
     rxfifo: ['#rxfifo'],
     pullConn: ['#pullconn'],
     osr: ['#osr'],
+    // C44: the OSR panel's autopull furniture sub-gates the #xy way —
+    // `osr` alone (L9) ships the panel without the row that teaches two
+    // levels ahead: the autopull toggle, the threshold stepper, and the
+    // threshold notch on the shift bar all arrive with L11 (autopull is
+    // given there, not authored — the drawings land as structure)
+    autopull: ['#aptgl', '#spin-pullthr', '#osrnotch'],
     // C41: the scratch registers debut alone at L8 (the stepper role —
     // each register debuts in the level whose task needs it); the regs
     // section's own visibility is derived below, the #fiforow precedent
@@ -843,6 +960,7 @@
     judge,
     squareJudge,
     rxJudge,
+    txJudge,
     uartJudge,
     CONDS,
     targetGlyph,

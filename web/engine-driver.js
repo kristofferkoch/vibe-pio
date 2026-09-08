@@ -622,6 +622,12 @@
     // — the level campaign never autopushes, and that limit is this
     // mirror's documented edge.
     let rxSeen = [[], [], [], []];
+    // C44: the PULLED words, in pop order — the TX queue mirror's head
+    // latched at each accepted pop strobe (the mirror is kept in
+    // lockstep with the engine's FIFO: the client's words minus the pop
+    // strobes, so the head at the strobe IS the word the engine pulled).
+    // The TX judge's input.
+    let txSeen = [[], [], [], []];
     let lastExecPc = [0, 0, 0, 0]; // latched at record time (the C20 lesson)
     let flashes = [{}, {}, {}, {}];
     // pad ownership: the last SM to write each pin (CC-7 scan order)
@@ -753,6 +759,9 @@
       }
       for (let i = 0; i < SMS; i++) {
         const s = cycle.sms[i];
+        // C44: the pulled word — the mirror's head at the strobe is what
+        // the engine popped (latched BEFORE the shift below consumes it)
+        if (s.strobes & S_TX_POP) txSeen[i].push((txWords[i][0] ?? 0) >>> 0);
         if (s.strobes & S_TX_POP && !DEFECT_MIRROR) txWords[i].shift(); // defect: never pops
         if (s.strobes & S_RX_PUSH && !DEFECT_RX) rxPushes[i]++; // defect: never counts
         // C39: the pushed word — the pre-edge ISR is exactly what this
@@ -863,6 +872,7 @@
       rxDrains = [0, 0, 0, 0];
       rxWords = [[], [], [], []];
       rxSeen = [[], [], [], []];
+      txSeen = [[], [], [], []];
       gpioInWords = [];
       lastGpioIn = 0;
       lastExecPc = [0, 0, 0, 0];
@@ -1217,6 +1227,7 @@
         rxLevel: s ? s.rxLevel : 0,
         rxWords: rxWords[i].slice(),
         rxSeen: rxSeen[i].slice(),
+        txSeen: txSeen[i].slice(),
         rxMirror: {
           pushes: rxPushes[i],
           drains: rxDrains[i],
@@ -1292,6 +1303,7 @@
         rxLevel: sel.rxLevel,
         rxWords: sel.rxWords,
         rxSeen: sel.rxSeen,
+        txSeen: sel.txSeen,
         rxMirror: sel.rxMirror,
         fifoDepths: sel.fifoDepths,
         monitor: {

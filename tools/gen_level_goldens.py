@@ -186,6 +186,17 @@ PERTURBATIONS: dict[str, list[tuple[str, list[str]]]] = {
         ("fencepost-too-few", ["set x, 6", "in pins, 1", "jmp x--, 1", "push block"]),
         ("count-is-width", ["in pins, 8", "push block"]),
     ],
+    # C44 L9: the feeder's wrong answers, both tx-judge reds (nothing is
+    # ever pulled). out-belief — the L7 in-out twin: `out` reads an OSR
+    # that nothing ever loaded, so zeros shift out forever and no pull
+    # ever fires (the wire never moves, the feed never drains);
+    # readers-answer — chapter 2's instinct transplanted: gather the
+    # (undriven) pins and push, the reading slice's whole program — the
+    # feed sits untouched while the machine pushes zeros to the RX side
+    "l9": [
+        ("out-belief", ["out pins, 1", "nop"]),
+        ("readers-answer", ["in pins, 1", "push block"]),
+    ],
 }
 
 LEVEL_RE = re.compile(
@@ -281,17 +292,46 @@ def pin_series(words: list[int], sms: list[dict[str, Any] | None], pin: int) -> 
     return run_case(words, sms, [], pin, False)["series"]
 
 
+def _pulled_words(sched: Any, sm: int = 0) -> list[int]:
+    """The words SM `sm` pulled off its TX FIFO, in pop order — the tx
+    judge's model-side truth. A fresh-model pass over the same schedule
+    run_model_trace steps (the loopback fold copied verbatim), reading
+    the SM's own FIFO state around each step: a pop is the tx_level
+    decrement the edge applies (model.py tx_rd), and the popped word is
+    the pre-state head — exactly what the driver's txSeen mirror latches
+    at the engine's pop strobe."""
+    import pio_model.model as PM  # noqa: PLC0415  (local: only tx levels pay it)
+
+    mdl = PM.PIOBlockModel()
+    pulled: list[int] = []
+    for c in sched.cycles:
+        gpio, lb, op, addr, wdata, nbs, nbc, prv, nxt = c
+        gin = gpio
+        if lb:
+            for p in range(32):
+                if (lb >> p) & 1:
+                    lv = (mdl.gpio_lvl_r >> p) & 1 if (mdl.gpio_oe_r >> p) & 1 else 0
+                    gin = (gin & ~(1 << p)) | (lv << p)
+        m = mdl.sms[sm]
+        head, lvl = m.tx_mem[m.tx_head], m.tx_level
+        mdl.step(gin, lb, op, addr, wdata, nbs, nbc, prv, nxt)
+        if mdl.sms[sm].tx_level == lvl - 1:
+            pulled.append(head)
+    return pulled
+
+
 def run_case(
     words: list[int],
     sms: list[dict[str, Any] | None],
     stimulus: list[dict[str, Any]],
     pin: int,
     want_rx: bool,
+    want_tx: bool = False,
 ) -> dict[str, Any]:
-    """One case's full replay (C39 grew pin_series): the level's
-    stimulus is armed BEFORE the load — the shell's exact order, so the
-    pattern phase starts at the load's first rendered clk — then the
-    load timeline + RUN_CLKS plain clks. Records per case:
+    """One case's full replay (C39 grew pin_series; C44 grew tx): the
+    level's stimulus is armed BEFORE the load — the shell's exact order,
+    so the pattern phase starts at the load's first rendered clk — then
+    the load timeline + RUN_CLKS plain clks. Records per case:
 
       - `series`: the profile pin's OUTPUT level per rendered clk (G
         records — the wave row's truth);
@@ -303,7 +343,10 @@ def run_case(
       - `rx`: the pushed RX words in push order (want_rx; an rx-judge
         level's truth) — read out by an honest FLEVEL read + a drain of
         exactly the reported level, the same bus traffic the browser
-        player's DRAIN rides.
+        player's DRAIN rides;
+      - `tx`: the pulled TX words in pop order (want_tx; a tx-judge
+        level's truth) — the SM's own FIFO state per step, the model
+        side of the driver's txSeen mirror.
     """
     m = _SandboxMirror()
     m.set_stimulus(stimulus)
@@ -333,6 +376,8 @@ def run_case(
         out["stim"] = {str(cfg["pin"]): "".join(str((g >> cfg["pin"]) & 1) for g in gin) for cfg in stimulus}
     if want_rx:
         out["rx"] = [rec[3] for rec in recs if rec[0] == "R" and rec[2] == stim.A_RXF0]
+    if want_tx:
+        out["tx"] = _pulled_words(m.s)
     return out
 
 
@@ -356,23 +401,24 @@ def generate() -> dict[str, Any]:
         pin = defn["profile"]["pin"]
         stimulus = defn.get("stimulus") or []
         want_rx = defn["profile"]["kind"] == "rx"
+        want_tx = defn["profile"]["kind"] == "tx"
         # the reference solution is its own field since C35 (the fade):
         # levels that boot something else (L1's un-slowed program, L2's
         # empty listing) still ship their answer here
         ref_listing = defn.get("reference", {}).get("listing") or defn["program"]["listing"]
         boot_listing = defn["program"]["listing"]
         words = new_words(assemble(ref_listing, sms[0], lid))
-        cases = [{"name": "reference", "listing": ref_listing, **run_case(words, sms, stimulus, pin, want_rx)}]
+        cases = [{"name": "reference", "listing": ref_listing, **run_case(words, sms, stimulus, pin, want_rx, want_tx)}]
         for name, listing in PERTURBATIONS.get(lid, []):
             w = new_words(assemble(listing, sms[0], f"{lid}:{name}"))
-            cases.append({"name": name, "listing": listing, **run_case(w, sms, stimulus, pin, want_rx)})
+            cases.append({"name": name, "listing": listing, **run_case(w, sms, stimulus, pin, want_rx, want_tx)})
         # the boot program, when it is not the reference (L1/L2): the gate
         # asserts it does NOT pass its own profile — the task is real
         # from cycle one
         boot: dict[str, Any] = {}
         if boot_listing != ref_listing:
             bw = new_words(assemble(boot_listing, sms[0], f"{lid}:boot"))
-            boot = {"listing": boot_listing, "words": bw, **run_case(bw, sms, stimulus, pin, want_rx)}
+            boot = {"listing": boot_listing, "words": bw, **run_case(bw, sms, stimulus, pin, want_rx, want_tx)}
         out["levels"][lid] = {
             "words": words,
             **({"boot": boot} if boot else {}),

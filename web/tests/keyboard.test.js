@@ -1433,6 +1433,165 @@ test('the L8 walk: jmp x-- debuts in the menu, the 4-word gather solves', async 
   );
 });
 
+// C44 — the L9 walk: the feeder's debut under keys. The predict card is
+// the wave face (which bit reaches the pin), the feeder surface (the TX
+// half, the pull connector, the OSR panel) arrives with its OSR
+// direction toggle as a stop while the autopull row stays absent (the
+// sub-gate), and the investigate card is the whole payoff: ABSENT from
+// the Tab order at boot, surfaced by the stall (the walk's engine is
+// the fake ABI — no PIO core — so the stall state is fed the L7 leg's
+// way: the page's own render() over a stalled sms snapshot), committed
+// wrong once (the deny flash, the card stays armed — re-picking is
+// free), then committed right (the pass is the investigate's, never
+// the judge's).
+test('the L9 walk: the feeder debuts, the stall asks its question, the answer passes', async () => {
+  await page.setViewport(1280, 800);
+  await page.goto(`${baseUrl}/web/sm-view.html?level=l9`);
+  await until('V.ready === true', 'the level page engine to boot');
+
+  // ---- no orphan stops: the cycle covers the feeder surface ----------
+  const stops = [];
+  for (let i = 0; i < 16; i++) {
+    await press('Tab');
+    stops.push(await value(activeId));
+  }
+  const allowed = new Set([
+    'bmap', // the toolbar's MAP exit is level-page chrome
+    'breset',
+    'lvcands',
+    'progrows',
+    'BODY',
+    'osrviz', // the OSR panel's direction toggle (the L6 isrviz precedent)
+    'segjoin', // the TX panel's fifo-join control — the panel's own C22 chrome
+  ]);
+  for (const s of stops)
+    assert.ok(
+      allowed.has(s),
+      `orphan stop ${JSON.stringify(s)} — a locked panel left a focusable behind (${stops.join(', ')})`,
+    );
+  for (const need of ['breset', 'lvcands', 'progrows', 'osrviz'])
+    assert.ok(new Set(stops).has(need), `${need} must be a Tab stop on the L9 page`);
+  // the investigate card is absent at boot — the stall has not happened
+  assert.strictEqual(
+    await value("$('lvwhy').hidden"),
+    true,
+    'the investigate card must be absent before the stall',
+  );
+
+  // ---- the gate: the transport is dead until the prediction commits --
+  await page.evaluate('document.activeElement && document.activeElement.blur()');
+  await press('r');
+  assert.strictEqual(
+    await value("$('brun').classList.contains('on')"),
+    false,
+    'R must not run the machine behind the predict gate',
+  );
+
+  // ---- the wave face by keys: ←/→ + Enter (the radio grammar) --------
+  await tabUntil(`${activeId} === 'lvcands'`, 'the predict group');
+  await press('ArrowRight'); // onto the wrong end first — the walk commits the truth below
+  await press('ArrowLeft');
+  await press('Enter');
+  await until('PioLevels.gateOpen(LEVEL, lvSession) === true', 'Enter to commit the prediction');
+  await until("$('brun').disabled === false", 'the committed prediction to unlock RUN');
+
+  // ---- the unlocked machine runs (the fake engine idles — no core) ---
+  await page.evaluate('document.activeElement && document.activeElement.blur()');
+  await press('r');
+  await until("$('brun').classList.contains('on') === true", 'R to start the machine');
+  await press('r'); // pause — the walk leaves a paused page
+  await until("$('brun').classList.contains('on') === false", 'R to pause again');
+  // the card still absent: the machine has not stalled (the fake engine
+  // never pulls — the honest face of the walk's ABI)
+  assert.strictEqual(await value("$('lvwhy').hidden"), true, 'no stall, no question');
+
+  // ---- the dry-out, then the stall (the L7 face-feed discipline) ----
+  // a settle beat on the NODE side first (Runtime.evaluate does not
+  // await promises — a page-side sleep is a no-op): the last in-flight
+  // state reply lands well inside it, so the fed render is the page's
+  // last word. The judge is fed the committed golden's pulled words —
+  // exactly the series the real engine produces a lap BEFORE the stall
+  // (the feed runs dry, the monitor says so, THEN the pull goes red);
+  // the walk's fake ABI has no core, so the words arrive by hand
+  await new Promise((r) => setTimeout(r, 350));
+  const L9G = JSON.parse(fs.readFileSync(path.join(__dirname, 'levels-golden.json'), 'utf8'));
+  const pulled = L9G.levels.l9.cases.find((c) => c.name === 'reference').tx;
+  await page.evaluate(
+    `levelJudge({...V.state, sms: V.state.sms.map((s, i) => (i ? s : {...s, txSeen: ${JSON.stringify(pulled)}}))})`,
+  );
+  assert.match(
+    await value("$('lvverdict').textContent"),
+    /tx — PASS/,
+    'the judge narrates the dry-out — the pass word names the tx receiver',
+  );
+  assert.strictEqual(
+    await value("$('lvhead').classList.contains('solved')"),
+    false,
+    'the judge pass is NOT the level pass — the investigate card owns it',
+  );
+  // the stall state: the page's own render() over a stalled sms snapshot
+  // — carrying the pulled words, because the real machine's stall HAS
+  // them (the dry-out completed a lap earlier; the render's own
+  // levelJudge re-runs over whatever txSeen the state carries)
+  await page.evaluate(
+    `render({...V.state, sms: V.state.sms.map((s, i) => (i ? s : {...s, phase: "STALL", txSeen: ${JSON.stringify(pulled)}}))})`,
+  );
+  await until("$('lvwhy').hidden === false", 'the stall to surface the investigate card');
+  assert.ok(
+    (await value("$('lvwhyask').textContent")).includes('why'),
+    'the ask names the question',
+  );
+  // the surfaced card joins the Tab order
+  const stops2 = [];
+  for (let i = 0; i < 18; i++) {
+    await press('Tab');
+    stops2.push(await value(activeId));
+  }
+  assert.ok(new Set(stops2).has('lvwhycands'), 'the surfaced investigate card must be a Tab stop');
+
+  // ---- the wrong answer: the deny flash, the card stays armed --------
+  await tabUntil(`${activeId} === 'lvwhycands'`, 'the investigate group');
+  assert.ok(
+    (await value("$('statusline').textContent")).includes('investigate') ||
+      (await value("$('lvwhycands').dataset.status")).includes('investigate'),
+    'the status line narrates the investigate group when it takes focus',
+  );
+  await press('ArrowRight'); // onto the second candidate (the finished belief)
+  await press('Enter');
+  assert.strictEqual(
+    await value("$('lvhead').classList.contains('solved')"),
+    false,
+    'a wrong answer must not pass the level',
+  );
+  assert.strictEqual(
+    await value("$('lvwhy').hidden"),
+    false,
+    'the wrong commit keeps the card armed (re-picking is free)',
+  );
+
+  // ---- the right answer: the commit is the pass ----------------------
+  await press('ArrowLeft'); // back to the truth — the feed ran dry
+  await press('Enter');
+  await until(
+    "$('lvhead').classList.contains('solved')",
+    'the right investigate commit to pass the level',
+  );
+  assert.strictEqual(await value("$('lvwhy').hidden"), true, 'the card is done — one commit');
+  assert.match(
+    await value("$('lvverdict').textContent"),
+    /tx — PASS/,
+    'the pass word names the tx receiver',
+  );
+  assert.ok(
+    (await value("$('lvpar').textContent")).includes('clk/bit'),
+    'par names its own clock — bit-times, not cycles',
+  );
+  assert.ok(
+    !(await value("/ERROR/.test(document.querySelector('footer').textContent)")),
+    'the page walked the whole loop without an engine error',
+  );
+});
+
 // ---- the C43 transitions legs ---------------------------------------------
 // The payoff flow end to end under keys: a solved level carries NEXT
 // in the band (the campaign-order hop — a plain location jump, the
@@ -1559,17 +1718,17 @@ test("the C43 walk: the last registered level's NEXT hops to the map", async () 
     return out;
   })()`);
   await page.evaluate(`(() => {
-    localStorage.setItem('vibe-pio-level-l8', JSON.stringify({
-      solved: true,
+    localStorage.setItem('vibe-pio-level-l9', JSON.stringify({
+      solved: true, predicted: true, pick: 'lsb', investigated: true,
       solve: {
-        listing: ['set x, 7', 'in pins, 1', 'jmp x--, 1', 'push block', ...new Array(28).fill('')],
-        words: 4, axis: null,
+        listing: ['pull block', 'out pins, 1', ...new Array(30).fill('')],
+        words: 2, axis: null,
       },
     }));
     return true;
   })()`);
   try {
-    await page.goto(`${baseUrl}/web/sm-view.html?level=l8`);
+    await page.goto(`${baseUrl}/web/sm-view.html?level=l9`);
     await until(
       "typeof V !== 'undefined' && V.ready === true",
       'the last level page engine to boot',
@@ -1582,11 +1741,11 @@ test("the C43 walk: the last registered level's NEXT hops to the map", async () 
       'NEXT from the last level to reach the map',
     );
     await until("document.getElementById('map')?.children.length > 0", 'the map to build');
-    // the rx datum shows words only — the value judge measures no clock
+    // the tx datum shows words only — the value judge measures no clock
     assert.match(
-      await value("document.getElementById('row-l8').querySelector('.st').textContent"),
-      /you 4 words \(= par\)/,
-      'the rx solve carries its words, never an invented clock',
+      await value("document.getElementById('row-l9').querySelector('.st').textContent"),
+      /you 2 words \(= par\)/,
+      'the tx solve carries its words, never an invented clock',
     );
   } finally {
     await page.evaluate(`((snap) => {

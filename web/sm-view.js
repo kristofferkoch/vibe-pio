@@ -488,12 +488,53 @@ function buildLevelBand() {
   } else {
     $('lvpred').hidden = true;
   }
+  // C44: the investigate card — built at boot (its row's geometry is
+  // part of the band), absent until the stall. The candidates are prose
+  // explanations: the machine's behavior is the answer, not a wave
+  if (LEVEL.investigate) {
+    $('lvwhyask').textContent = LEVEL.investigate.ask;
+    const host = $('lvwhycands');
+    host.innerHTML = LEVEL.investigate.candidates
+      .map(
+        (c, i) =>
+          `<div class="lcand why" id="lvw${i}" role="option" aria-selected="false" data-i="${i}" data-tip="${esc(c.label)}">` +
+          `<span>${esc(c.label)}</span></div>`,
+      )
+      .join('');
+    lvWhyPick = 0;
+    lvWhyApply();
+    wireGroup(host, (e) => {
+      const move = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (move) {
+        e.preventDefault();
+        lvWhyPick =
+          (lvWhyPick + move + LEVEL.investigate.candidates.length) %
+          LEVEL.investigate.candidates.length;
+        lvWhyApply();
+      } else if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        lvWhyCommit();
+      }
+    });
+    // the mouse path commits like the predict card: a click is a
+    // commitment gesture
+    host.addEventListener('click', (e) => {
+      const c = e.target.closest('.lcand');
+      if (!c) return;
+      lvWhyPick = +c.dataset.i;
+      lvWhyApply();
+      lvWhyCommit();
+    });
+    if (lvSession.solved) $('lvwhy').hidden = true; // the solved reload never re-asks
+  } else {
+    $('lvwhy').remove(); // no investigate moment: the row never ships
+  }
   // a solved level opens solved: par on the face, the predict card gone
   if (lvSession.solved) lvRevealSolved();
-  // the rx judge has no glyph pair — hidden from the band's first paint,
-  // not just from the first verdict (no empty glyph boxes ever). svg
-  // carries no `hidden` IDL reflection — the attribute is the contract
-  if (LEVEL.profile.kind === 'rx') {
+  // the value judges have no glyph pair — hidden from the band's first
+  // paint, not just from the first verdict (no empty glyph boxes ever).
+  // svg carries no `hidden` IDL reflection — the attribute is the contract
+  if (LEVEL.profile.kind === 'rx' || LEVEL.profile.kind === 'tx') {
     $('lvtarget').toggleAttribute('hidden', true);
     $('lvlive').toggleAttribute('hidden', true);
   }
@@ -509,6 +550,48 @@ function lvCommit() {
   });
   $('lvcands').dataset.status = 'prediction committed — R runs · the truth is on the wave';
   lvGateApply();
+}
+
+// ---- the investigate card (C44) ------------------------------------------
+// The PRIMM Investigate verb's debut — its own face, riding the predict
+// card's grammar (the same C25 radio listbox: one Tab stop, ←/→ pick,
+// Enter commits). The card is ABSENT — hidden, out of layout and Tab
+// order — until the level's machine stalls; the existing stall
+// narration (the chip, the banner, the tooltips) is the evidence it
+// points at, never replaced. A wrong commit narrates and stays armed
+// (the never-punish doctrine); the right commit is the level's PASS:
+// on a tx level the judge narrates the dry-out, the investigate answers
+// it.
+let lvWhyPick = 0;
+let lvWhyShown = false;
+function lvWhyApply() {
+  document.querySelectorAll('#lvwhycands .lcand').forEach((c, i) => {
+    c.classList.toggle('kc', i === lvWhyPick);
+    c.setAttribute('aria-selected', String(i === lvWhyPick));
+  });
+  $('lvwhycands').setAttribute('aria-activedescendant', `lvw${lvWhyPick}`);
+}
+function lvWhySurface() {
+  lvWhyShown = true;
+  $('lvwhy').hidden = false;
+}
+function lvWhyCommit() {
+  const c = LEVEL.investigate.candidates[lvWhyPick];
+  if (c.id !== LEVEL.investigate.answer) {
+    // wrong: the era deny flash, and the narration points back at the
+    // evidence — the card stays armed, re-picking is free (re-runs
+    // never punish)
+    const p = $('lvwhy');
+    p.classList.remove('deny');
+    void p.offsetWidth;
+    p.classList.add('deny');
+    $('lvwhycands').dataset.status = `not that — the evidence is on the stalled row · pick again`;
+    return;
+  }
+  lvSession.investigated = true;
+  lvSave();
+  $('lvwhy').hidden = true; // the card is done — one commit, the right one
+  levelPass(null); // the investigate commit IS the acceptance on a tx level
 }
 function lvGateApply() {
   if (!LEVEL) return;
@@ -627,26 +710,36 @@ function lvDrawLive(v) {
 function lvMonitorFace(v) {
   const [word0, cls] = LV_STATUS[v.code] || [v.verdict, ''];
   const rx = LEVEL.profile.kind === 'rx';
-  // the pass word names its receiver — square's tier rides along, rx's
-  // value verdict has no tier to name, uart's frame carries the tier
-  const noun = rx ? 'rx' : LEVEL.profile.kind === 'uart' ? 'frame' : 'square';
+  const tx = LEVEL.profile.kind === 'tx';
+  // the pass word names its receiver — square's tier rides along, the
+  // value judges (rx's pushed words, tx's pulled words) have no tier to
+  // name, uart's frame carries the tier
+  const noun = rx ? 'rx' : tx ? 'tx' : LEVEL.profile.kind === 'uart' ? 'frame' : 'square';
   const word =
-    v.code === 'pass' ? (rx ? 'rx — PASS' : `${noun} — PASS (${LEVEL.profile.tier})`) : word0;
+    v.code === 'pass'
+      ? rx || tx
+        ? `${noun} — PASS`
+        : `${noun} — PASS (${LEVEL.profile.tier})`
+      : word0;
   const b = $('lvverdict');
   b.textContent = word;
   b.className = cls;
-  const face = v.pass ? `${v.verdict} — PASS${rx ? '' : ` (${LEVEL.profile.tier})`}` : v.verdict;
+  const face = v.pass
+    ? `${v.verdict} — PASS${rx || tx ? '' : ` (${LEVEL.profile.tier})`}`
+    : v.verdict;
   const tipTail = rx
     ? 'the rx judge compares the pushed words, exact'
-    : LEVEL.profile.kind === 'uart'
-      ? 'gold = the [bitLo..bitHi] skew window per bit-time'
-      : "gold = the tier's acceptance windows";
+    : tx
+      ? 'the tx judge compares the pulled words against the feed, exact'
+      : LEVEL.profile.kind === 'uart'
+        ? 'gold = the [bitLo..bitHi] skew window per bit-time'
+        : "gold = the tier's acceptance windows";
   $('lvmon').dataset.tip = `${face} · ${tipTail}`;
   $('lvmon').setAttribute('aria-label', `monitor: ${face}`);
   // the glyph pair (golden template + last measured cycle/frame) — the
-  // rx judge has no windows to draw; the verdict word and the
-  // pushed-word tooltip are its whole face
-  const glyphs = !rx;
+  // value judges have no windows to draw; the verdict word and the
+  // pushed/pulled-word tooltip are their whole face
+  const glyphs = !rx && !tx;
   $('lvtarget').toggleAttribute('hidden', !glyphs);
   $('lvlive').toggleAttribute('hidden', !glyphs);
   if (glyphs) {
@@ -669,6 +762,20 @@ function levelJudge(st) {
     if (v.pass) levelPass(v);
     return;
   }
+  if (LEVEL.profile.kind === 'tx') {
+    // C44: the tx judge feeds on the PULLED words (the driver's queue
+    // head latched at each pop strobe — SM0, the level's machine), never
+    // the wave: the dry-out is invisible on the pins beyond one bit a
+    // word. The judge narrates the feed running down; it NEVER fires
+    // the pass — the investigate card owns the acceptance on a tx level
+    const seen = st.sms?.[0]?.txSeen || [];
+    if (!lvRanOnce && !seen.length) {
+      lvMonitorFace({ code: 'awaiting', verdict: 'awaiting run' });
+      return;
+    }
+    lvMonitorFace(PioLevels.judge(seen, LEVEL.profile));
+    return;
+  }
   if (!st.wave.pins.length || (!lvRanOnce && st.wave.pins.every((b) => b === 0))) {
     lvMonitorFace({ code: 'awaiting', verdict: 'awaiting run', period: null, dutyPct: null });
     return;
@@ -684,6 +791,8 @@ function lvRevealSolved() {
   // this moves nothing, ever
   $('lvhead').classList.add('solved');
   $('lvpred').hidden = true; // the gate's job is done — never punish re-runs
+  const why = $('lvwhy');
+  if (why) why.hidden = true; // the investigate card's job is done with it
 }
 function levelPass(v) {
   const first = !lvSession.solved;
@@ -715,8 +824,10 @@ function levelPass(v) {
   // finite, the world says its byte once, and a run that continues
   // slides the wave window past the frame into mid-frame fragments the
   // judge honestly reds — so every run freezes on the payoff, not just
-  // the first solve (the live session found the red-under-PASS-chip)
-  if (first || LEVEL.profile.kind === 'uart') pause();
+  // the first solve (the live session found the red-under-PASS-chip).
+  // A tx level's payoff is the same shape: the stall is the moment, and
+  // the investigate commit lands on it
+  if (first || LEVEL.profile.kind === 'uart' || LEVEL.profile.kind === 'tx') pause();
 }
 
 function run() {
@@ -2145,7 +2256,20 @@ function render(st) {
     if (fl.wrap) flashWrap();
     V.lastFlashClk = st.cycle;
   }
-  if (LEVEL) levelJudge(st); // the profile is the judge until the level passes
+  if (LEVEL) {
+    // C44: the investigate card surfaces at the stall — the machine has
+    // stopped, the evidence is on the page, the question is now (a
+    // solved session never re-asks; once surfaced the card stands until
+    // answered, through resets and re-runs)
+    if (
+      LEVEL.investigate &&
+      !lvSession.investigated &&
+      !lvWhyShown &&
+      st.sms?.[0]?.phase === 'STALL'
+    )
+      lvWhySurface();
+    levelJudge(st); // the profile is the judge until the level passes
+  }
 }
 
 // ================= modeless row editor (C19 discipline; the
