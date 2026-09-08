@@ -8,7 +8,10 @@ grilling. **Chapters 0–1 were promoted to KANBAN C34–C37 by the
 on the cards and resolve five of the six open questions below.
 Chapter 2 was promoted to KANBAN C39–C41 by the 2026-09-06 grilling
 (decisions on the cards and recorded under the chapter 2 sketch
-below); chapters 3+ remain pre-grilling input.** This file stays the
+below); chapter 3 was promoted to KANBAN C44–C47 by the
+2026-09-08 grilling (decisions on the cards and recorded under the
+chapter 3 sketch below); chapter 4+ remains pre-grilling
+input.** This file stays the
 design spec for the promoted chapters the way DESIGN-NOTES is the
 spec for the sandbox. The owner's starting instincts on the record:
 first level = a very reduced view of the UI, few instructions, the
@@ -215,6 +218,29 @@ after ch3's L12, revisited at the ch3 grilling.
   slot plays the delay game instead). The campaign's poster child is a
   level, and the player exits the chapter able to *read* the demo they
   could already load.
+
+**Chapter 3 grilling (2026-09-08, promoted as C44–C47):** the fun
+gate read clean on chapters 0–2 as shipped. The feed is static and
+the dry-out terminal — the existing feeds machinery (the demo's
+preload pattern), no timed-feed stimulus kind, zero new engine
+machinery in the chapter. L9's investigate moment is a card, not
+narration: the PRIMM Investigate verb debuts as its own post-stall
+commit face (the predict card's grammar; the stall chip/banner/
+tooltips are the evidence it points at). Autopull is given, not
+authored — L11's overlay pre-sets it, the threshold and flow arrows
+arrive as drawings (config as structure), and the OSR panel
+sub-gates its autopull furniture at L9 the #xy way. L12 is designed
+for the ch4 re-solve only — the standing-capstone question stays
+with ch4's grilling, one shipped instance in hand; the demo's
+fjoinTx stays C18 history (the honest feed fits the unjoined 4-deep
+TX). The breather defers to ch4's grilling. The bible session ran
+as this grilling's compact round (owner-held canon, not committed):
+chapter 3 carries the fiction's first payload fragment — mundane-
+warm anonymous ASCII bytes on L9–L11's feeds (the boss keeps the
+demo's own "PIO!"), the decode face renders printable bytes as
+ASCII so a wrong bit is a garbled glyph, and no prose artifacts
+ship (no slip, no README.TXT). Chapter 3 registers as "The
+feeder".
 
 **Chapter 4 — Two things at once** — `sideset` debuts (free second
 action per cycle), the ds allocator appears and garbles (SPEC-4-7

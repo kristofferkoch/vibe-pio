@@ -50,7 +50,8 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   promoted the sandbox + multi-SM track, of which the sandbox itself
   has landed and the multi-SM cards (C22–C24) landed with those owner
   decisions). The *level* grilling ran 2026-09-04 (chapters 0–1,
-  C34–C37) and 2026-09-06 (chapter 2, C39–C41): each level = stimulus
+  C34–C37), 2026-09-06 (chapter 2, C39–C41), and 2026-09-08
+  (chapter 3, C44–C47): each level = stimulus
   + a *receiver-style* conformance monitor (the SPEC-16-9 machinery)
   — acceptance is "the receiver got the right data", never
   golden-trace equality, with monitor profiles as a ladder of
@@ -60,7 +61,7 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   (decode judge). Progression one SM → multi-SM parallel buses → DMA
   at most as late-game fixed-function pacing; score metric + par =
   committed hyperopt Pareto fronts, solvability = per-level reference
-  solutions, both gated in `make js`. The chapter 3+ remainder is the
+  solutions, both gated in `make js`. The chapter 4+ remainder is the
   learning-curve entry below. Mock-up decisions live in
   `mockups/DESIGN-NOTES.md`; the level curve in
   `mockups/LEVELS-NOTES.md`.
@@ -129,16 +130,20 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   parser (a real "wait needs pol src index" AsmError), and is the
   TypeError-as-operand-error boundary too broad generally (any
   accidental TypeError inside encodeCore would wear the same mask)?
-- Level learning curve — chapters 0–2 promoted (0–1 as KANBAN C34–C37
-  by the 2026-09-04 grilling, 2 as C39–C41 by the 2026-09-06 grilling;
-  owner decisions on the cards, the notes in
-  `mockups/LEVELS-NOTES.md` stay the design spec). Still open there,
-  for the chapter 3+ grillings: the stall-as-curriculum level (pull on
-  a dry TX), autopull as reward, the ch.3 UART boss and whether its
-  ch.4 sideset re-solve generalizes into a standing capstone type,
-  Coffee-Time breather levels (deferred 2026-09-06 — first candidate
-  after ch3's L12), sideset's garbling spectacle, wait and multi-SM,
-  and whether later chapters keep the 1-tick-1-cycle
+- Level learning curve — chapters 0–3 promoted (0–1 as KANBAN C34–C37
+  by the 2026-09-04 grilling, 2 as C39–C41 by the 2026-09-06 grilling,
+  3 as C44–C47 by the 2026-09-08 grilling; owner decisions on the
+  cards, the notes in `mockups/LEVELS-NOTES.md` stay the design spec).
+  The 2026-09-08 grilling resolved: the stall-as-curriculum level (L9
+  — static feed, terminal dry-out, the investigate moment as a card),
+  autopull as reward (L11 — config as given, not authored), and the
+  ch.3 UART boss (L12 — designed for the ch.4 re-solve, decide
+  generalization then). Still open there, for the chapter 4+
+  grillings: whether the L12 sideset re-solve generalizes into a
+  standing capstone type (one shipped instance in hand),
+  Coffee-Time breather levels (deferred again 2026-09-08 — first
+  candidate after ch4's boss), sideset's garbling spectacle, wait and
+  multi-SM, and whether later chapters keep the 1-tick-1-cycle
   clkdiv-abstracted rendering.
 - The campaign's front door — a landing page + the level-to-level
   transition — **promoted to KANBAN C42–C43** by the 2026-09-06
@@ -191,10 +196,15 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   grilling — so the bible session, before chapter 3's grilling, owns
   vehicle + voice, and each chapter's own grilling lands its
   fragments; writing them all now would fence chapters 3+ that are
-  not grilled yet); the author's
+  not grilled yet; further resolved 2026-09-08: the compact bible
+  round ran with the chapter 3 grilling — ch3's slice is
+  payload-bytes-only over the feed machinery, the README.TXT and
+  slip vehicles stay parked for their own cards); the author's
   identity and the arc's end (named, with a one-line fate,
   TIS-100-minimal, vs anonymous — and does the endgame answer it or
-  leave it); where fragments surface (desktop icons beside the
+  leave it; the 2026-09-08 round's first fragment is anonymous —
+  presence, not identity, so the name question stays fully open);
+  where fragments surface (desktop icons beside the
   landing window vs files inside it vs chapter-frame captions); how
   hidden is hidden (dim-and-visible vs opt-in file-open — lean
   opt-in, TIS-100's way); does the sandbox carry any (lean:
@@ -240,7 +250,14 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   leans: no landed-level retrofits (chapters 0–2 are shipped
   teaching surfaces; lore levels debut fresh — first carriers in
   chapter 3, where L10 already decodes bytes and L12 transmits
-  them); the responder is a chapter-5/endgame voice (Synchronization
+  them; decided 2026-09-08 at the chapter 3 grilling: the fragment
+  rides L9/L10/L11's feeds as mundane-warm anonymous ASCII (the
+  previous owner's register — feeds are curriculum artifacts), the
+  boss keeps the demo's own "PIO!", and the decode face renders
+  printable bytes as ASCII so the near-miss grammar does the story
+  work below — the READ direction over the existing feed machinery,
+  no fifo-feed); the responder is a chapter-5/endgame voice
+  (Synchronization
   is where a dialogue lives); the fifo-feed and the responder card
   out only at those chapters' own grillings. Open questions if
   promoted: one voice or two (the previous owner's log arriving over
@@ -374,7 +391,10 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   front-door grilling shipped the door clean, so the "first slip
   rides the front-door card" lean died there; first slips land only
   after the bible session, each chapter's grilling landing its slips
-  alongside that chapter's fragments; landed goal prose is never
+  alongside that chapter's fragments (the bible round ran
+  2026-09-08; chapter 3 lands its fragment payload-only — NO slip
+  ships with it, so the first slip candidate is chapter 4's
+  grilling); landed goal prose is never
   retrofitted (the standing no-retrofits lean). Open questions if
   promoted: the
   sinister direction itself — WHAT do the slips foreshadow (military
@@ -475,7 +495,10 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   the front door 2026-09-06: it shipped clean, zero leaks — the
   masthead-and-one-"civilian" cap governs whatever lands later, not
   the door), so the bible session's first deadline is chapter 3's
-  grilling; the taste line — how much Cold War facility
+  grilling — met 2026-09-08: the compact bible round ran with the
+  chapter 3 grilling (owner-held canon per the custody lean; riffs
+  5–9 the skeleton), and chapter 3 is the first leak-bearing
+  chapter — payload bytes only; the taste line — how much Cold War facility
   trope the deniable register can hold before slips stop being
   deniable (lean: the fear lives in procurement language, never in
   threat language); and whether the performed optimism has one
@@ -528,3 +551,67 @@ session. Append freely; prune ruthlessly when promoted or rejected.
   tiers stay engineering words); and the risk line — how far the
   bible's science can reach while every leak stays deniable (the
   mind-races test, restated under load).
+- The leak program — secrecy decays, so proliferate deniably (owner
+  riff 9, 2026-09-08; composes with entries 5–8 — the sender's end
+  of entry 8's wire, and the resolution of entry 6's era tension).
+  The owner's statement: the PIO was a secret 80/90s project; it is
+  hard to keep things secret over long periods; therefore the design
+  and tech were DELIBERATELY leaked — plausibly deniably — for
+  civilian parallel reconstruction; that is why it emerged in the
+  Raspberry Pi. What it locks together: the era tension resolves —
+  their 90s bench carries 2020s-class silicon because the chip was
+  never a 2010s invention there; it is a Cold War program (entry 7's
+  1989–1995 window reads as the program's own window, and entry 6's
+  diverged-early lean supplies why their 80/90s could build it at
+  all); the ~30-year gap to the real RP2040 (2021) is not friction
+  but the evidence — deniable seeding takes decades to look like
+  invention, "hard to keep things secret" is the bridge; and entry
+  6's silicon-identity rule gains a mechanism alongside entry 8's
+  RECEIVED lean — the design propagates looking like local
+  invention, because deniable parallel reconstruction IS the
+  propagation mechanism. What it retro-justifies: "civilian" as THE
+  word the front-door cap names (C42's masthead-and-one-"civilian")
+  — it is the program's own vocabulary; entry 5's "suitable for
+  civilian applications" complement slip becomes load-bearing (the
+  complement — a military program — is the fact the word needs to
+  exist); and the M-grade part on the education SKU (entries 5/6)
+  gains its why — the civilian line and the program share lineage,
+  the wall between them was always thin, and the leak is where it
+  thinned. The deep resonance, recorded: the institution's method is
+  the campaign's own method — coherent deniable leaks aimed at
+  convergent reconstruction (entry 7's iceberg doctrine is
+  counterintelligence doctrine) — so the player reconstructing the
+  fiction out of slips is doing, to the story, what the civilian
+  sector did to the chip; the campaign is itself the program's
+  latest leak channel, a recursion the bible holds and the game
+  never shows. What deniability protects, on the taste firewall's
+  record: "parallel reconstruction" means the civilians did honest
+  work — the real RPi engineers genuinely invented it; the fiction
+  claims lineage for the DESIGN, never deception by any real party,
+  and the real Foundation stays beloved and unnamed (entry 6). Bible
+  leans this riff adds: the education mission as the leak channel
+  from the start ("cheap computers for everyone" as deniable
+  proliferation — the cover that became real before it curdled, and
+  entry 8's "what keeping it cost" gains its concrete cost:
+  deniability maintained across decades); and the still-answering
+  machinery (entry 6's other-voice candidate) as the program's
+  residue — the protocol still running somewhere. Open questions if
+  promoted: the leak's MOTIVE (insurance proliferation — the design
+  survives its facility, Cold War logic? manufacturing scale —
+  mil-grade parts need a civilian supply chain, the M-grade suffix
+  read backwards? laundering continued work? or the link demanding
+  wild receivers?); replace or compose with entry 8's RECEIVED lean
+  (their chip received from the far side vs developed in secret and
+  leaked outward — or the unified rule: the design arrives
+  everywhere looking like local invention, which subsumes both);
+  which end of the wire the real RPi is (entry 8's in-fiction
+  arrival vs the fourth wall's sharper claim — the player holds the
+  leaked artifact at their real desk, the real datasheet diegetic
+  evidence; entry 8's topology question rides this one); does the
+  leak cross the link, and does the shift apply to it (or is the
+  design the one CLEAN crossing — entry 6's identical-silicon rule
+  as the exception that proves the wire shifts everything except
+  what was sent on purpose?); and the taste line — how far a claim
+  on OUR universe can reach before the firewall is stressed (lean:
+  it lives only in the bible and the player's own reread, never in
+  a slip).
